@@ -1,0 +1,117 @@
+services:
+  mongo:
+    image: mongo:latest
+    mem_limit: 256m
+    cpus: 1.0
+    container_name: mongo
+    restart: on-failure
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=supersecret
+    ports:
+      - "27018:27017"
+    networks:
+      - bridge
+      - c2_net
+
+  vulnzoo-secure:
+    build:
+      context: ./api_server
+    mem_limit: 512m
+    cpus: 2.0
+    depends_on:
+      - mongo
+    container_name: vulnzoo-secure
+    environment:
+      - VULNERABLE=0
+      - TOKENTIMETOLIVE=120
+      - MONGO_USERNAME=admin
+      - MONGO_PASSWORD=supersecret
+      - CAMERA_ADMIN_USERNAME=admin
+      - CAMERA_ADMIN_PASSWORD=admin
+    ports:
+      - "5001:5001"
+    networks:
+      - bridge
+      - cam_net
+
+  vulnzoo-vulnerable:
+    build:
+      context: ./api_server
+    mem_limit: 512m
+    cpus: 2.0
+    depends_on:
+      - mongo
+      - c2-server
+    container_name: vulnzoo-vulnerable
+    environment:
+      - VULNERABLE=1
+      - TOKENTIMETOLIVE=60
+      - MONGO_USERNAME=admin
+      - MONGO_PASSWORD=supersecret
+      - FIRMWARE_KEY=supersecret
+      - FIRMWARE_SECRET=k3yVulnC4m
+      - CAMERA_ADMIN_USERNAME=admin
+      - CAMERA_ADMIN_PASSWORD=admin
+      - JWT_SECRET_KEY=supersecretkey
+      - C2_SERVER_URL=http://c2-server:4999
+    ports:
+      - "5000:5000"
+    networks:
+      - bridge
+      - cam_net
+      - c2_net
+
+  c2-server:
+    build:
+      context: ./c2_server
+    mem_limit: 256m
+    cpus: 1.0
+    container_name: c2-server
+    restart: on-failure
+    depends_on:
+      - mongo
+    environment:
+      - C2_PORT=4999
+      - MONGO_URI=mongodb://mongo:27017/
+      - MONGO_USERNAME=admin
+      - MONGO_PASSWORD=supersecret
+      - PANEL_PASSWORD=letstechin
+    ports:
+      # El C2 opera en puerto HTTP 4999 (menos evidente que 8080)
+      - "4999:4999"
+    networks:
+      - bridge
+      - c2_net
+    # El C2 NO tiene acceso a la red de cámaras IoT (cam_net)
+    # solo puede comunicarse con MongoDB y la API Flask
+
+  camera_admin:
+    build:
+      context: ./camera_sim
+    container_name: camera_admin
+    networks:
+      cam_net:
+        ipv4_address: 172.30.0.11
+
+  camera_elliot:
+    build:
+      context: ./camera_sim
+    container_name: camera_elliot
+    networks:
+      cam_net:
+        ipv4_address: 172.30.0.22
+
+networks:
+  bridge:
+    driver: bridge
+  cam_net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  c2_net:
+    # Red aislada solo para comunicación C2-API-MongoDB
+    driver: bridge
+    internal: false

@@ -1,0 +1,118 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=01
+
+DEVICES_DIR="/usr/lib/vulnzoo-devices"
+LOG_FILE="/root/vulnzoo.log"
+
+start() {
+    echo "Starting VulnZoo Device Manager..."
+    
+    # Create necessary directories
+    mkdir -p "$DEVICES_DIR"
+    
+    # Initialize persistent log file
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] VulnZoo Device Manager starting..." >> "$LOG_FILE"
+    
+    # Initialize UCI configuration if not exists
+    current_device=$(uci -q get vulnzoo.state.current_device 2>/dev/null || echo "")
+    if [ -z "$current_device" ]; then
+        uci set vulnzoo.state=section
+        uci set vulnzoo.state.current_device="none"
+        uci set vulnzoo.state.loaded_timestamp=""
+        uci commit vulnzoo
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] VulnZoo UCI configuration initialized" >> "$LOG_FILE"
+    fi
+    
+    # Restore device state if there was one loaded
+    if [ "$current_device" != "none" ] && [ -n "$current_device" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Restoring device state: $current_device" >> "$LOG_FILE"
+        
+        # Find and extract device
+        local device_file="$DEVICES_DIR/$current_device.tar.gz"
+        if [ -f "$device_file" ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Re-extracting device: $current_device" >> "$LOG_FILE"
+            cd /
+            tar -xzf "$device_file" 2>/dev/null
+            
+            # Start device services if init script exists
+            if [ -f "/etc/init.d/${current_device}" ]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Starting device service: $current_device" >> "$LOG_FILE"
+                /etc/init.d/"${current_device}" start
+            fi
+            
+            echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Device state restored successfully: $current_device" >> "$LOG_FILE"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] WARNING: Device file not found for restoration: $device_file" >> "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] No device state to restore" >> "$LOG_FILE"
+    fi
+    
+    # Generate SSL certificates if they don't exist
+    if [ ! -f "/etc/uhttpd.crt" ] || [ ! -f "/etc/uhttpd.key" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Generating SSL certificates..." >> "$LOG_FILE"
+        # Generate self-signed certificate
+        openssl req -x509 -newkey rsa:2048 -keyout /etc/uhttpd.key -out /etc/uhttpd.crt \
+            -days 365 -nodes -subj "/C=XX/ST=XX/L=XX/O=VulnZoo/OU=Device/CN=vulnzoo.local" 2>/dev/null
+        chmod 600 /etc/uhttpd.key
+        chmod 644 /etc/uhttpd.crt
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] SSL certificates generated" >> "$LOG_FILE"
+    fi
+    
+    # Set permissions
+    chmod 755 /www/vulnzoo/cgi-bin/device-manager.sh
+    chmod 755 /www/vulnzoo/cgi-bin/get-logs.sh
+    
+    # Ensure uhttpd is running and configured correctly
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Starting uhttpd service..." >> "$LOG_FILE"
+    /etc/init.d/uhttpd start
+    
+    # Check for available device profiles
+    if [ -d "$DEVICES_DIR" ]; then
+        profile_count=$(ls -1 "$DEVICES_DIR"/*.tar.gz 2>/dev/null | wc -l)
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Found $profile_count device profiles" >> "$LOG_FILE"
+    fi
+   
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] VulnZoo Device Manager started successfully" >> "$LOG_FILE"
+}
+
+stop() {
+    echo "Stopping VulnZoo Device Manager..."
+    
+    # Stop any running device if active
+    current_device=$(uci -q get vulnzoo.state.current_device 2>/dev/null || echo "none")
+    if [ "$current_device" != "none" ] && [ -n "$current_device" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [STOP] Stopping active device: $current_device" >> "$LOG_FILE"
+        /www/vulnzoo/cgi-bin/device-manager.sh stop "$current_device" >/dev/null 2>&1
+    fi
+    
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [STOP] VulnZoo Device Manager stopped" >> "$LOG_FILE"
+}
+
+restart() {
+    stop
+    sleep 2
+    start
+}
+
+reload() {
+    echo "Reloading VulnZoo configuration..."
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [RELOAD] VulnZoo configuration reloaded" >> "$LOG_FILE"
+}
+
+status() {
+    current_device=$(uci -q get vulnzoo.state.current_device 2>/dev/null || echo "none")
+    if [ "$current_device" != "none" ] && [ -n "$current_device" ]; then
+        echo "VulnZoo is running - Active device: $current_device"
+    else
+        echo "VulnZoo is running - No active device"
+    fi
+    
+    # Show available profiles
+    if [ -d "$DEVICES_DIR" ]; then
+        echo "Available device profiles:"
+        ls -1 "$DEVICES_DIR"/*.tar.gz 2>/dev/null | sed 's|.*/||; s|\.tar\.gz$||' | sed 's/^/  - /'
+    fi
+}

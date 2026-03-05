@@ -1,0 +1,7 @@
+<h2>VulnZoo: Restaurar sistema</h2>
+<p>Pulse el botón para restaurar el sistema a su estado inicial. Esto ejecutará <code>firstboot -y</code> y luego reiniciará el dispositivo.</p>
+
+<form method="post" action="" onsubmit="return confirm('¿Seguro que desea restaurar el sistema? Esto borrará la configuración actual.');">
+  <input type="hidden" name="do_reset" value="1" />
+  <button class="cbi-button cbi-button-positive" type="submit">Restaurar sistema (firstboot)</button>
+</form>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Messages Inbox - VulnZoo</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/cameras.css">
+    <link  rel="stylesheet" href="/static/style/messages.css">
+</head>
+<body>
+    <nav class="topbar">
+        <div class="topbar-logo">
+            <a href="/">
+                <img src="/static/favicon.ico" alt="VulnZoo Logo" class="logo-img">
+            </a>
+        </div>
+        <ul class="topbar-menu left">
+            <li><a href="/cameras" id="cameras-link">Cameras</a></li>
+            <li><a href="/support" id="support-link">Support</a></li>
+        </ul>
+        <div class="topbar-menu right">
+            <div class="profile-dropdown">
+                <span class="welcome-msg">Welcome <span id="profile-username"></span>!</span>
+                <button class="profile-btn" id="profile-dropdown-btn">👤 Profile ▼</button>
+                <div class="profile-dropdown-content" id="profile-dropdown-content">
+                    <a href="/profile" id="profile-link">Profile</a>
+                    <a href="#" id="logout-link">Log Out</a>
+                    <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">🌙 / ☀️</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <div class="panel">
+        <div class="header">
+            <h1>📬 Messages Inbox</h1>
+            <div class="header-actions">
+                <button class="refresh-btn" onclick="loadMessages()">🔄 Refresh</button>
+                <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">🌙 / ☀️</button>
+            </div>
+        </div>
+        <div id="errorContainer"></div>
+        <div id="successContainer"></div>
+
+        <!-- NUEVO: Formulario para enviar mensajes -->
+        <div class="send-message-section" id="sendMessageSection">
+            <h2>Send a Message</h2>
+            <form id="sendMessageForm" class="send-message-form">
+                <input type="text" id="recipientInput" class="filter-input" placeholder="Recipient username" required />
+                <input type="text" id="subjectInput" class="filter-input" placeholder="Subject (optional)" maxlength="200" />
+                <textarea id="bodyInput" class="filter-input" placeholder="Message body" rows="4" required maxlength="5000"></textarea>
+                <button type="submit" class="refresh-btn" style="align-self:flex-start;">Send</button>
+            </form>
+            <div id="sendMessageError" class="error" style="display:none;"></div>
+            <div id="sendMessageSuccess" class="success" style="display:none;"></div>
+        </div>
+        
+        <div class="loading" id="loadingIndicator">Loading messages...</div>
+        <div class="msg-list" id="messagesList" style="display:none;"></div>
+        <div class="reader" id="readerPanel">
+            <div class="reader-title" id="readerTitle"></div>
+            <div class="reader-sender" id="readerSender"></div>
+            <div class="reader-body" id="readerBody"></div>
+            <div class="reader-actions">
+                <button class="back-to-list-btn" onclick="closeMessage()">← Back to list</button>
+                <button class="delete-current-btn" onclick="deleteCurrentMessage()">🗑️ Delete</button>
+            </div>
+        </div>
+        <a href="/cameras" class="back-link">← Back to Cameras</a>
+    </div>
+    <script src="/static/js/messages.js"></script>
+    <script src="/static/js/navbar.js"></script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title id="title-text">VulnZoo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <script src="/assets/js/vulnzoo.js"></script>
+</head>
+<body>
+    <div class="menu-icon" id="menu-icon" aria-label="Abrir menú" tabindex="0">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+    <nav class="side-menu" id="side-menu">
+        <a href="#" data-scroll="project-description">Description 📃</a>
+        <a href="/pages/devices.html">Devices 🐂</a>
+    </nav>
+    <div class="main-title-section">
+        <h1 class="main-title" id="main-title">VulnZoo</h1>
+        <img src="/assets/images/vulnzoo-removebg-preview.png" alt="VulnZoo Logo" class="main-title-img">
+    </div>
+    <section class="project-description" id="project-description">
+        <h2>Description</h2>
+        <p>
+            VulnZoo is a cybersecurity training platform that simulates vulnerable devices from different fields, inspired by OWASP projects such as <a href="https://github.com/OWASP/IoTGoat/" target="_blank" rel="noopener" class="hyperlink">IoTGoat</a>. The environment covers automotive, IoT, medical, network, and more devices, allowing users to explore and learn about real-world vulnerabilities in current systems.
+
+            The simulator runs on <a href="https://openwrt.org/" target="_blank" rel="noopener" class="hyperlink">OpenWRT</a>, a Linux-based firmware for embedded devices, and integrates a web service from which the features of each vulnerable device are managed. One of VulnZoo's main advantages is the ability to integrate multiple simulated devices into a single image, ensuring the compatibility and flexibility offered by OpenWRT.
+
+            The goal of VulnZoo is to provide a complete and realistic environment for product cybersecurity training and certification. Each lab includes typical vulnerabilities identified by OWASP, adapted to each type of device, allowing users to experience and learn both about exploitation and mitigation of security flaws.
+
+            To increase realism, some labs include several components, such as cloud APIs, mobile services, and interconnected devices, replicating complex and current scenarios. In addition, the source code is available so users can compile custom images, facilitating deployment on different architectures and promoting deep learning about configuration and security.
+
+            Each lab offers the option to apply secure configurations, allowing users to compare the vulnerable environment with a protected one and learn best practices to mitigate risks.
+        </p>
+        <div class="start-btn-container">
+            <a href="/pages/devices.html" class="start-btn">Start</a>
+        </div>
+    </section>
+    <footer>
+        <p><a href="https://github.com/d4str3k/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
+    </footer>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+        const el = document.getElementById("main-title");
+        const text = el.textContent;
+        el.textContent = "";
+        let i = 0;
+        function type() {
+            if (i < text.length) {
+            el.textContent += text.charAt(i);
+            i++;
+            setTimeout(type, 290);
+            }
+        }
+        type();
+        });
+    </script>
+    <script>
+        const menuIcon = document.getElementById('menu-icon');
+        const sideMenu = document.getElementById('side-menu');
+
+        function openMenu() {
+        sideMenu.classList.add('open');
+        }
+        function closeMenu() {
+        sideMenu.classList.remove('open');
+        }
+
+        menuIcon.addEventListener('mouseenter', openMenu);
+        sideMenu.addEventListener('mouseleave', closeMenu);
+        sideMenu.addEventListener('mouseenter', openMenu);
+        menuIcon.addEventListener('mouseleave', function(e) {
+        if (!sideMenu.matches(':hover')) closeMenu();
+        });
+    </script>
+    <script>
+        document.querySelectorAll('a[data-scroll]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('data-scroll');
+            const target = document.getElementById(targetId);
+            if (target) {
+            target.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+        });
+    </script>
+</body>
+</html>

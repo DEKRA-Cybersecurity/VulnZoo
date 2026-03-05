@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel - VulnZoo</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h2 class="panel-title">Administration Panel</h2>
+        
+        <nav class="admin-menu">
+            <ul>
+                <li><a href="/admin/users" class="btn" id="menu-users">Delete Users</a></li>
+                <li><a href="/admin/roles" class="btn" id="menu-roles">Role Management</a></li>
+                <li><a href="/admin/cameras" class="btn" id="menu-cameras">Camera Management</a></li>
+                <li><a href="/admin/logs" class="btn" id="menu-logs">View Logs</a></li>
+            </ul>
+        </nav>
+
+        <div id="main-content"></div>
+        
+        <a href="/cameras" class="back-link">← Back to Cameras</a>
+        
+        <div id="debug-info" style="display: none;">
+            <strong>Debug Info:</strong>
+            <div id="debug-token-info"></div>
+        </div>
+    </div>
+    
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+#!/bin/sh /etc/rc.common
+START=98
+DEPENDS=virtual-cameras
+
+start() {
+    [ -f /etc/cam_device.env ] && . /etc/cam_device.env
+    
+    # Limpiar procesos anteriores
+    killall -q v4l2rtspserver 2>/dev/null
+    sleep 1
+    
+    # Limpiar y recrear archivo de PIDs
+    rm -f /var/run/v4l2rtspserver.pid
+    touch /var/run/v4l2rtspserver.pid
+    
+    # Esperar a que los dispositivos estén listos
+    sleep 3
+    
+    # Usar formato MJPEG que es mejor soportado por v4l2rtspserver
+    # Nota: Los argumentos deben ir ANTES del dispositivo
+    v4l2rtspserver -P 8554 -u cam0 -W 640 -H 480 -F 25 /dev/video0 > /var/log/v4l2rtspserver_cam0.log 2>&1 &
+    echo $! >> /var/run/v4l2rtspserver.pid
+    
+    v4l2rtspserver -P 8555 -u cam1 -W 640 -H 480 -F 25 /dev/video1 > /var/log/v4l2rtspserver_cam1.log 2>&1 &
+    echo $! >> /var/run/v4l2rtspserver.pid
+    
+    v4l2rtspserver -P 8556 -u cam2 -W 640 -H 480 -F 25 /dev/video2 > /var/log/v4l2rtspserver_cam2.log 2>&1 &
+    echo $! >> /var/run/v4l2rtspserver.pid
+    
+    # Verificar que se iniciaron correctamente
+    sleep 1
+    if ! pgrep -f "v4l2rtspserver" > /dev/null; then
+        echo "ERROR: v4l2rtspserver no se inició correctamente" >&2
+        return 1
+    fi
+}
+
+stop() {
+    # Matar por PID primero
+    if [ -f /var/run/v4l2rtspserver.pid ]; then
+        while read pid; do
+            [ -n "$pid" ] && kill -15 "$pid" 2>/dev/null
+        done < /var/run/v4l2rtspserver.pid
+        sleep 1
+    fi
+    
+    # Forzar cierre si aún quedan procesos
+    killall -9 v4l2rtspserver 2>/dev/null
+    
+    # Limpiar archivo de PIDs
+    rm -f /var/run/v4l2rtspserver.pid
+    
+    # Esperar a que los puertos se liberen
+    sleep 2
+}
+
+restart() {
+    stop
+    sleep 2
+    start
+}

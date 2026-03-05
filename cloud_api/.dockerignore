@@ -1,0 +1,44 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Database and disk images
+*.db
+*.sqlite3
+*.img
+
+# Logs and temporary files
+*.log
+*.bak
+*.swp
+*.swo
+tmp/
+.cache/
+
+# System files
+.DS_Store
+
+# Environment and config files
+.env
+
+# VCS and editor folders
+.git/
+.gitignore
+.vscode/
+
+# Node modules (if any)
+node_modules/
+
+# Docker and compose files (not needed inside image)
+Dockerfile
+docker-compose.yml
+set_mongo_volume.sh
+
+# Attack/test scripts (not needed in production image)
+dos_attack.py
+rudy_attack.py
+
+# (Opcional) Herramientas de administración y simuladores si no son necesarias en producción
+tools/admin_xss_simulator.py

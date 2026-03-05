@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Support Requests</title>
+</head>
+<body>
+    <h1>Support Requests</h1>
+    {% for req in support_requests %}
+        <div>
+            <strong>{{ req.username }}</strong>: 
+            <span>{% autoescape false %}{{ req.message }}{% endautoescape %}</span>
+        </div>
+    {% endfor %}
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Dependencias mínimas para futura API
+flask
+pymongo
+flask-pymongo
+pycryptodome
+opencv-python-headless
+bcrypt
+cryptography
+werkzeug
+PyJWT==2.8.0
+beautifulsoup4
+requests
+selenium
+websockets

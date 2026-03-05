@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Engineering Diagnostic Access</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/style/c2_login.css">
+    <script defer src="/static/js/c2_login.js"></script>
+</head>
+<body>
+    <div class="login-box">
+        <h2>🔧 Engineering Diagnostic Access</h2>
+        <div class="subtitle">Authorized Personnel Only</div>
+        
+        {% if error %}
+            <div class="error">Authentication required</div>
+        {% endif %}
+
+        <form id="authForm">
+            <input type="password" name="auth" id="authInput" placeholder="Enter Access Code" required autofocus>
+            <br>
+            <button type="submit">Authenticate</button>
+        </form>
+        <div id="errorMsg" class="error" style="display:none;"></div>
+        
+        <div class="hint">Secure Connection • Diagnostic Protocol v2.4</div>
+    </div>
+</body>
+</html>

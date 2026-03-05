@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VulnZoo - Administration Panel</title>
+    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <div id="navbar">
+        <div id="logo">
+            <img src="/assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+            <a href="/index.html" style="text-decoration: none;"><h1>VulnZoo</h1></a>
+        </div>
+        <div id="nav-menus">
+            <a href="/index.html" class="nav-link">Home</a>
+            <a href="/pages/devices.html" class="nav-link">Devices</a>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div id="current-device">
+            <h2>Current Device: <span id="active-device">None</span></h2>
+            <span id="device-status" class="status stopped">Stopped</span>
+        </div>
+
+        <div id="admin-panel">
+            <h2>Administration Panel</h2>
+            <button class="btn" onclick="stopCurrentDevice()">Stop Current Device</button>
+            <button class="btn" onclick="restartServices()">Restart Services</button>
+            <button class="btn" onclick="showLogs()">View Logs</button>
+            <div id="device-link-container"></div>
+        </div>
+
+        <div id="logs" style="display:none; margin-top: 20px;">
+            <h3>System Logs</h3>
+            <textarea id="log-content" rows="15" cols="80" readonly="readonly"></textarea>
+        </div>
+    </div>
+
+    <footer>
+        <p><a href="https://github.com/d4str3k/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
+    </footer>
+
+    <script src="/assets/js/vulnzoo.js"></script>
+    <script src="/assets/js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+config dropbear
+	option Interface 'lan'
+	option PasswordAuth 'on'
+	option RootPasswordAuth 'on'
+	option Port '22'
+	# option BannerFile '/etc/banner'
+	option MaxAuthTries '3'
+	option RecvWindowSize '1048576'
+	option SendWindowSize '1048576'
+	
+	# Security settings for management
+	# option IdleTimeout '300'
+	option enable '1'

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../static/favicon.ico">
+    <title>VulnZoo - Camera Snapshot</title>
+    <link rel="stylesheet" href="/static/style/cameras.css">
+    <link rel="stylesheet" href="/static/style/snapshot.css">
+</head>
+<body>
+    <button id="theme-toggle" class="theme-toggle-btn" style="position: absolute; top: 24px; right: 24px;" title="Toggle dark mode">🌙 / ☀️</button>
+    <div class="snapshot-container">
+        <div class="snapshot-card">
+            <div class="snapshot-header">
+                <h2>🎥 VulnZoo Security Camera</h2>
+                <div class="status" id="status">Connecting to the camera...</div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn btn-refresh" id="captureBtn">
+                    📷 Capture
+                </button>
+                <button class="btn btn-auto" id="autoBtn">
+                    ▶️ Auto Refresh
+                </button>
+                <button class="btn btn-stop" id="stopBtn">
+                    ⏹️ Stop
+                </button>
+                <button class="btn btn-back" id="backBtn">
+                    ⬅️ Go Back
+                </button>
+            </div>
+            
+            <div id="snapshot-wrapper">
+                <div id="loading-overlay" class="loading-overlay">
+                    <div class="spinner"></div>
+                    <p>Loading snapshot...</p>
+                </div>
+                <img id="snapshot" src="" alt="Camera Snapshot" style="display: none;" />
+                <div id="error-message" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/js/snapshot.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Camera Management - Admin Panel</title>
+    <link rel="icon" type="image/png" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h2>Camera Management</h2>
+        <div id="admin-content">
+            <!-- JS insertará aquí la gestión de cámaras -->
+        </div>
+        <a href="/admin" class="back-link">← Back to Admin Menu</a>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const contentDiv = document.getElementById('admin-content');
+            async function loadCameras() {
+                contentDiv.innerHTML = '<h3>Gestión de cámaras</h3><div>Cargando cámaras...</div>';
+                const token = localStorage.getItem('auth');
+                const response = await fetch('/cameras', {
+                    method: 'POST',
+                    headers: { 'X-Auth-Token': token }
+                });
+                const data = await response.json();
+                if (!data.cameras) {
+                    contentDiv.innerHTML += '<div class="error">No se pudieron cargar las cámaras.</div>';
+                    return;
+                }
+                let html = '<ul>';
+                data.cameras.forEach(cam => {
+                    html += `<li>
+                        <strong>${cam.name}</strong> - Estado: ${cam.active ? 'Activo' : 'Inactivo'}
+                    </li>`;
+                });
+                html += '</ul>';
+                contentDiv.innerHTML = html;
+            }
+            loadCameras();
+        });
+    </script>
+</body>
+</html>

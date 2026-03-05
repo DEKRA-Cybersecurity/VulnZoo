@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>C2 Control Panel - SSE</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <link rel="stylesheet" href="/static/style/panel.css" />
+    <script src="/static/js/panel.js"></script>
+</head>
+<body>
+    <div id="login-overlay">
+        <div id="login-box">
+            <h2>C2 Panel Login</h2>
+            <input type="password" id="password" placeholder="Enter password" autofocus>
+            <button onclick="doLogin()">Login</button>
+        </div>
+    </div>
+
+    <div id="header">
+        <h1>🔴 C2 Control Panel (SSE/HTTP)</h1>
+        <div id="status">
+            <span id="status-text">Disconnected</span>
+            <div class="status-indicator" id="status-indicator"></div>
+            <button onclick="toggleLogs()">Logs</button>
+            <button onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div id="main">
+        <div id="sidebar">
+            <div id="controls">
+                <button onclick="refreshSessions()">Refresh</button>
+                <button onclick="detachSession()">Detach</button>
+            </div>
+            <div id="sessions-list">
+                <p style="opacity: 0.6;">No active sessions</p>
+            </div>
+        </div>
+        <div id="terminal-container"></div>
+    </div>
+
+    <div id="logs-panel">
+        <div id="logs-content"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="/static/js/panel.js"></script>
+</body>
+</html>

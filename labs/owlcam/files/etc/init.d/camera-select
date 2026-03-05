@@ -1,0 +1,22 @@
+#!/bin/sh
+START=99
+
+# Detecta dispositivos de vídeo reales (excluye v4l2loopback)
+for dev in /dev/video*; do
+    # Obtiene información del dispositivo
+    info=$(v4l2-ctl --device="$dev" --all 2>/dev/null)
+    # Si no es v4l2loopback y tiene driver 'uvcvideo' (típico USB)
+    if echo "$info" | grep -q "Driver name.*uvcvideo"; then
+        echo "CAM_DEVICE=$dev" > /etc/cam_device.env
+        export CAM="$dev"
+        echo "VIDEO_LOOPBACK=0" >> /etc/cam_device.env
+        break
+    fi
+done
+
+if [ -z "$CAM" ]; then
+    echo "No real cammera found."
+	echo "CAM_DEVICE=/dev/video3" > /etc/cam_device.env
+    echo "VIDEO_LOOPBACK=1" >> /etc/cam_device.env
+    exit 1
+fi

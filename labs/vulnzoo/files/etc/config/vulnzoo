@@ -1,0 +1,22 @@
+# VulnZoo Device Manager UCI Configuration
+
+config section 'state'
+	option current_device 'none'
+	option loaded_timestamp ''
+
+config section 'hooks'
+	# Idempotent hooks execution tracking
+	# Format: devicename_hookname = timestamp
+
+config section 'cloud'
+	option enabled '1'
+	option control_plane_ip '192.168.2.1'
+	option device_ip '192.168.2.100'
+	option api_port '8080'
+	option log_level 'info'
+	option auto_register '1'
+	option poll_interval '10'
+
+config section 'firmware'
+	option version '1.0.3'
+	option installed_timestamp '2025-11-14T12:34:56'	

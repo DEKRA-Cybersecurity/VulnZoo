@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VulnZoo - Surveillance Camera</title>
+    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <div id="navbar">
+        <div id="logo">
+            <img src="/assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+            <a href="/index.html" style="text-decoration: none;"><h1>VulnZoo</h1></a>
+        </div>
+        <div id="nav-menus">
+              <a href="/index.html" class="nav-link">Home</a>
+              <a href="/pages/devices.html" class="nav-link">Devices</a>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div class="content-section">
+            <h2>Device Status</h2>
+            <p>Current status: <span id="device-status" class="status stopped">Stopped</span></p>
+            <p>Active device: <span id="active-device">None</span></p>
+        </div>
+
+        <div class="content-section">
+            <h2>OwlCam Control</h2>
+            <button class="btn" onclick="loadDevice('owlcam')" style="margin-right: 10px;">Load OwlCam</button>
+            <button class="btn" onclick="stopCurrentDevice()" style="margin-right: 10px;">Stop Device</button>
+            <a href="admin.html" class="btn" style="margin-right: 10px; text-decoration: none; display: inline-block; vertical-align: top;">VulnZoo Admin</a>
+            <button class="btn" onclick="openDeviceInterface('owlcam')" style="margin-right: 10px;" id="owlcam-interface-btn" disabled>OwlCam Interface</button>
+        </div>
+        
+        <div class="content-section">
+            <h2>What is this environment?</h2>
+                <p>
+                    OwlCam is a simulation environment designed for security analysis in enterprise video surveillance services. The lab reproduces the operation of a private security company, where each user has access to their own set of cameras through a dedicated API and a mobile application. The system includes multiple clients and an administrator with elevated privileges.
+                </p>
+                <p>
+                    The goal of the lab is for users to identify and exploit vulnerabilities in authentication management, access control, and domain segregation. If the service is successfully compromised, it is possible to access data and cameras outside the user's legitimate domain, demonstrating risks such as exposure of sensitive information, privilege escalation, and unauthorized access.
+                </p>
+                <p>
+                    OwlCam allows you to practice pentesting techniques on APIs and mobile applications, analyze the architecture of video surveillance services, and understand the most relevant attack vectors in these types of environments.
+                </p>
+        </div>
+        
+        <div class="content-section">
+            <h2>Simulator Link</h2>
+            <p>
+                Access the vulnerable device simulator at <a href="/index.html">VulnZoo - Device Simulator</a>.
+            </p>
+        </div>
+    </div>
+    <footer>
+        <p><a href="https://github.com/d4str3k/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
+    </footer>
+
+    <script src="/assets/js/vulnzoo.js"></script>
+</body>
+</html>

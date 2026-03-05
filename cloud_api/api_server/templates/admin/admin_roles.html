@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Assign Roles - Admin Panel</title>
+    <link rel="icon" type="image/png" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h2 class="panel-title">Assign Roles</h2>
+        <div id="admin-content">
+            <form id="role-form">
+                <div class="form-group">
+                    <label for="user-search">User:</label>
+                    <div class="autocomplete-container">
+                        <input type="text" id="user-search" name="user" autocomplete="off" placeholder="Type username..." />
+                        <ul id="user-suggestions"></ul>
+                    </div>
+                </div>
+                <div id="user-result" class="result-message"></div>
+                <div class="form-group">
+                    <label for="role-select">New role:</label>
+                    <select name="role" id="role-select">
+                        <option value="user">User</option>
+                        <option value="viewer">Viewer</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary" disabled>Update role</button>
+            </form>
+            <div id="role-result" class="result-message"></div>
+        </div>
+        <a href="/admin" class="back-link">← Back to Admin Menu</a>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const userInput = document.getElementById('user-search');
+            const suggestionsList = document.getElementById('user-suggestions');
+            const userResult = document.getElementById('user-result');
+            const updateBtn = document.querySelector('#role-form button[type="submit"]');
+            const token = localStorage.getItem('auth');
+            let selectedUser = null;
+
+            userInput.addEventListener('input', async function () {
+                const query = userInput.value.trim();
+                updateBtn.disabled = true;
+                userResult.innerHTML = '';
+                selectedUser = null;
+                if (query.length < 2) {
+                    suggestionsList.innerHTML = '';
+                    return;
+                }
+                const resp = await fetch(`/admin/users/search?query=${encodeURIComponent(query)}`, {
+                    headers: { 'X-Auth-Token': token }
+                });
+                const data = await resp.json();
+                if (!data.users || data.users.length === 0) {
+                    suggestionsList.innerHTML = '<li>No users found</li>';
+                    return;
+                }
+                suggestionsList.innerHTML = data.users.map(u =>
+                    `<li data-username="${u.username}" data-role="${u.role}">${u.username} (${u.role})</li>`
+                ).join('');
+            });
+
+            suggestionsList.addEventListener('click', function (e) {
+                if (e.target.dataset.username) {
+                    userInput.value = e.target.dataset.username;
+                    selectedUser = e.target.dataset.username;
+                    suggestionsList.innerHTML = '';
+                    userResult.innerHTML = `<strong>Username:</strong> ${e.target.dataset.username}<br>
+                                            <strong>Role:</strong> ${e.target.dataset.role}`;
+                    updateBtn.disabled = false;
+                }
+            });
+
+            // Permitir selección por Enter
+            userInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && suggestionsList.children.length > 0) {
+                    const firstSuggestion = suggestionsList.children[0];
+                    if (firstSuggestion.dataset.username) {
+                        userInput.value = firstSuggestion.dataset.username;
+                        selectedUser = firstSuggestion.dataset.username;
+                        suggestionsList.innerHTML = '';
+                        userResult.innerHTML = `<strong>Username:</strong> ${firstSuggestion.dataset.username}<br>
+                                                <strong>Role:</strong> ${firstSuggestion.dataset.role}`;
+                        updateBtn.disabled = false;
+                        e.preventDefault();
+                    }
+                }
+            });
+
+            // Hide suggestions when clicking outside
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.autocomplete-container')) {
+                    suggestionsList.innerHTML = '';
+                }
+            });
+
+            // Form submit logic
+            document.getElementById('role-form').onsubmit = async function (e) {
+                e.preventDefault();
+                if (!selectedUser) return;
+                const formData = new FormData(e.target);
+                const resp = await fetch('/admin/roles', {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-Auth-Token': token }
+                });
+                const result = await resp.text();
+                document.getElementById('role-result').innerHTML = result;
+                userInput.value = '';
+                updateBtn.disabled = true;
+                userResult.innerHTML = '';
+                selectedUser = null;
+            };
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../static/favicon.ico">
+    <title>VulnZoo - Register</title>
+    <link rel="stylesheet" href="/static/style/login.css">
+</head>
+<body>
+    <button id="theme-toggle" class="theme-toggle-btn" style="position: absolute; top: 24px; right: 24px;" title="Toggle dark mode">🌙 / ☀️</button>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h2>Create Account</h2>
+                <p>Join VulnZoo security platform</p>
+            </div>
+
+            <form class="auth-form" id="registerForm" novalidate>
+                <div class="form-group">
+                    <div class="input-wrapper">
+                        <input type="text" id="username" name="username" required autocomplete="username">
+                        <label for="username">Username</label>
+                    </div>
+                    <span class="error-message" id="usernameError"></span>
+                </div>
+
+                <div class="form-group">
+                    <div class="input-wrapper">
+                        <input type="password" id="password" name="password" required autocomplete="new-password">
+                        <label for="password">Password</label>
+                        <button type="button" class="password-toggle" id="passwordToggle" aria-label="Toggle password visibility">
+                            <span class="toggle-icon"></span>
+                        </button>
+                    </div>
+                    <span class="error-message" id="passwordError"></span>
+                </div>
+
+                <div class="form-group">
+                    <div class="input-wrapper">
+                        <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
+                        <label for="confirmPassword">Confirm Password</label>
+                        <button type="button" class="password-toggle" id="confirmPasswordToggle" aria-label="Toggle password visibility">
+                            <span class="toggle-icon"></span>
+                        </button>
+                    </div>
+                    <span class="error-message" id="confirmPasswordError"></span>
+                </div>
+
+                <button type="submit" class="auth-btn">
+                    <span class="btn-text">Create Account</span>
+                    <span class="btn-loader"></span>
+                </button>
+            </form>
+
+            <div class="signup-link">
+                <p>Already have an account? <a href="/login">Sign in here</a></p>
+            </div>
+
+            <div class="success-message" id="successMessage">
+                <div class="success-icon">✓</div>
+                <h3>Account created!</h3>
+                <p>Redirecting to login...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/register.js"></script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Modify Support Request</title>
+    <link rel="stylesheet" href="/static/style/support.css">
+</head>
+<body>
+    <div class="panel">
+        <h2>Modify Support Request</h2>
+        <form id="modify-form" enctype="multipart/form-data">
+            <input type="hidden" id="ticket_id" name="ticket_id" value="">
+            <div class="form-group">
+                <label for="file">Attach a file (JPG, JPEG, PNG, PDF):</label>
+                <input type="file" id="file" name="file" accept=".jpg,.jpeg,.png,.pdf" required>
+            </div>
+            <div class="form-group">
+                <label for="comment">Add an optional comment if needed:</label>
+                <textarea id="comment" name="comment" rows="4" placeholder="Write your comment here..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload File</button>
+        </form>
+        <div id="result"></div>
+        <a href="/messages" class="back-link">← Back to Messages</a>
+    </div>
+    <script>
+        // Get ticket_id from URL
+        const params = new URLSearchParams(window.location.search);
+        document.getElementById('ticket_id').value = params.get('ticket_id') || '';
+
+        document.getElementById('modify-form').onsubmit = async function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('file');
+            const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+            if (fileInput.files.length > 0 && !allowedTypes.includes(fileInput.files[0].type)) {
+                document.getElementById('result').textContent = "Invalid file type. Only JPG, JPEG, PNG, and PDF are allowed.";
+                return;
+            }
+            const formData = new FormData(e.target);
+            const token = localStorage.getItem('auth');
+            const resp = await fetch('/api/support/modify', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Auth-Token': token }
+            });
+            const data = await resp.json();
+            let html = '';
+            html += `<div>${data.message || data.error}</div>`;
+            if (data.processing_results && Array.isArray(data.processing_results)) {
+                html += `<h3>File Processing Results:</h3><ul>`;
+                data.processing_results.forEach(res => {
+                    if (res.status) {
+                        html += `<li>URL: <code>${res.src}</code> → Status: ${res.status}</li>`;
+                    } else if (res.error) {
+                        html += `<li>URL: <code>${res.src}</code> → Error: ${res.error}</li>`;
+                    }
+                });
+                html += `</ul>`;
+            }
+            document.getElementById('result').innerHTML = html;
+        };
+    </script>
+</body>
+</html>

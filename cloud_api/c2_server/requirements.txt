@@ -1,0 +1,5 @@
+flask
+pymongo
+werkzeug
+requests
+argon2-cffi
