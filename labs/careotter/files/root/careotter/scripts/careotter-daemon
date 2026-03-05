@@ -1,0 +1,128 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          careotter
+# Required-Start:    $local_fs $remote_fs $network
+# Required-Stop:     $local_fs $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: CareOtter Cardiac Monitor
+# Description:       OpenWRT/RPi cardiac monitoring daemon
+### END INIT INFO
+
+NAME="careotter"
+DESC="CareOtter Cardiac Monitor"
+DAEMON="/root/careotter/main.py"
+PIDFILE="/var/run/$NAME.pid"
+LOGFILE="/root/careotter/data/careotter.log"
+LOGDIR="$(dirname $LOGFILE)"
+
+# Ensure log directory exists
+mkdir -p "$LOGDIR" 2>/dev/null
+
+case "$1" in
+  start)
+    echo "Starting $DESC..."
+    python3 "$DAEMON" >> "$LOGFILE" 2>&1 &
+    PID=$!
+    echo $PID > "$PIDFILE"
+    echo "$DESC started (PID: $PID)"
+    sleep 1
+    
+    # Verify process is running
+    if ps -p "$PID" > /dev/null 2>&1; then
+      echo "[$DESC] Process confirmed running"
+      exit 0
+    else
+      echo "[-] $DESC failed to start"
+      rm -f "$PIDFILE"
+      exit 1
+    fi
+    ;;
+    
+  stop)
+    echo "Stopping $DESC..."
+    if [ -f "$PIDFILE" ]; then
+      PID=$(cat "$PIDFILE")
+      if ps -p "$PID" > /dev/null 2>&1; then
+        kill "$PID" 2>/dev/null
+        
+        # Wait for graceful shutdown (up to 5 seconds)
+        count=0
+        while ps -p "$PID" > /dev/null 2>&1 && [ $count -lt 5 ]; do
+          sleep 1
+          count=$((count + 1))
+        done
+        
+        # Force kill if still running
+        if ps -p "$PID" > /dev/null 2>&1; then
+          kill -9 "$PID" 2>/dev/null || true
+          echo "[-] $DESC killed forcefully"
+        else
+          echo "[+] $DESC stopped gracefully"
+        fi
+      fi
+      rm -f "$PIDFILE"
+    fi
+    echo "$DESC stopped"
+    exit 0
+    ;;
+    
+  restart)
+    echo "Restarting $DESC..."
+    $0 stop
+    sleep 2
+    $0 start
+    exit $?
+    ;;
+    
+  status)
+    if [ -f "$PIDFILE" ]; then
+      PID=$(cat "$PIDFILE")
+      if ps -p "$PID" > /dev/null 2>&1; then
+        echo "$DESC is running (PID: $PID)"
+        exit 0
+      else
+        echo "$DESC is not running (stale PID file: $PIDFILE)"
+        rm -f "$PIDFILE"
+        exit 1
+      fi
+    else
+      echo "$DESC is not running"
+      exit 1
+    fi
+    ;;
+    
+  enable)
+    echo "Enabling $DESC..."
+    
+    if [ -d /etc/rc.d ]; then
+      # OpenWRT style (procd)
+      update-rc.d "$NAME" defaults 2>/dev/null || true
+      echo "$DESC enabled"
+    elif [ -d /etc/init.d ]; then
+      # Debian/Ubuntu style
+      update-rc.d "$NAME" defaults 2>/dev/null || true
+      echo "$DESC enabled"
+    else
+      echo "[-] Cannot enable: no init.d directory found"
+      exit 1
+    fi
+    ;;
+    
+  disable)
+    echo "Disabling $DESC..."
+    
+    if command -v update-rc.d >/dev/null 2>&1; then
+      update-rc.d "$NAME" remove 2>/dev/null || true
+    fi
+    
+    echo "$DESC disabled"
+    ;;
+    
+  *)
+    echo "Usage: $0 {start|stop|restart|status|enable|disable}"
+    exit 1
+    ;;
+esac
+
+exit 0

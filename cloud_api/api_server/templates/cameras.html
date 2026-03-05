@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../static/favicon.ico">
+    <title>VulnZoo - Camera Feeds</title>
+    <link rel="stylesheet" href="/static/style/cameras.css">
+</head>
+<body>
+    <nav class="topbar">
+        <div class="topbar-logo">
+            <a href="/">
+                <img src="/static/favicon.ico" alt="VulnZoo Logo" class="logo-img">
+            </a>
+        </div>
+        <ul class="topbar-menu left">
+            <li><a href="#" id="messages-link">Messages</a></li>
+            <li><a href="#" id="support-link">Support</a></li>
+        </ul>
+        <div class="topbar-menu right">
+            <div class="profile-dropdown">
+                <span class="welcome-msg">Welcome <span id="profile-username"></span>!</span>
+                <button class="profile-btn" id="profile-dropdown-btn">👤 Profile ▼</button>
+                <div class="profile-dropdown-content" id="profile-dropdown-content">
+                    <a href="/profile" id="profile-link">Profile</a>
+                    <a href="#" id="logout-link">Log Out</a>
+                    <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">🌙 / ☀️</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <div class="main-content">
+        <div class="cameras-container">
+            <div class="cameras-card">
+                <div class="cameras-header">
+                    <h2>Camera Feeds</h2>
+                    <p>View and manage your available cameras</p>
+                </div>
+                <div class="info-box">
+                    <strong>ℹ️ Note:</strong> If you have 'viewer' permissions, click on a camera's "View Snapshot" button to see its live feed. 
+                    If you don't see any cameras listed, please contact support to request access.
+                </div>
+                <div id="loading-indicator" class="loading-indicator">
+                    <div class="spinner"></div>
+                    <p>Loading cameras...</p>
+                </div>
+                <div id="error-message" class="error-message" style="display: none;"></div>
+                <div id="cameras-list"></div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/cameras.js"></script>
+</body>
+</html>

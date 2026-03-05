@@ -1,0 +1,155 @@
+body {
+    margin: 0;
+    padding: 0;
+    background: #0a0e27;
+    color: #e0e6ed;
+    font-family: 'Courier New', monospace;
+}
+#header {
+    background: #1a237e;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+#header h1 {
+    margin: 0;
+    font-size: 18px;
+}
+#status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #f44336;
+}
+.status-indicator.online { background: #4caf50; }
+.status-indicator.connecting { background: #ff9800; animation: pulse 1s infinite; }
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+#main {
+    display: flex;
+    height: calc(100vh - 60px);
+}
+#sidebar {
+    width: 300px;
+    background: #0d1429;
+    border-right: 1px solid #1a237e;
+    padding: 15px;
+    overflow-y: auto;
+}
+#terminal-container {
+    flex: 1;
+    padding: 15px;
+    position: relative;
+}
+.session-item {
+    background: #1a237e;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-left: 4px solid #2196f3;
+}
+.session-item:hover {
+    background: #283593;
+}
+.session-item.active {
+    background: #4caf50;
+    border-left: 4px solid #8bc34a;
+}
+.session-id-small {
+    font-size: 10px;
+    opacity: 0.6;
+    font-family: monospace;
+    margin-top: 4px;
+}
+.session-model {
+    font-weight: bold;
+    font-size: 14px;
+}
+.session-ip {
+    font-size: 12px;
+    opacity: 0.8;
+}
+.session-time {
+    font-size: 11px;
+    opacity: 0.6;
+}
+#controls {
+    margin-bottom: 15px;
+}
+button {
+    background: #2196f3;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    margin-right: 5px;
+}
+button:hover {
+    background: #1976d2;
+}
+button:disabled {
+    background: #555;
+    cursor: not-allowed;
+}
+#login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+#login-box {
+    background: #1a237e;
+    padding: 30px;
+    border-radius: 8px;
+    width: 300px;
+}
+#login-box input {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #283593;
+    background: #0a0e27;
+    color: #e0e6ed;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+#logs-panel {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 400px;
+    height: 200px;
+    background: rgba(10, 14, 39, 0.95);
+    border: 1px solid #1a237e;
+    padding: 10px;
+    overflow-y: auto;
+    font-size: 11px;
+    display: none;
+}
+#logs-panel.visible {
+    display: block;
+}
+.log-entry {
+    margin-bottom: 3px;
+}
+.log-time {
+    color: #00bcd4;
+}

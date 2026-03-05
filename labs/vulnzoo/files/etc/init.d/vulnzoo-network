@@ -1,0 +1,48 @@
+#!/bin/sh /etc/rc.common
+
+# VulnZoo Network Configuration Service
+# Configures base network settings once
+
+START=10
+STOP=90
+
+USE_PROCD=0
+
+# Flag to check if network setup is already done
+NETWORK_SETUP_FLAG="/etc/vulnzoo-network-configured"
+
+start() {
+    # Only run network configuration if not already done
+    if [ ! -f "$NETWORK_SETUP_FLAG" ]; then
+        echo "Configuring VulnZoo base network settings..."
+        
+        # Configure LAN interface with static IP 192.168.2.1
+        uci set network.lan.proto='static'
+        uci set network.lan.ipaddr='192.168.2.1'
+        uci set network.lan.netmask='255.255.255.0'
+        uci commit network
+        
+        # Create flag to prevent re-execution
+        touch "$NETWORK_SETUP_FLAG"
+        
+        # Log the configuration
+        logger -t "vulnzoo-network" "LAN interface configured with IP 192.168.2.1"
+        
+        # Restart network to apply changes
+        /etc/init.d/network restart
+        
+        echo "VulnZoo network configuration completed"
+    else
+        echo "VulnZoo network already configured, skipping..."
+    fi
+}
+
+stop() {
+    # Network configuration doesn't need stop action
+    return 0
+}
+
+restart() {
+    # For network config, restart just ensures settings are applied
+    start
+}

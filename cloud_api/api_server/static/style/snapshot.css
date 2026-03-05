@@ -1,0 +1,275 @@
+.dark-mode input,
+.dark-mode textarea,
+.dark-mode select {
+    background: #23272b;
+    color: #e3e3e3;
+    border: 1.5px solid #333;
+    caret-color: #b0d6ff;
+}
+.dark-mode input::placeholder,
+.dark-mode textarea::placeholder {
+    color: #b0b0b0;
+}
+body.dark-mode {
+    background: #181a1b;
+    color: #e3e3e3;
+}
+
+.dark-mode .snapshot-card {
+    background: #23272b;
+    border-color: #222;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    color: #e3e3e3;
+}
+.dark-mode .snapshot-header h2 {
+    color: #e3e3e3;
+}
+.dark-mode .status {
+    background: #22252a;
+    color: #b0d6ff;
+}
+.dark-mode .controls .btn {
+    background: #2d3a4a;
+    color: #e3e3e3;
+}
+.dark-mode .controls .btn:hover {
+    background: #1a2533;
+}
+.dark-mode #snapshot-wrapper {
+    background: #23272b;
+    border-color: #222;
+}
+.dark-mode .loading-overlay {
+    background: rgba(24, 26, 27, 0.95);
+    color: #b0b0b0;
+}
+.dark-mode .error-message {
+    background: #3a1a1a;
+    border-color: #a33;
+    color: #ffb3b3;
+}
+.dark-mode .theme-toggle-btn {
+    background: #23272b;
+    color: #b0d6ff;
+    border: 1px solid #333;
+}
+/* VulnZoo Snapshot Viewer - Specific styles */
+
+.snapshot-container {
+    width: 100%;
+    max-width: 1300px;
+    margin: 0 auto;
+    font-size: 19px;
+}
+
+.snapshot-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 48px 40px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+}
+
+.snapshot-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.snapshot-header h2 {
+    color: #1a202c;
+    font-size: 2.3rem;
+    font-weight: 700;
+    margin: 0 0 20px 0;
+}
+
+.status {
+    color: #64748b;
+    font-size: 1.1em;
+    font-weight: 600;
+    padding: 12px 24px;
+    background: #f1f5f9;
+    border-radius: 8px;
+    display: inline-block;
+}
+
+.controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.btn {
+    border: none;
+    border-radius: 8px;
+    padding: 16px 28px;
+    font-size: 1.1em;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex: 1;
+    min-width: 160px;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-refresh {
+    background: #3b82f6;
+    color: #fff;
+}
+
+.btn-refresh:hover {
+    background: #2563eb;
+}
+
+.btn-auto {
+    background: #10b981;
+    color: #fff;
+}
+
+.btn-auto:hover {
+    background: #059669;
+}
+
+.btn-auto.active {
+    background: #dc2626;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+.btn-stop {
+    background: #ef4444;
+    color: #fff;
+}
+
+.btn-stop:hover {
+    background: #dc2626;
+}
+
+.btn-back {
+    background: #6b7280;
+    color: #fff;
+}
+
+.btn-back:hover {
+    background: #4b5563;
+}
+
+#snapshot-wrapper {
+    position: relative;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#snapshot {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+}
+
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-overlay p {
+    color: #64748b;
+    font-size: 14px;
+    margin: 0;
+}
+
+.error-message {
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+    padding: 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin: 20px;
+    text-align: center;
+    white-space: pre-line;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .snapshot-card {
+        padding: 20px;
+    }
+    
+    .snapshot-header h2 {
+        font-size: 1.5rem;
+    }
+    
+    .controls {
+        flex-direction: column;
+    }
+    
+    .btn {
+        min-width: 100%;
+    }
+    
+    #snapshot-wrapper {
+        min-height: 300px;
+    }
+}
+
+@media (max-width: 480px) {
+    .snapshot-card {
+        padding: 16px;
+    }
+    
+    .snapshot-header h2 {
+        font-size: 1.25rem;
+    }
+    
+    .controls {
+        gap: 8px;
+    }
+    
+    .btn {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+}

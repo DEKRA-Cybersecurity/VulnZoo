@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Administration Panel Access</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/admin.css">
+</head>
+<body>
+    <div class="admin-container" id="admin-access-container">
+        <h2 class="panel-title">Restricted</h2>
+        <p>To access the admin panel, you must be authenticated as an administrator.</p>
+        <div id="admin-message" class="result-message"></div>
+        <button id="validate-admin-btn" class="btn btn-primary">Validate Access</button>
+    </div>
+    <!-- New container for the panel -->
+    <div id="admin-panel-container" style="display:none;"></div>
+    <a href="/login" class="back-link">← Back to Login</a>
+    <script src="/static/js/admin_access.js"></script>
+</body>
+</html>

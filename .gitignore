@@ -1,0 +1,15 @@
+.DS_Store
+*.log
+__pycache__/
+*.pyc
+instance/
+.env
+venv/
+.env.*
+.vscode/
+docs/VulnZoo-Documentation/.obsidian/
+vulnzoo_app/.idea/
+vulnzoo_interface/
+openwrt_resources/routcoon/
+openwrt_resources/owlcam/
+openwrt_resources/careotter/

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Diagnostic Terminal</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <link rel="stylesheet" href="/static/style/c2_panel.css">
+    <script defer src="/static/js/c2_panel.js"></script>
+
+</head>
+<body>
+    <div id="header">
+        <h1>
+            <span>🔧</span>
+            <span>Diagnostic Terminal v2.4.1</span>
+        </h1>
+        <div id="session-controls">
+            <span id="connection-status" class="status offline">
+                <span class="status-dot"></span>
+                <span>Disconnected</span>
+            </span>
+            <select id="session-selector">
+                <option value="">-- Select device --</option>
+            </select>
+            <button id="attach-btn" onclick="attachSession()" disabled>Attach</button>
+            <button id="refresh-btn" onclick="refreshSessions()">↻ Refresh</button>
+            <button onclick="toggleLogs()" style="background:#2a3f5f;color:#e0e6ed;">📋 Logs</button>
+            <button onclick="logout()" style="background:#f44336;">Exit</button>
+        </div>
+    </div>
+    <div id="terminal-container"></div>
+    
+    <div id="logs-panel">
+        <div style="color:#00bcd4;margin-bottom:8px;font-weight:bold;">Connection Logs</div>
+        <div id="logs-content"></div>
+    </div>
+</body>
+</html>

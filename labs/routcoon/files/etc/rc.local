@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Iniciar simulación GPIO (descomentable si lo necesitas)
+# /usr/bin/gpio_attack.sh &
+
+rm -rf /tmp/luci-* 2>/dev/null
+
+exit 0

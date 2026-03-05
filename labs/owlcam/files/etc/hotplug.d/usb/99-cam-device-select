@@ -1,0 +1,4 @@
+#!/bin/sh
+/etc/init.d/camera-streamer stop
+/etc/init.d/camera-select
+/etc/init.d/camera-streamer start

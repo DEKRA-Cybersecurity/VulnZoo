@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>View Logs - Admin Panel</title>
+    <link rel="icon" type="image/png" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h2>View Logs</h2>
+        <div id="admin-content">
+            <!-- JS insertará aquí la visualización de logs -->
+        </div>
+        <a href="/admin" class="back-link">← Back to Admin Menu</a>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const contentDiv = document.getElementById('admin-content');
+            async function loadLogs(type = 'all') {
+                contentDiv.innerHTML = `<h3>Ver logs</h3><div>Cargando logs...</div>`;
+                const response = await fetch(`/api/system/logs?type=${type}&limit=20`);
+                const data = await response.json();
+                if (!data.logs) {
+                    contentDiv.innerHTML += '<div class="error">No se pudieron cargar los logs.</div>';
+                    return;
+                }
+                let html = `<div>
+                    <label>Filtrar por tipo:
+                        <select id="log-type">
+                            <option value="all">Todos</option>
+                            <option value="INFO">INFO</option>
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="WARN">WARN</option>
+                        </select>
+                    </label>
+                </div>
+                <ul>`;
+                data.logs.forEach(log => {
+                    html += `<li>
+                        <strong>[${log.level}]</strong> ${log.timestamp} - ${log.message} <em>(${log.module})</em>
+                    </li>`;
+                });
+                html += '</ul>';
+                contentDiv.innerHTML = html;
+                document.getElementById('log-type').onchange = function () {
+                    loadLogs(this.value);
+                };
+            }
+            loadLogs();
+        });
+    </script>
+</body>
+</html>

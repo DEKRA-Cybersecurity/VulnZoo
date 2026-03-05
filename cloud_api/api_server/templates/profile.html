@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>User Profile - VulnZoo</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/cameras.css">
+    <link rel="stylesheet" href="/static/style/profile.css">
+</head>
+<body>
+    <nav class="topbar">
+        <div class="topbar-logo">
+            <a href="/">
+                <img src="/static/favicon.ico" alt="VulnZoo Logo" class="logo-img">
+            </a>
+        </div>
+        <ul class="topbar-menu left">
+            <li><a href="/cameras" id="cameras-link">Cameras</a></li>
+            <li><a href="/messages" id="messages-link">Messages</a></li>
+            <li><a href="/support" id="support-link">Support</a></li>
+        </ul>
+        <div class="topbar-menu right">
+            <div class="profile-dropdown">
+                <span class="welcome-msg">Welcome <span id="profile-username"></span>!</span>
+                <button class="profile-btn" id="profile-dropdown-btn">👤 Profile ▼</button>
+                <div class="profile-dropdown-content" id="profile-dropdown-content">
+                    <a href="#" id="logout-link">Log Out</a>
+                    <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">🌙 / ☀️</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-content profile-main-content">
+        <div class="profile-panel">
+            <img src="/static/img/default-profile.png" alt="Profile picture" class="profile-img" id="profileImg">
+            <div class="profile-username" id="profileUsername"></div>
+            <h2>Change Password</h2>
+            <form class="profile-form" id="changePasswordForm">
+                <input type="password" id="currentPassword" placeholder="Current password" required>
+                <input type="password" id="newPassword" placeholder="New password" required>
+                <input type="password" id="confirmPassword" placeholder="Confirm new password" required>
+                <button type="submit">Change Password</button>
+            </form>
+            <div class="msg" id="changePasswordMsg"></div>
+
+            <h2>Delete Account</h2>
+            <form class="profile-form" id="deleteAccountForm">
+                <button type="submit" style="background:#c33;">Permanently Delete</button>
+            </form>
+            <div class="msg" id="deleteAccountMsg"></div>
+        </div>
+    </div>
+    <script src="/static/js/profile.js"></script>
+    <script src="/static/js/navbar.js"></script>
+</body>
+</html>

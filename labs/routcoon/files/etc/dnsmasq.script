@@ -1,0 +1,45 @@
+#!/bin/sh
+# Script vulnerable que se ejecuta con cada operación DHCP
+# ¡SE EJECUTA COMO ROOT!
+
+# Variables disponibles:
+# $1: add, old, del
+# $2: MAC address
+# $3: IP address
+# $4: hostname
+
+LOG_FILE="/tmp/dhcp_events.log"
+DEBUG_LOG="/tmp/dhcp_debug.log"
+
+# Log sin sanitización (peligroso si hay inyección)
+echo "$(date) - Evento: $1 | MAC: $2 | IP: $3 | Hostname: $4" >> $LOG_FILE
+
+# Ejemplo de lógica vulnerable
+if [ "$1" = "add" ]; then
+    # Agregar a lista de hosts activos
+    echo "$3 $4 # $2" >> /tmp/active_hosts.txt
+    
+    # Ejecutar comandos basados en hostname (¡PELIGROSO!)
+    # Si $4 contiene "; rm -rf /" podría causar daño
+    case "$4" in
+        "admin-pc")
+            echo "Host administrativo detectado" >> $DEBUG_LOG
+            ;;
+        "iot-device")
+            echo "Dispositivo IoT detectado" >> $DEBUG_LOG
+            # Podría ejecutar comandos adicionales aquí
+            ;;
+    esac
+fi
+
+# Permitir actualizaciones DNS dinámicas (sin validación)
+if [ -n "$3" ] && [ -n "$4" ]; then
+    # Agregar a archivo hosts temporal
+    echo "$3 $4" >> /tmp/dns_updates.txt
+    
+    # Notificar servicio (ejemplo peligroso)
+    # echo "update $4 $3" | nc localhost 9999 2>/dev/null
+fi
+
+# Sin manejo de errores ni validación de entrada
+exit 0

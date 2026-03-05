@@ -1,0 +1,19 @@
+#!/bin/sh /etc/rc.common
+
+START=90
+STOP=10
+
+start() {
+    echo "[+] Creating FTP directory"
+    mkdir -p /tmp/ftp
+    chmod 777 /tmp/ftp
+    chown anonymous:anonymous /tmp/ftp
+    echo "[+] Starting ftpd"
+    tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /tmp &
+}
+
+stop() {
+    echo "[+] Stopping ftpd"
+    killall tcpsvd
+    killall ftpd
+}

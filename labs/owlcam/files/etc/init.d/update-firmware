@@ -1,0 +1,30 @@
+#!/bin/sh
+# /etc/init.d/update-firmware
+URL="$1"
+if [ -z "$URL" ]; then
+    echo "Use: $0 <Firmware-URL>?file=<encrypted-firmware-file>"
+    exit 1
+fi
+
+SECRET="k3yVulnC4m"
+TIMESTAMP=$(date +%s)
+DEVICE_ID="cam3"
+DATA_TO_SIGN="${TIMESTAMP}${DEVICE_ID}"
+SIGNATURE=$(echo -n "$DATA_TO_SIGN" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+FIRMWARE_PATH="/tmp/update.enc"
+FIRMWARE_SIGNATURE='FIRMWARE_SIGNATURE: VulnZoo-2025-SECURE'
+
+curl -v "$URL" \
+    -H "X-Device: $DEVICE_ID" \
+    -H "X-Timestamp: $TIMESTAMP" \
+    -H "X-Signature: $SIGNATURE" \
+    -o "$FIRMWARE_PATH"
+
+if ! grep -q "$FIRMWARE_SIGNATURE" "$FIRMWARE_PATH"; then
+    echo "Firmware signature verification failed. Update aborted."
+    exit 1
+fi
+
+openssl enc -d -aes-256-cbc -in "$FIRMWARE_PATH" -out "/tmp/update.sh" -k 'supersecret'
+chmod +x /tmp/update.sh
+sh /tmp/update.sh

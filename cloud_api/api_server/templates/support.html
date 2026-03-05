@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../static/favicon.ico">
+    <title>VulnZoo - Support Contact</title>
+    <link rel="stylesheet" href="/static/style/cameras.css">
+    <link rel="stylesheet" href="/static/style/support.css">
+</head>
+<body>
+    <nav class="topbar">
+        <div class="topbar-logo">
+            <a href="/">
+                <img src="/static/favicon.ico" alt="VulnZoo Logo" class="logo-img">
+            </a>
+        </div>
+        <ul class="topbar-menu left">
+            <li><a href="/cameras" id="cameras-link">Cameras</a></li>
+            <li><a href="/messages" id="messages-link">Messages</a></li>
+        </ul>
+        <div class="topbar-menu right">
+            <div class="profile-dropdown">
+                <span class="welcome-msg">Welcome <span id="profile-username"></span>!</span>
+                <button class="profile-btn" id="profile-dropdown-btn">👤 Profile ▼</button>
+                <div class="profile-dropdown-content" id="profile-dropdown-content">
+                    <a href="/profile" id="profile-link">Profile</a>
+                    <a href="#" id="logout-link">Log Out</a>
+                    <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">🌙 / ☀️</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-content support-main-content">
+        <div class="support-container">
+            <div class="support-card">
+                <div class="support-header">
+                    <h2>📞 Contact System Administrator</h2>
+                    <p>Request camera access or report issues</p>
+                </div>
+                
+                <div class="info-box">
+                    <strong>ℹ️ Important:</strong> New users require approval to access camera feeds. 
+                    Your account currently has 'user' permissions. Please request 'viewer' access below by providing your information.
+                </div>
+
+                <!-- Success/Error messages -->
+                <div id="responseMessage" class="response-message" style="display: none;"></div>
+                
+                <form id="supportForm" class="support-form" novalidate>
+                    <div class="form-group">
+                        <label for="issue_type">Reason for Contact:</label>
+                        <select name="issue_type" id="issue_type" required>
+                            <option value="">Select an option...</option>
+                            <option value="camera_access">Request Camera Access (viewer permissions)</option>
+                            <option value="account_problem">Account Issue</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <span class="error-message" id="issue_typeError"></span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="username">Username to Validate:</label>
+                        <input type="text" name="username" id="username" placeholder="Enter your registered username" required>
+                        <small class="help-text">The username you registered with that needs viewer permissions</small>
+                        <span class="error-message" id="usernameError"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="message">Detailed Message:</label>
+                        <textarea name="message" id="message" rows="5" required 
+                            placeholder="Please describe your request. For camera access, explain why you need viewer permissions..."></textarea>
+                        <span class="error-message" id="messageError"></span>
+                    </div>
+                    
+                    <button type="submit" class="auth-btn">
+                        <span class="btn-text">📤 Send Support Request</span>
+                        <span class="btn-loader"></span>
+                    </button>
+                </form>
+                
+                <div class="support-footer">
+                    <a href="/cameras" class="back-link">Go to Cameras</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/support.js"></script>
+    <script src="/static/js/navbar.js"></script>
+</body>
+</html>

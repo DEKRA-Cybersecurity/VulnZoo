@@ -1,0 +1,6 @@
+{
+    "api_url": "http://192.168.2.100:5000",
+    "username": "admin",
+    "password": "admin",
+    "heartbeat_interval": 60
+}

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Management - Admin Panel</title>
+    <link rel="icon" type="image/png" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h2 class="panel-title">User Management</h2>
+        <div id="admin-content">
+            <div class="form-group">
+                <label for="user-search">Search user:</label>
+                <div class="autocomplete-container">
+                    <input type="text" id="user-search" autocomplete="off" placeholder="Type username..." />
+                    <ul id="user-suggestions"></ul>
+                </div>
+            </div>
+            <button id="delete-user-btn" class="btn btn-danger" disabled>Delete selected user</button>
+            <div id="user-result" class="result-message"></div>
+        </div>
+        <a href="/admin" class="back-link">← Back to Admin Menu</a>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const userInput = document.getElementById('user-search');
+            const suggestionsList = document.getElementById('user-suggestions');
+            const userResult = document.getElementById('user-result');
+            const deleteBtn = document.getElementById('delete-user-btn');
+            const token = localStorage.getItem('auth');
+            let selectedUserId = null;
+
+            userInput.addEventListener('input', async function () {
+                const query = userInput.value.trim();
+                if (query.length < 2) {
+                    suggestionsList.innerHTML = '';
+                    userResult.innerHTML = '';
+                    deleteBtn.disabled = true;
+                    selectedUserId = null;
+                    return;
+                }
+                const resp = await fetch(`/admin/users/search?query=${encodeURIComponent(query)}`, {
+                    headers: { 'X-Auth-Token': token }
+                });
+                const data = await resp.json();
+                if (!data.users || data.users.length === 0) {
+                    suggestionsList.innerHTML = '<li>No users found</li>';
+                    userResult.innerHTML = '';
+                    deleteBtn.disabled = true;
+                    selectedUserId = null;
+                    return;
+                }
+                suggestionsList.innerHTML = data.users.map(u =>
+                    `<li data-username="${u.username}" data-id="${u._id}">${u.username} (${u.role})</li>`
+                ).join('');
+            });
+
+            suggestionsList.addEventListener('click', function (e) {
+                if (e.target.dataset.username) {
+                    userInput.value = e.target.dataset.username;
+                    selectedUserId = e.target.dataset.id;
+                    suggestionsList.innerHTML = '';
+                    userResult.innerHTML = `<strong>Username:</strong> ${e.target.dataset.username}<br>
+                                            <strong>ID:</strong> ${e.target.dataset.id}<br>
+                                            <strong>Role:</strong> ${e.target.textContent.split('(')[1].replace(')','')}`;
+                    deleteBtn.disabled = false;
+                }
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.autocomplete-container')) {
+                    suggestionsList.innerHTML = '';
+                }
+            });
+
+            deleteBtn.addEventListener('click', async function () {
+                if (!selectedUserId) return;
+                if (!confirm('Are you sure you want to delete this user?')) return;
+                const resp = await fetch(`/admin/users/${selectedUserId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Auth-Token': token,
+                                'Referer': window.location.href
+                    }
+                });
+                const result = await resp.json();
+                userResult.innerHTML = result.message
+                    ? `<span class="success-message">${result.message}</span>`
+                    : `<span class="error-message">${result.error}</span>`;
+                userInput.value = '';
+                selectedUserId = null;
+                deleteBtn.disabled = true;
+            });
+        });
+    </script>
+</body>
+</html>
