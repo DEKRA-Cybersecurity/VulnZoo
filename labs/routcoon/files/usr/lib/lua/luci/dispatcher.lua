@@ -230,7 +230,6 @@ local function session_setup(user, pass, allowed_users)
 
 	io.stderr:write("luci: failed login on /" .. rp .. " for " .. user .. " from " .. remote_addr .. "\n")
 	
-	-- Oracle: password_correct=false indica que la pass es inválida
 	return nil, {password_correct = false, authorized = false, user = user}
 end
 

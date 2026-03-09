@@ -23,11 +23,10 @@ fi
 
 log_message "=== Initializing RoutCoon router services ==="
 
-# ====================================================
-# SNMP Daemon (information gathering for exploitation)
-# ====================================================
+# ===========
+# SNMP Daemon
+# ===========
 if [ -f /etc/init.d/snmpd ]; then
-    # Asegurar configuración vulnerable está en lugar
     if [ -f /etc/snmp/snmpd.conf ]; then
         log_message "SNMP config found"
     else
@@ -42,7 +41,6 @@ EOF
         log_message "SNMP config created with vulnerable communities"
     fi
     
-    # Habilitar e iniciar
     /etc/init.d/snmpd enable
     if /etc/init.d/snmpd start; then
         log_message "SNMPd started successfully"
@@ -67,9 +65,9 @@ else
     log_message "ERROR: odhcpd init script not found"
 fi
 
-# ==================================================
-# NTP Daemon (time synchronization for exploitation)
-# ==================================================
+# ==========
+# NTP Daemon
+# ==========
 if [ -f /etc/init.d/sysntpd ]; then
     /etc/init.d/sysntpd enable
     if /etc/init.d/sysntpd start; then
@@ -83,22 +81,9 @@ fi
 
 log_message "RoutCoon services initialization complete"
 
-# ============================================
-# MINIUPNPD (UPnP for exploitation)
-# ============================================
-if [ -f /etc/init.d/miniupnpd ]; then
-    /etc/init.d/miniupnpd enable
-    if /etc/init.d/miniupnpd start; then
-        log_message "MiniUPnPd started successfully"
-    else
-        log_message "WARNING: miniupnpd failed to start"
-    fi
-else
-    log_message "ERROR: miniupnpd init script not found"
-fi
-
-
-
+# ==========
+# FTP Daemon
+# ==========
 if [ -f /etc/init.d/ftpd ]; then
     /etc/init.d/ftpd enable
     if /etc/init.d/ftpd start; then

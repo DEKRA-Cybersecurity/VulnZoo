@@ -11,10 +11,14 @@
             "id": "6341769726c726ab",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "Router/IoT (Router)/IoT Vulnerabilities.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "IoT Vulnerabilities"
             }
           }
         ]
@@ -169,13 +173,14 @@
   },
   "active": "6341769726c726ab",
   "lastOpenFiles": [
+    "Router/API/Administration API Vulnerabilities.md",
+    "Router/IoT (Router)/IoT Vulnerabilities.md",
+    "Router/IoT (Router)/snmp_vulnerability_addition.md",
     "Images/IPCamera_containers_API.png",
     "IP Camera/IoT (Camera)/IoT - Vulnerabilities and features.md",
     "Images/Pasted image 20251024111607.png",
     "Images/Pasted image 20251118181259.png",
-    "Router/IoT (Router)/IoT Vulnerabilities.md",
     "Router/README.md",
-    "Router/API/Administration API Vulnerabilities.md",
     "Images/Pasted image 20251210112449.png",
     "IP Camera/README.md",
     "Images/Pasted image 20250725122855.png",
@@ -196,7 +201,6 @@
     "IP Camera/IoT (Camera)/images/iot4_firmares_latest_version.png",
     "IP Camera/IoT (Camera)/images",
     "IP Camera/API/images/api2_support_contact_panel.png",
-    "IP Camera/API/images/api2_support_welcome_message.png",
     "IP Camera/API/images",
     "CareOtter/CareOtter.md",
     "CareOtter",
