@@ -138,12 +138,7 @@ Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2026-03-05 13:29:
 ```
 
 ### 2.2 Samba 4.18.8
-Known vulnerabilities:
-- [CVE-2023-5568](https://nvd.nist.gov/vuln/detail/CVE-2023-5568)
-- [CVE-2022-32743](https://nvd.nist.gov/vuln/detail/CVE-2022-32743)
-- [CVE-2022-1615](https://nvd.nist.gov/vuln/detail/CVE-2022-1615)
-- [CVE-2021-3670](https://nvd.nist.gov/vuln/detail/CVE-2021-3670)
-- [CVE-2018-14628](https://nvd.nist.gov/vuln/detail/CVE-2018-14628)
+> **ON DEVELOPMENT**
 
 ### 2.3 Telnet
 The Telnet service is concealed in the sense that it has been configured to use a non-default port. It is located on port 5515. In a general scan, it appears as a filtered port and the running service is not identified; however, by using `nmap` with version detection scripts and flags, it can eventually be discovered.
@@ -311,136 +306,228 @@ Specific Vulnerabilities in Net-SNMP 5.9.4:
 
 - [Memory leak](https://www.cvedetails.com/cve/CVE-2024-26464/)
 
-- **Buffer Overflow:**
-    
-	A buffer overflow vulnerability exists in the handling of the `INDEX` of `NET-SNMP-VACM-MIB`, potentially allowing an out-of-bounds memory access. This can be exploited by users with read-only credentials. 
-    
+- **[Buffer Overflow](https://nvd.nist.gov/vuln/detail/CVE-2025-68615):** CVSS  9.8 Critical (RCE attack)
 
 - **Malformed OID Handling:**
-    
     Several vulnerabilities involve the improper handling of malformed OIDs in SET and GET-NEXT requests to various MIB tables, leading to NULL pointer dereferences or out-of-bounds memory access. These vulnerabilities affect the master agent and subagents. 
-    
 
 - **Vulnerability Exploitation:**
-    
     Attackers can exploit these vulnerabilities by crafting malicious network traffic, including specially crafted SNMP packets. To exploit vulnerabilities in SNMP v2c or earlier, attackers need valid community strings, while SNMP v3 exploitation requires valid user credentials.
 
-We can expose system's information using Nmap Scripts:
+We can expose system's information using nmap scripts:
 
 ```shell
-❯ sudo nmap -p161 -sU -sC -sV 192.168.1.1
-[sudo] password for maxgarci: 
-Starting Nmap 7.94SVN ( https://nmap.org ) at 2025-07-23 11:14 CEST
-Nmap scan report for 192.168.1.1
-Host is up (0.00057s latency).
+$ sudo nmap -p161 -sU -sC -sV 192.168.2.1
+[sudo] password for d4str3k: 
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-03-06 14:16 +0100
+Nmap scan report for vulnzoo.com (192.168.2.1)
+Host is up (0.00053s latency).
 
 PORT    STATE SERVICE VERSION
 161/udp open  snmp    SNMPv1 server; net-snmp SNMPv3 server (public)
+| snmp-sysdescr: Linux OpenWrt 6.6.104 #0 SMP Fri Sep 19 21:19:38 2025 armv7l
+|_  System uptime: 1h16m41.05s (460105 timeticks)
 | snmp-info: 
 |   enterprise: net-snmp
 |   engineIDFormat: unknown
-|   engineIDData: 5d8d8f5cd3bb596800000000
+|   engineIDData: 38f58227eedbcd6800000000
 |   snmpEngineBoots: 1
-|_  snmpEngineTime: 1h56m48s
-| snmp-sysdescr: Linux OpenWrt 6.6.93 #0 SMP Mon Jun 23 20:40:36 2025 armv7l
-|_  System uptime: 1h56m47.65s (700765 timeticks)
-| snmp-netstat: 
-|   TCP  0.0.0.0:21           0.0.0.0:0
-|   TCP  0.0.0.0:22           0.0.0.0:0
-|   TCP  0.0.0.0:80           0.0.0.0:0
-|   TCP  0.0.0.0:3702         0.0.0.0:0
-|   TCP  0.0.0.0:5355         0.0.0.0:0
-|   TCP  127.0.0.1:53         0.0.0.0:0
-|   TCP  192.168.1.1:22       192.168.1.2:42376
-|   TCP  192.168.1.1:53       0.0.0.0:0
-|   UDP  0.0.0.0:67           *:*
-|   UDP  0.0.0.0:137          *:*
-|   UDP  0.0.0.0:138          *:*
-|   UDP  0.0.0.0:161          *:*
-|   UDP  0.0.0.0:3702         *:*
-|   UDP  0.0.0.0:5355         *:*
-|   UDP  127.0.0.1:53         *:*
-|   UDP  192.168.1.1:53       *:*
-|   UDP  192.168.1.1:137      *:*
-|   UDP  192.168.1.1:138      *:*
-|   UDP  192.168.1.255:137    *:*
-|_  UDP  192.168.1.255:138    *:*
+|_  snmpEngineTime: 1h16m41s
 | snmp-interfaces: 
 |   lo
 |     IP address: 127.0.0.1  Netmask: 255.0.0.0
 |     Type: softwareLoopback  Speed: 10 Mbps
-|     Traffic stats: 157.97 Kb sent, 157.97 Kb received
+|     Traffic stats: 130.54 Kb sent, 130.54 Kb received
 |   eth0
-|     MAC address: b8:27:eb:6c:7e:8b (Raspberry Pi Foundation)
-|     Type: ethernetCsmacd  Speed: 100 Mbps
-|     Traffic stats: 433.07 Kb sent, 578.32 Kb received
-|   br-lan
-|     IP address: 192.168.1.1  Netmask: 255.255.255.0
-|     MAC address: b8:27:eb:6c:7e:8b (Raspberry Pi Foundation)
-|     Type: ethernetCsmacd  Speed: 100 Mbps
-|_    Traffic stats: 395.80 Kb sent, 578.32 Kb received
-MAC Address: B8:27:EB:6C:7E:8B (Raspberry Pi Foundation)
+|     IP address: 192.168.2.1  Netmask: 255.255.255.0
+|     MAC address: b8:27:eb:79:53:c3 (Raspberry Pi Foundation)
+|     Type: ethernetCsmacd  Speed: 1 Gbps
+|_    Traffic stats: 88.96 Kb sent, 63.48 Kb received
+| snmp-netstat: 
+|   TCP  0.0.0.0:21           0.0.0.0:0
+|   TCP  0.0.0.0:80           0.0.0.0:0
+|   TCP  0.0.0.0:8080         0.0.0.0:0
+|   TCP  192.168.2.1:22       0.0.0.0:0
+|   TCP  192.168.2.1:22       192.168.2.2:59938
+|_  UDP  0.0.0.0:161          *:*
+MAC Address: B8:27:EB:79:53:C3 (Raspberry Pi Foundation)
 Service Info: Host: OpenWrt
 
 Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
-Nmap done: 1 IP address (1 host up) scanned in 1.30 seconds
+Nmap done: 1 IP address (1 host up) scanned in 0.62 seconds
 ```
 
-### 2.6 UPNP
-UPNP (*Universal Plug and Play*)  service makes connections vulnerable to DDoS and MITM attacks. Ports are automatically forwarded to establish connections when a UPnP request is received. This can be used to:
-- Connect internal ports outer servers to create gateways through firewalls.
-- Referral of ports.
-- Change DNS server settings.
-- Modify administrative credentials.
-- Modify PPP configuration.
-- Modification of IP configuration for all interfaces.
-- Modify WiFi Settings.
+#### 2.5.1 Default Community Strings Configuration
+The SNMP service is configured with default community strings that are widely known and documented, representing a critical security vulnerability in IoT deployments.
 
-- ==secure_mode=0==: UPnP responds in WAN interface and every client can open ports without authentication.
-- Neither port nor ACL limitations.
-- ==enable_natpmp=1== enables a similar protocol to UPnP to open ports automatically.
+**Vulnerable Configuration (`/etc/snmp/snmpd.conf`):**
+```
+rocommunity public
+rwcommunity private
+sysLocation "VulnZoo RoutCoon Lab"
+sysContact "admin@vulnzoo.local"
+```
+
+**Risk Analysis:**
+
+| Community | Type       | Risk Level   | Description                                                |
+| --------- | ---------- | ------------ | ---------------------------------------------------------- |
+| `public`  | Read-Only  | **High**     | Allows unauthorized information disclosure to any attacker |
+| `private` | Read-Write | **Critical** | Permits configuration changes without authentication       |
+
+**Exploitation Impact:**
+1. **Information Disclosure via `public` community:**
+
+An attacker can enumerate the entire device configuration without authentication:
+
+```shell
+# Extract system information
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.1
+
+# Enumerate network interfaces and IP addresses
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.2.2
+
+# Extract ARP table (discover connected devices)
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.4.22
+
+# View routing table
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.4.21
+
+# List running processes
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.25.4.2
+
+# Enumerate storage and filesystems
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.25.2.3
+```
+
+2. **Network Mapping:**
+The extracted ARP table (`1.3.6.1.2.1.4.22`) reveals all devices connected to the router, enabling lateral movement planning:
+
+```
+iso.3.6.1.2.1.4.22.1.2.2.192.168.2.2 = Hex-STRING: B8 27 EB 79 53 C4
+iso.3.6.1.2.1.4.22.1.2.2.192.168.2.10 = Hex-STRING: AA BB CC DD EE FF
+```
+
+3. **Write Access Attempts via `private` community:**
+Although modern SNMP agents restrict writable OIDs, the presence of `rwcommunity private` exposes the device to:
+- Modification of system contact and location information
+- Configuration changes if extended MIBs are enabled
+- Potential command execution via SNMP extensions
+  
+```shell
+# Attempt to modify system contact (will fail on restricted views, but demonstrates exposure)
+snmpset -v 2c -c private 192.168.2.1 1.3.6.1.2.1.1.4.0 s "compromised@attacker.com"
+```
+
+**Attack Chain Integration:**
+
+The SNMP information disclosure vulnerability can be chained with other attacks:
+
+1. **Reconnaissance Phase:** SNMP enumeration provides the attacker with:
+	- Operating system version (Linux OpenWrt 6.6.104 armv7l)
+	- System uptime (indicates last reboot/patch cycle)
+	- Network topology and connected devices
+	- Open ports and services (via TCP/UDP connection tables)
+2. **Credential Targeting:** The `sysContact` field may contain valid email addresses or usernames that can be used in phishing campaigns or password spraying attacks.
+3. **Firmware Vulnerability Correlation:** The exact OS version obtained via SNMP (`iso.3.6.1.2.1.1.1.0`) allows attackers to search for specific CVEs affecting that OpenWrt version.
+
+**Regulatory Compliance Impact:**
+This configuration violates multiple security standards:
+- **ETSI EN 303 645**: Requirement for unique credentials and secure authentication
+- **IEC 62443**: Network segmentation and secure device management
+- **EU Cyber Resilience Act**: Lack of security by design
+
+**Remediation:**
+Replace default communities with cryptographically random strings:
+
+```
+
+# Secure configuration
+rocommunity VulnZooR0utC00nR34d0nly 127.0.0.1/32
+
+# rwcommunity should be disabled or restricted to specific management hosts
+
+# rwcommunity VulnZooWr1t3S3cur3! 192.168.2.100/32
+
+```
+
+Additionally, SNMP should be disabled if not required, or restricted to localhost-only access via firewall rules.
+### 2.6 UPNP
+The device exposes Universal Plug and Play (UPnP) IGD (Internet Gateway Device) services on the local network interface with security controls disabled. The `secure_mode=no` configuration allows unauthenticated clients to submit port mapping requests, exposing the internal network topology and firewall configuration to manipulation. While the specific port mapping action failed with error 501 due to laboratory environment constraints (absence of WAN NAT capabilities), the service accepted and processed the malicious SOAP request without authentication, confirming the vulnerability exists in the configuration layer.
+
 
 OpenWRT is running miniupnpd and it is listening on port 5000.
 ```shell
-root@OpenWrt:/etc/config# netstat -lnp | grep miniupnpd
-tcp        0      0 :::5000                 :::*                    LISTEN      1845/miniupnpd
-udp        0      0 0.0.0.0:1900            0.0.0.0:*                           1845/miniupnpd
-udp        0      0 192.168.1.1:50311       0.0.0.0:*                           1845/miniupnpd
-udp        0      0 192.168.1.1:5351        0.0.0.0:*                           1845/miniupnpd
-udp        0      0 :::1900                 :::*                                1845/miniupnpd
-udp        0      0 :::5351                 :::*                                1845/miniupnpd
-udp        0      0 :::37697                :::*                                1845/miniupnpd
+root@OpenWrt:~# netstat -tulnp | grep miniupnpd
+tcp        0      0 :::5000                 :::*                    LISTEN      4497/miniupnpd # UPnP HTTP Control
+udp        0      0 0.0.0.0:5351            0.0.0.0:*                           4497/miniupnpd # NAT-PMP
+udp        0      0 0.0.0.0:1900            0.0.0.0:*                           4497/miniupnpd # SSDP Discovery
+udp        0      0 0.0.0.0:50345           0.0.0.0:*                           4497/miniupnpd # SSDP Response Ephemeral
 ```
 
-*/etc/config/upnpd*
+*/etc/miniupnpd/miniupnpd.conf*
 
 ```shell
-config upnpd 'config'
-        option enabled '1'
-        option enable_natpmp '1'
-        option enable_upnp '1'
-        option secure_mode '0'
-        option log_output '0'
-        option download '10240'
-        option upload '10240'
-        option internal_iface 'br-lan'
-        option external_iface 'br-lan'
-        option port '5000'
-        option upnp_lease_file '/var/run/miniupnpd.leases'
-        option igdv1 '1'
-        option uuid '05f16a8d-4cc7-4bb1-a894-98ca59bb3ea0'
-
-config perm_rule
-        option action 'allow'
-        option perm_wan '1'
-        option ext_ports '0-65535'
-        option int_addr '0.0.0.0/0'
-        option int_ports '0-65535'
+ext_ifname=eth0
+listening_ip=eth0
+port=5000
+enable_upnp=yes
+enable_natpmp=yes
+secure_mode=no
+bitrate_down=10240000
+bitrate_up=10240000
+uuid=05f16a8d-4cc7-4bb1-a894-98ca59bb3ea0
+allow 0-65535 192.168.2.0/24 0-65535
+deny 0-65535 0.0.0.0/0 0-65535
+lease_file=/var/run/miniupnpd.leases
+force_igd_desc_v1=yes
 ```
 
-- ==secure_mode  '1'== Esto permite cualquier solicitud.
-- ==log_output '0'== Oculta la actividad sin registrar ningún tipo de log.
-- ==perm_wan '1'== Permite el acceso al servicio desde el exterior.
+- `secure-mode=no`: Critical, it allows port mapping to any internal IP. Permits thirds-party redirection.
+
+#### Vulnerability Evidence:
+The SSDP multicast discovery successfully identified the router's UPnP services without authentication:
+
+```shell
+$ gssdp-discover -i eth0 --timeout=3
+resource available
+  USN:      uuid:05f16a8d-4cc7-4bb1-a894-98ca59bb3ea0::urn:schemas-upnp-org:device:InternetGatewayDevice:2
+  Location: http://192.168.2.1:5000/rootDesc.xml
+```
+
+Using the discovered control endpoint, an unauthorized port mapping request was submitted from a non-privileged network position:
+
+```shell
+$ upnpc -u http://192.168.2.1:44997/rootDesc.xml -a 192.168.2.2 80 9999 TCP
+upnpc: miniupnpc library test client, version 2.3.3.
+Found valid IGD : http://192.168.2.1:44997/ctl/IPConn 
+Local LAN ip address : 192.168.2.2
+ExternalIPAddress = 1.2.3.4
+AddPortMapping(9999, 80, 192.168.2.2) failed with code 501 (Action Failed)
+```
+
+The HTTP 501 (Action Failed) response **confirms the vulnerability** despite the operational failure:
+
+1. **Request Acceptance:** The SOAP request was accepted and parsed (no 401 Unauthorized or 403 Forbidden).
+    
+2. **Processing Reached Execution Phase:** The service attempted to execute `AddPortMapping` rather than rejecting it at the authentication/authorization layer.
+    
+3. **Failure Mode:** The error occurred at the iptables/NAT implementation layer (environmental limitation in lab setup), not at the security policy layer.
+    
+4. **Information Disclosure:** The response confirmed the spoofed `ExternalIPAddress` (1.2.3.4), revealing the router's perceived WAN identity.
+
+#### **Risk Assessment**
+
+**Attack Scenarios Validated:**
+
+1. **Cross-Device Port Forwarding (Integrity Violation)**  
+    An attacker on Host A (192.168.2.100) could theoretically map external ports to Host B (192.168.2.2) without Host B's consent, exposing internal services to external access.
+    
+2. **Network Topology Reconnaissance (Confidentiality Breach)**  
+    The SSDP discovery and XML descriptor exposure reveal network architecture, device capabilities, and potential attack vectors to unauthenticated LAN participants.
+    
+3. **Firewall Configuration Tampering (Availability Risk)**  
+    While the specific mapping failed, the ability to submit arbitrary `DeletePortMapping` or `GetGenericPortMappingEntry` actions could disrupt legitimate network services.
 
 ### 2.7 DHCP && DNS
 

@@ -42,11 +42,11 @@ The ecosystem models a real product with all its interconnected layers:
 
 ### Mobile Applications
 
-Android/iOS companion apps that interact with devices, incorporating hardcoded secrets, incorrect certificate validation, and broken authorization logic—serving as entry points to the backend.
+- Android/iOS companion apps that interact with devices, incorporating hardcoded secrets, incorrect certificate validation, and broken authorization logic—serving as entry points to the backend.
 
 ### REST API
 
-Containerized REST APIs in Docker that manage business logic, OTA distribution, and administrative panels, with intentional access control failures, stateful privilege escalation, and data exposure between tenants.
+- Containerized REST APIs in Docker that manage business logic, OTA distribution, and administrative panels, with intentional access control failures, stateful privilege escalation, and data exposure between tenants.
 
 This architecture allows complex attack chains to be carried out: from a vulnerability in the mobile app, pivoting to cloud APIs, escalating privileges to compromise the OTA service, and finally implanting malicious firmware on the physical device.
 

