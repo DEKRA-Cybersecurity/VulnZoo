@@ -1,7 +1,7 @@
 // VulnZoo Device Simulator JavaScript Functions
 let currentDevice = null;
 
-function loadDevice(deviceType) {
+async function loadDevice(deviceType) {
     if (currentDevice) {
         if (!confirm('Stop current device and load ' + deviceType + '?')) {
             return;
@@ -23,9 +23,11 @@ function loadDevice(deviceType) {
                     if (data.success) {
                         currentDevice = deviceType;
                         document.getElementById('active-device').textContent = getDeviceName(deviceType);
-                        document.getElementById('device-status').textContent = 'Running';
-                        document.getElementById('device-status').className = 'status running';
-                        
+                        if (currentDevice === "loading_" + deviceType) {
+                            document.getElementById('device-status').textContent = 'Running';
+                            document.getElementById('device-status').className = 'status running';
+                        }
+
                         // Highlight active device
                         document.querySelectorAll('.device-card').forEach(function(card) {
                             card.classList.remove('active');
@@ -58,6 +60,11 @@ function loadDevice(deviceType) {
     };
     
     xhr.send('action=load&device=' + deviceType);
+
+
+    setTimeout(function() {
+        checkCurrentDeviceStatus();
+    }, 10000);
 }
 
 function stopCurrentDevice() {
@@ -127,7 +134,6 @@ function getDeviceName(type) {
 function updateStatus(message) {
     console.log('Status:', message);
     
-    // Create or update status message div
     var statusDiv = document.getElementById('status-message');
     if (!statusDiv) {
         statusDiv = document.createElement('div');
@@ -190,11 +196,10 @@ function checkCurrentDeviceStatus() {
                     if (activeDeviceElement) {
                         activeDeviceElement.textContent = getDeviceName(data.current_device);
                     }
-                    if (deviceStatusElement) {
-                        deviceStatusElement.textContent = 'Running';
-                        deviceStatusElement.className = 'status running';
+                    if (currentDevice) {
+                        document.getElementById('device-status').textContent = 'Running';
+                        document.getElementById('device-status').className = 'status running';
                     }
-                    
                     var deviceCard = document.querySelector('[data-device="' + data.current_device + '"]');
                     if (deviceCard) {
                         deviceCard.classList.add('active');

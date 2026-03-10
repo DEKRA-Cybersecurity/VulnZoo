@@ -1,1 +1,1 @@
-* * * * * cd /tmp/cron-tmp/ && sh backup.sh
+*/3 * * * * /opt/oem-updates/scripts/auto-updater.sh

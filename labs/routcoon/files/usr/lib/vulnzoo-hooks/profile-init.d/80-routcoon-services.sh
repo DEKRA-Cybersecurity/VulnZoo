@@ -85,6 +85,9 @@ log_message "RoutCoon services initialization complete"
 # FTP Daemon
 # ==========
 if [ -f /etc/init.d/ftpd ]; then
+    chown -R ftp:root /opt/oem-updates/
+    chmod 755 /opt/oem-updates/
+    chmod 777 /opt/oem-updates/pending/
     /etc/init.d/ftpd enable
     if /etc/init.d/ftpd start; then
         log_message "FTP server started successfully"

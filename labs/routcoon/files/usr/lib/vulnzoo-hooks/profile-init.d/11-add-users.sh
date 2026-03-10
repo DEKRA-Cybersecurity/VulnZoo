@@ -39,7 +39,7 @@ else
     log_message "User nobody already exists."
 fi
 
-echo "root:incrackeable" | chpasswd
+echo "root:uncrackable" | chpasswd
 echo "openwrtuser:openwrtuserpwned" | chpasswd
 log_message "Passwords for root and openwrtuser set."
 

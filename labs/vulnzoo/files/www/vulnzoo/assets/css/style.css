@@ -603,6 +603,12 @@ h1 {
     box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
 }
 
+.loading { 
+    background: linear-gradient(145deg, #ff9800, #f57c00);
+    border-color: #e65100;
+    box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
+}
+
 .stopped { 
     background: linear-gradient(145deg, #f44336, #d32f2f);
     border-color: #c62828;

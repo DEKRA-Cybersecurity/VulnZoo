@@ -96,9 +96,6 @@ load_device() {
         return 1
     fi
     
-    # Save device state persistently using environment variables
-    save_device_state "$device_type"
-    
     # Execute idempotent hooks instead of uci-defaults
     log_message "Executing VulnZoo idempotent hooks for device: $device_type"
     if [ -x "/usr/lib/vulnzoo-hooks/hook-manager.sh" ]; then
@@ -124,6 +121,8 @@ load_device() {
     log_message "Restarting web services after device hooks execution"
     /etc/init.d/uhttpd restart >/dev/null 2>&1
     
+    save_device_state "$device_type"
+
     log_message "Device $device_type loaded successfully"
     echo "Content-Type: application/json"
     echo ""
