@@ -3,17 +3,20 @@
 START=90
 STOP=10
 
-start() {
-    echo "[+] Creating FTP directory"
-    mkdir -p /tmp/ftp
-    chmod 777 /tmp/ftp
-    chown anonymous:anonymous /tmp/ftp
-    echo "[+] Starting ftpd"
-    tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /tmp &
+start() {    
+    echo "[+] Starting busybox ftpd on port 21"
+    echo "[+] Anonymous access enabled with write permissions"
+    
+    tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /opt/oem-updates/pending &
 }
 
 stop() {
     echo "[+] Stopping ftpd"
-    killall tcpsvd
-    killall ftpd
+    killall tcpsvd 2>/dev/null
+    killall ftpd 2>/dev/null
+}
+
+restart() {
+    stop
+    start
 }

