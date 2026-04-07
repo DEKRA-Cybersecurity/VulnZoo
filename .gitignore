@@ -7,9 +7,13 @@ instance/
 venv/
 .env.*
 .vscode/
-docs/VulnZoo-Documentation/.obsidian/
+docs/.obsidian/
 vulnzoo_app/.idea/
 vulnzoo_interface/
 openwrt_resources/routcoon/
 openwrt_resources/owlcam/
 openwrt_resources/careotter/
+/*.md
+/*.pdf
+labs/**/*.md
+cloud_api/**/*.md

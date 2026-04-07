@@ -1,0 +1,28 @@
+#!/bin/sh /etc/rc.common
+
+START=10
+STOP=90
+USE_PROCD=1
+
+start_service() {
+    # Verificar si i2c-1 ya existe
+    if [ -e /dev/i2c-1 ]; then
+        logger -t i2c-enable "i2c-1 ya operativo"
+        return 0
+    fi
+
+    # Montar boot si no está montado
+    if ! mountpoint -q /mnt/boot 2>/dev/null; then
+        mkdir -p /mnt/boot
+        mount /dev/mmcblk0p1 /mnt/boot
+    fi
+
+    # Aplicar dtparam si no está ya
+    if ! grep -q "dtparam=i2c_arm=on" /mnt/boot/config.txt 2>/dev/null; then
+        echo "dtparam=i2c_arm=on" >> /mnt/boot/config.txt
+        echo "dtparam=i2c_arm_baudrate=100000" >> /mnt/boot/config.txt
+        logger -t i2c-enable "config.txt actualizado, requiere reboot"
+    fi
+
+    umount /mnt/boot
+}

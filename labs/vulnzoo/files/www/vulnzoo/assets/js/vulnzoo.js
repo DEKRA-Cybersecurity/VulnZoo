@@ -64,7 +64,7 @@ async function loadDevice(deviceType) {
 
     setTimeout(function() {
         checkCurrentDeviceStatus();
-    }, 10000);
+    }, 20000);
 }
 
 function stopCurrentDevice() {

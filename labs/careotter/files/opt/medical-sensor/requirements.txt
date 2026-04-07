@@ -1,0 +1,14 @@
+# CareOtter Medical Sensor Dependencies
+# Install with: pip3 install -r requirements.txt
+
+# BLE support
+bleak>=0.20.0
+
+# HTTP server (async)
+aiohttp>=3.8.0
+
+# YAML config support
+pyyaml>=6.0
+
+# I2C hardware support (optional)
+smbus2>=0.4.0
