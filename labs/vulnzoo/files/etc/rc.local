@@ -1,7 +1,51 @@
 #!/bin/sh
-
+#
 # VulnZoo Base System - Startup Script
 # Minimal configuration for device profile selection menu
+#
+
+# Get current device from UCI
+DEVICE_NAME="$(uci -q get vulnzoo.state.current_device 2>/dev/null || echo "none")"
+
+# Only disable lab services if NO device is loaded (base menu mode)
+if [ "$DEVICE_NAME" = "none" ] || [ -z "$DEVICE_NAME" ]; then
+    logger -t vulnzoo-base "Base mode: disabling lab-specific services"
+    
+    # Disable services that should only run in specific labs
+    /etc/init.d/snmpd disable 2>/dev/null
+    /etc/init.d/snmpd stop 2>/dev/null
+    
+    /etc/init.d/odhcpd disable 2>/dev/null
+    /etc/init.d/odhcpd stop 2>/dev/null
+    
+    /etc/init.d/cron disable 2>/dev/null
+    /etc/init.d/cron stop 2>/dev/null
+    
+    /etc/init.d/ntpd disable 2>/dev/null
+    /etc/init.d/ntpd stop 2>/dev/null
+    
+    /etc/init.d/sysntpd disable 2>/dev/null
+    /etc/init.d/sysntpd stop 2>/dev/null
+    
+    /etc/init.d/miniupnpd disable 2>/dev/null
+    /etc/init.d/miniupnpd stop 2>/dev/null
+    
+    /etc/init.d/mjpg-streamer disable 2>/dev/null
+    /etc/init.d/mjpg-streamer stop 2>/dev/null
+    
+    /etc/init.d/v4l2rtspserver disable 2>/dev/null
+    /etc/init.d/v4l2rtspserver stop 2>/dev/null
+    
+    /etc/init.d/radius disable 2>/dev/null
+    /etc/init.d/radius stop 2>/dev/null
+    
+    /etc/init.d/motion disable 2>/dev/null
+    /etc/init.d/motion stop 2>/dev/null
+    
+    logger -t vulnzoo-base "Lab services disabled for base profile"
+else
+    logger -t vulnzoo-base "Device mode ($DEVICE_NAME): skipping base service cleanup"
+fi
 
 # Start essential VulnZoo services
 /etc/init.d/vulnzoo-network enable
@@ -13,43 +57,10 @@
 /etc/init.d/uhttpd enable
 /etc/init.d/uhttpd start
 
-/etc/init.d/snmpd disable 2>/dev/null
-/etc/init.d/snmpd stop 2>/dev/null
-
-/etc/init.d/odhcpd disable 2>/dev/null
-/etc/init.d/odhcpd stop 2>/dev/null
-
-/etc/init.d/cron disable 2>/dev/null
-/etc/init.d/cron stop 2>/dev/null
-
-/etc/init.d/ntpd disable 2>/dev/null
-/etc/init.d/ntpd stop 2>/dev/null
-
-/etc/init.d/sysntpd disable 2>/dev/null
-/etc/init.d/sysntpd stop 2>/dev/null
-
-/etc/init.d/miniupnpd disable 2>/dev/null
-/etc/init.d/miniupnpd stop 2>/dev/null
-
-/etc/init.d/mjpg-streamer disable 2>/dev/null
-/etc/init.d/mjpg-streamer stop 2>/dev/null
-
-/etc/init.d/v4l2rtspserver disable 2>/dev/null
-/etc/init.d/v4l2rtspserver stop 2>/dev/null
-
-/etc/init.d/radius disable 2>/dev/null
-/etc/init.d/radius stop 2>/dev/null
-
-/etc/init.d/motion disable 2>/dev/null
-/etc/init.d/motion stop 2>/dev/null
-
-logger -t vulnzoo-base "Lab services disabled for base profile"
-
 # Execute device profile hooks if a device was previously loaded
-if [ -x "/usr/lib/vulnzoo-hooks/hook-manager.sh" ]; then
-    DEVICE_NAME="$(uci get vulnzoo.state.current_device 2>/dev/null || echo "none")"
-    [ "$DEVICE_NAME" != "none" ] && \
-        /usr/lib/vulnzoo-hooks/hook-manager.sh init "$DEVICE_NAME"
+if [ -x "/usr/lib/vulnzoo-hooks/hook-manager.sh" ] && [ "$DEVICE_NAME" != "none" ]; then
+    logger -t vulnzoo-base "Executing hooks for restored device: $DEVICE_NAME"
+    /usr/lib/vulnzoo-hooks/hook-manager.sh init "$DEVICE_NAME"
 fi
 
 exit 0

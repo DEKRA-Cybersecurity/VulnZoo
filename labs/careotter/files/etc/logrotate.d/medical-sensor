@@ -1,0 +1,19 @@
+/opt/medical-sensor/vitals.log {
+    daily            # rotar diariamente (alternativa: size 1M)
+    size 1M          # o cuando llegue a 1MB
+    rotate 5         # mantener 5 ficheros históricos
+    compress         # gzip los rotados
+    delaycompress    # comprimir en la siguiente rotación
+    missingok        # no error si falta el archivo
+    notifempty       # no rotar si está vacío
+    
+    # Notificar al servicio para reabrir logs
+    postrotate
+        # Enviar SIGUSR1 al proceso del sensor médico
+        killall -SIGUSR1 -f "sensor_service.py" 2>/dev/null || \
+        killall -SIGUSR1 python3 2>/dev/null || true
+        
+        # Log del evento
+        logger -t logrotate "Medical sensor logs rotated"
+    endscript
+}
