@@ -108,6 +108,11 @@ load_device() {
         log_message "WARNING: Hook manager not found, skipping hook execution"
     fi
 
+    # IMPORTANT: Save device state BEFORE executing rc.local
+    # This ensures hooks and rc.local can read the correct current_device from UCI
+    save_device_state "$device_type"
+    log_message "Device state saved in UCI before rc.local execution"
+
     # Execute device rc.local if it exists
     if [ -f "/etc/rc.local" ]; then
         log_message "Executing device rc.local script"
@@ -120,8 +125,6 @@ load_device() {
     # Restart web services - uhttpd configuration is handled by device hooks
     log_message "Restarting web services after device hooks execution"
     /etc/init.d/uhttpd restart >/dev/null 2>&1
-    
-    save_device_state "$device_type"
 
     log_message "Device $device_type loaded successfully"
     echo "Content-Type: application/json"
