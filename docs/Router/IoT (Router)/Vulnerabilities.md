@@ -318,7 +318,7 @@ We can expose system's information using nmap scripts:
 
 ```shell
 $ sudo nmap -p161 -sU -sC -sV 192.168.2.1
-[sudo] password for d4str3k: 
+[sudo] password for user: 
 Starting Nmap 7.98 ( https://nmap.org ) at 2026-03-06 14:16 +0100
 Nmap scan report for vulnzoo.com (192.168.2.1)
 Host is up (0.00053s latency).
@@ -744,7 +744,7 @@ The connection to the directory via FTP does not reveal any clues that would all
 $ ftp 192.168.2.1
 Connected to 192.168.2.1.
 220 Operation successful
-Name (192.168.2.1:d4str3k): anonymous
+Name (192.168.2.1:user): anonymous
 230 Operation successful
 Remote system type is UNIX.
 Using binary mode to transfer files.
@@ -798,7 +798,7 @@ We use FTP to upload the script to the */tmp/cron-tmp* folder and wait for the s
 $ ftp 192.168.2.1
 Connected to 192.168.2.1.
 220 Operation successful
-Name (192.168.2.1:d4str3k): anonymous
+Name (192.168.2.1:user): anonymous
 230 Operation successful
 Remote system type is UNIX.
 Using binary mode to transfer files.
