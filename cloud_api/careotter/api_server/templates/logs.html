@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareOtter — Logs</title>
+    <link rel="stylesheet" href="/static/style/panel.css">
+    <style>
+        .log-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+        #log-filter  { flex:1; min-width:180px; padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:8px; font-size:0.875rem; outline:none; }
+        #log-filter:focus { border-color:#0891b2; box-shadow:0 0 0 2px rgba(8,145,178,0.1); }
+        .log-line { padding:3px 0; border-bottom:1px solid #1e293b; line-height:1.6; }
+        .log-line:last-child { border-bottom:none; }
+        .log-ts  { color:#64748b; margin-right:8px; }
+        .log-msg { color:#e2e8f0; }
+    </style>
+</head>
+<body>
+
+<nav class="topbar">
+    <a href="/admin/dashboard" class="topbar-brand">
+        <div class="brand-icon"><svg viewBox="0 0 24 24"><polyline points="2,12 6,12 8,6 10,18 12,10 14,14 16,12 22,12"/></svg></div>
+        <span>CareOtter</span>
+    </a>
+    <div class="topbar-nav">
+        <a href="/admin/dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Dashboard</a>
+        <a href="/admin/network"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5.5" y2="16.5"/><line x1="12" y1="8" x2="18.5" y2="16.5"/></svg>Network</a>
+        <a href="/admin/config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Config</a>
+        <a href="/admin/services"><svg viewBox="0 0 24 24"><polyline points="16,3 21,3 21,8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21,16 21,21 16,21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>Services</a>
+        <a href="/admin/logs"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>Logs</a>
+    </div>
+    <div class="topbar-right">
+        <span class="topbar-badge">ADMIN</span>
+        <button class="btn-logout"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Logout</button>
+    </div>
+</nav>
+
+<main class="page-content">
+
+    <div class="page-header">
+        <h2>Device Logs</h2>
+        <p>Recent administration log entries (careservice) and vitals history</p>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px">
+
+        <!-- Admin service log -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Administration Log
+                </span>
+                <button class="btn btn-secondary btn-sm" onclick="loadAdminLog()">
+                    <svg viewBox="0 0 24 24"><polyline points="23,4 23,11 16,11"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 11"/></svg>
+                    Refresh
+                </button>
+            </div>
+            <div class="log-toolbar">
+                <input type="text" id="log-filter" placeholder="Filter lines…" oninput="filterLog()">
+                <span id="log-count" style="font-size:0.78rem;color:#64748b;white-space:nowrap"></span>
+            </div>
+            <div class="code-block" id="admin-log" style="max-height:340px;overflow-y:auto;min-height:80px">
+                Click "Refresh" to load the log.
+            </div>
+            <div class="alert-inline" id="log-alert"></div>
+        </div>
+
+        <!-- Vitals history -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">
+                    <svg viewBox="0 0 24 24"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+                    Vitals History
+                </span>
+                <button class="btn btn-secondary btn-sm" onclick="loadVitalsHistory()">
+                    <svg viewBox="0 0 24 24"><polyline points="23,4 23,11 16,11"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 11"/></svg>
+                    Refresh
+                </button>
+            </div>
+            <div style="max-height:380px;overflow-y:auto">
+                <table class="data-table" id="vitals-table">
+                    <thead>
+                        <tr>
+                            <th>BPM avg</th>
+                            <th>BPM min/max</th>
+                            <th>SpO₂ avg</th>
+                            <th>SpO₂ min</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vitals-tbody">
+                        <tr><td colspan="4" style="color:#94a3b8;text-align:center;padding:20px">Click "Refresh" to load history.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="alert-inline" id="vitals-alert"></div>
+        </div>
+
+    </div>
+
+</main>
+
+<script src="/static/js/panel.js"></script>
+<script>
+    let rawLogLines = [];
+
+    function showInlineAlert(el, type, msg) {
+        const icon = type === 'error'
+            ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+            : '<svg viewBox="0 0 24 24"><polyline points="20,6 9,17 4,12"/></svg>';
+        el.innerHTML = icon + msg;
+        el.className = `alert-inline ${type} show`;
+    }
+
+    async function loadAdminLog() {
+        const el    = document.getElementById('admin-log');
+        const alert = document.getElementById('log-alert');
+        el.textContent = 'Querying device…';
+        alert.className = 'alert-inline';
+
+        try {
+            const res  = await apiFetch('/api/logs');
+            const data = await res.json();
+
+            if (!res.ok) { showInlineAlert(alert, 'error', data.error || 'Error'); return; }
+
+            const text = data.log || '';
+            rawLogLines = text.split('\n').filter(l => l.trim());
+
+            renderLog(rawLogLines);
+            document.getElementById('log-count').textContent = `${rawLogLines.length} lines`;
+
+        } catch (e) {
+            showInlineAlert(alert, 'error', 'Error: ' + e.message);
+        }
+    }
+
+    function renderLog(lines) {
+        const el = document.getElementById('admin-log');
+        if (!lines.length) { el.textContent = 'Log is empty.'; return; }
+
+        el.innerHTML = lines.map(line => {
+            /* format: [timestamp] message */
+            const m = line.match(/^\[(\d+)\]\s(.+)$/);
+            if (m) {
+                const ts  = new Date(parseInt(m[1]) * 1000).toLocaleTimeString();
+                return `<div class="log-line"><span class="log-ts">[${ts}]</span><span class="log-msg">${escHtml(m[2])}</span></div>`;
+            }
+            return `<div class="log-line"><span class="log-msg">${escHtml(line)}</span></div>`;
+        }).join('');
+
+        /* Auto-scroll to bottom */
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function filterLog() {
+        const q     = document.getElementById('log-filter').value.toLowerCase();
+        const lines = q ? rawLogLines.filter(l => l.toLowerCase().includes(q)) : rawLogLines;
+        renderLog(lines);
+        document.getElementById('log-count').textContent = `${lines.length} / ${rawLogLines.length} lines`;
+    }
+
+    async function loadVitalsHistory() {
+        const tbody = document.getElementById('vitals-tbody');
+        const alert = document.getElementById('vitals-alert');
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:16px"><span class="spin-sm"></span></td></tr>';
+        alert.className = 'alert-inline';
+
+        try {
+            const res  = await fetch('/api/vitals/history');
+            const data = await res.json();
+
+            const history = data.history || [];
+            if (!history.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="color:#94a3b8;text-align:center;padding:20px">No history data available.</td></tr>';
+                return;
+            }
+
+            /* Show last 50 entries in reverse order */
+            tbody.innerHTML = history.slice(-50).reverse().map(e => `
+                <tr>
+                    <td>${(e.bpm_avg ?? '—')}</td>
+                    <td>${(e.bpm_min ?? '—')} / ${(e.bpm_max ?? '—')}</td>
+                    <td>${(e.spo2_avg ?? '—')}</td>
+                    <td>${(e.spo2_min ?? '—')}</td>
+                </tr>
+            `).join('');
+
+        } catch (e) {
+            showInlineAlert(alert, 'error', 'Error: ' + e.message);
+        }
+    }
+
+    function escHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+</script>
+</body>
+</html>

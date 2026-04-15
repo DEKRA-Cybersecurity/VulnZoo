@@ -36,47 +36,50 @@
         <div class="content-section">
             <h2>What is this environment?</h2>
             <p>
-                CareOtter is a vulnerable IoT healthcare device simulator designed for security testing and learning. This lab reproduces a cardiac monitoring system with Bluetooth Low Energy (BLE) connectivity, cloud synchronization, and mobile application integration. The device monitors heart rate data and transmits it to a cloud API for remote patient monitoring.
+                <strong>CareOtter</strong> is a vulnerable IoT healthcare device simulator designed for security testing and learning. This lab reproduces a modern cardiac implantable electronic device similar to a <strong>DAI (Desfibrilador Automático Implantable)</strong> — a sophisticated computer that manages autonomous heart rhythm control.
+            </p>
+            <p>
+                Modern DAIs have evolved from simple "arrhythmia extinguishers" into sophisticated cardiac computers that manage life-or-death situations in milliseconds. Like a small pacemaker, they maintain the heart at a marked rhythm when it weakens, but they can also deliver an electric shock when a critical arrhythmia is detected.
+            </p>
+            <p>
+                When a DAI releases an electric shock (defibrillation), a series of automatic actions and medical protocols are triggered, since a discharge is considered a critical event. The CareOtter simulator models this complex medical environment with realistic telemetry, cloud synchronization, and mobile monitoring — allowing security researchers to understand the real-world impact of vulnerabilities in life-critical medical IoT devices.
             </p>
             <p>
                 <strong>VulnZoo WWW Interface</strong>: Used for device management, loading/stopping the CareOtter simulator, and project administration.
             </p>
             <p>
-                <strong>CareOtter Device Interface</strong>: The actual vulnerable IoT device with BLE services, web panel, and API endpoints - this is where you perform penetration testing on medical IoT vulnerabilities.
-            </p>
-            <p>
-                The simulator allows you to practice pentesting techniques on medical IoT devices, including BLE sniffing and MITM attacks, API authentication bypass, cloud synchronization vulnerabilities, and data storage exploitation. CareOtter includes multiple security profiles (Phase 1-4) that progressively disable security controls to simulate different attack scenarios.
+                <strong>CareOtter Device Interface</strong>: The actual vulnerable IoT device with BLE services, web panel, and API endpoints — this is where you perform penetration testing on medical IoT vulnerabilities.
             </p>
         </div>
         
         <div class="content-section">
-            <h2>Security Training Phases</h2>
+            <h2>Device Architecture</h2>
             <p>
-                CareOtter supports multiple security profiles for different training scenarios:
+                The CareOtter lab comprises multiple interconnected components that mirror a real-world connected medical device ecosystem:
             </p>
             <ul>
-                <li><strong>Phase 1 (Secure)</strong>: All security protections enabled - baseline secure configuration</li>
-                <li><strong>Phase 2 (BLE Vulnerabilities)</strong>: Bluetooth encryption disabled, no pairing authentication - practice wireless attacks</li>
-                <li><strong>Phase 3 (API Vulnerabilities)</strong>: OAuth2 downgraded to basic auth, certificate pinning disabled - practice cloud API attacks</li>
-                <li><strong>Phase 4 (Storage Vulnerabilities)</strong>: Database encryption disabled, PII exposed in logs - practice data extraction</li>
+                <li><strong>BLE Communication</strong>: The device exposes Bluetooth Low Energy GATT services for continuous heart rate and SpO₂ monitoring, allowing direct interaction with mobile health applications and wearable controllers.</li>
+                <li><strong>Cloud API</strong>: A backend gateway bridges the binary device protocol to HTTP REST APIs, enabling remote patient monitoring, clinician dashboards, and firmware configuration over the network.</li>
+                <li><strong>Web Interface</strong>: An embedded dashboard provides real-time visualization of cardiac telemetry, device status, and administrative controls accessible from any browser on the local network.</li>
+                <li><strong>Data Storage</strong>: The simulator maintains persistent telemetry logs and configuration data, modeling how real medical devices store sensitive patient information over time.</li>
+                <li><strong>Mobile App</strong>: An Android companion application connects to the device via both BLE and the cloud API, simulating how patients and caregivers interact with modern implantable cardiac devices remotely.</li>
             </ul>
-            <p>
-                Each phase is managed through idempotent hooks that reconfigure the device without requiring code changes.
-            </p>
         </div>
         
         <div class="content-section">
-            <h2>Attack Vectors</h2>
+            <h2>Security Training Focus</h2>
             <p>
-                When CareOtter is loaded, you can explore vulnerabilities across multiple attack surfaces:
+                CareOtter supports multiple security profiles for different training scenarios. Each phase is managed through idempotent hooks that reconfigure the device without requiring code changes.
             </p>
             <ul>
-                <li><strong>BLE Communication</strong>: Sniff unencrypted heart rate data, perform MITM attacks, inject malicious commands</li>
-                <li><strong>Cloud API</strong>: Bypass authentication, intercept authorization codes, replay tokens, access other patients' data</li>
-                <li><strong>Web Interface</strong>: Exploit XSS, CSRF, insecure direct object references in the device dashboard</li>
-                <li><strong>Data Storage</strong>: Extract SQLite database, analyze plaintext PII in logs, recover deleted records</li>
-                <li><strong>Mobile App</strong>: Reverse engineer APK, extract hardcoded credentials, bypass certificate pinning</li>
+                <li><strong>Phase 1 (Secure)</strong>: Baseline secure configuration with all protections enabled</li>
+                <li><strong>Phase 2 (Wireless)</strong>: Relaxed BLE security controls — practice wireless attack surfaces</li>
+                <li><strong>Phase 3 (Network)</strong>: Weakened cloud and API protections — practice network-based attacks</li>
+                <li><strong>Phase 4 (Data)</strong>: Reduced storage and logging protections — practice data extraction</li>
             </ul>
+            <p>
+                When CareOtter is loaded, you can explore vulnerabilities across multiple attack surfaces including wireless communication protocols, cloud synchronization mechanisms, web-based management interfaces, local data persistence, and mobile application integrations.
+            </p>
         </div>
         
         <div class="content-section">
@@ -87,7 +90,7 @@
         </div>
     </div>
     <footer>
-        <p><a href="https://github.com/d4str3k/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
+        <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
     </footer>
 
     <script src="/assets/js/vulnzoo.js"></script>

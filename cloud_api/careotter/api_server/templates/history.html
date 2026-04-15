@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareOtter — Vitals History</title>
+    <link rel="stylesheet" href="/static/style/history.css">
+</head>
+<body>
+
+<!-- Header -->
+<nav class="header">
+    <div class="header-brand">
+        <div class="brand-icon">
+            <svg viewBox="0 0 24 24"><polyline points="2,12 6,12 8,6 10,18 12,10 14,14 16,12 22,12"/></svg>
+        </div>
+        <div class="brand-text">
+            <span class="brand-title">CareOtter</span>
+            <span class="brand-subtitle">Vitals History</span>
+        </div>
+    </div>
+    <div class="header-actions">
+        <button id="theme-toggle" class="btn-icon" title="Toggle dark mode">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+        <a href="/" class="btn btn-secondary btn-sm">
+            <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+            Back to Monitor
+        </a>
+        <a href="/admin/login" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10,17 15,12 10,7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            Admin
+        </a>
+    </div>
+</nav>
+
+<main class="main-content">
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1>Historical Vitals Data</h1>
+        <p>All stored readings from the CareOtter device database</p>
+    </div>
+
+    <!-- Statistics Cards -->
+    <section class="stats-section">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-bpm">
+                    <svg viewBox="0 0 24 24"><polyline points="2,12 6,12 8,6 10,18 12,10 14,14 16,12 22,12"/></svg>
+                </div>
+                <div class="stat-content">
+                    <span class="stat-label">Avg Heart Rate</span>
+                    <span class="stat-value" id="stat-avg-bpm">—</span>
+                    <span class="stat-unit">BPM</span>
+                </div>
+                <div class="stat-range">
+                    <span id="stat-min-bpm">—</span> - <span id="stat-max-bpm">—</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-spo2">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                </div>
+                <div class="stat-content">
+                    <span class="stat-label">Avg SpO₂</span>
+                    <span class="stat-value" id="stat-avg-spo2">—</span>
+                    <span class="stat-unit">%</span>
+                </div>
+                <div class="stat-range">
+                    <span id="stat-min-spo2">—</span> - <span id="stat-max-spo2">—</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-count">
+                    <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                </div>
+                <div class="stat-content">
+                    <span class="stat-label">Total Readings</span>
+                    <span class="stat-value" id="stat-total">—</span>
+                </div>
+                <div class="stat-range" id="stat-period">Last 24 hours</div>
+            </div>
+
+            <div class="stat-card stat-card-alerts">
+                <div class="stat-icon stat-icon-alerts">
+                    <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </div>
+                <div class="stat-content">
+                    <span class="stat-label">Alerts</span>
+                    <span class="stat-value" id="stat-alerts">—</span>
+                </div>
+                <div class="stat-range">
+                    <span id="stat-bpm-alerts">—</span> BPM / <span id="stat-spo2-alerts">—</span> SpO₂
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+        <div class="filters-card">
+            <div class="filter-group">
+                <label for="time-range">Time Range:</label>
+                <select id="time-range" class="filter-select">
+                    <option value="1">Last Hour</option>
+                    <option value="6">Last 6 Hours</option>
+                    <option value="24" selected>Last 24 Hours</option>
+                    <option value="168">Last 7 Days</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="rows-per-page">Rows per page:</label>
+                <select id="rows-per-page" class="filter-select">
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                </select>
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-primary" id="refresh-btn">
+                    <svg viewBox="0 0 24 24"><polyline points="23,4 23,11 16,11"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 11"/></svg>
+                    Refresh
+                </button>
+                <button class="btn btn-secondary" id="export-btn">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Export CSV
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Data Table -->
+    <section class="table-section">
+        <div class="table-card">
+            <div class="table-header">
+                <h3>Vitals Readings</h3>
+                <span class="table-info" id="table-info">Loading...</span>
+            </div>
+            
+            <div class="table-container">
+                <table class="data-table" id="vitals-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>BPM</th>
+                            <th>SpO₂</th>
+                            <th>IR Raw</th>
+                            <th>Red Raw</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination" id="pagination">
+                <button class="btn btn-secondary" id="prev-page" disabled>
+                    <svg viewBox="0 0 24 24"><polyline points="15,18 9,12 15,6"/></svg>
+                    Previous
+                </button>
+                <span class="page-info" id="page-info">Page 1 of 1</span>
+                <button class="btn btn-secondary" id="next-page" disabled>
+                    Next
+                    <svg viewBox="0 0 24 24"><polyline points="9,18 15,12 9,6"/></svg>
+                </button>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="footer">
+    <p>CareOtter Medical Device Monitor</p>
+</footer>
+
+<script src="/static/js/history.js"></script>
+</body>
+</html>

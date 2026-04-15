@@ -1,0 +1,40 @@
+services:
+
+  careotter-api:
+    build:
+      context: ./api_server
+    container_name: careotter-api
+    mem_limit: 256m
+    cpus: 1.0
+    environment:
+      - VULNERABLE=1
+      - DEVICE_IP=${DEVICE_IP:-192.168.2.1}
+      - IGP_PORT=${IGP_PORT:-9999}
+      - HTTP_PORT=${HTTP_PORT:-8081}
+      - JWT_SECRET=${JWT_SECRET:-careotter_jwt_2026}
+      - JWT_EXPIRATION_HOURS=8
+      - PORT=5002
+      - DB_PATH=/app/data/careotter.db
+    ports:
+      - "5002:5002"
+    volumes:
+      # Volumen persistente para la base de datos SQLite
+      - careotter_data:/app/data
+    networks:
+      - careotter_bridge
+      - careotter_iot
+    restart: unless-stopped
+
+networks:
+  # Red externa — expuesta al host para que los clientes accedan a la API
+  careotter_bridge:
+    driver: bridge
+
+  # Red interna — comunicación con el dispositivo IoT en 192.168.2.0/24
+  careotter_iot:
+    driver: bridge
+    internal: false   # false para permitir ruteo hacia 192.168.2.1
+
+volumes:
+  careotter_data:
+    driver: local

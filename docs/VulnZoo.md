@@ -39,29 +39,34 @@ In VulnZoo you can find:
 
 ### Method 1: Custom OpenWRT Image Compilation
 
-1. Clone the official OpenWRT repository:
+1. Clone the official OpenWRT repository and checkout version v24.10.3:
 ```bash
 git clone https://github.com/openwrt/openwrt.git
+cd openwrt
+git checkout v24.10.3
 ```
 
-2. Checkout version v24.10.2:
+2. Run the `setup.sh` script from the `labs/vulnzoo` directory, passing the path to the clean OpenWRT repository. The script handles feeds, file copying, build configuration, and all patches required for Bluetooth support on Raspberry Pi 3B+:
 ```bash
-git checkout v24.10.2
+cd /path/to/VulnZoo/labs/vulnzoo
+./setup.sh /path/to/openwrt
 ```
 
-3. Update and install the feeds:
+   The script applies the following automatically:
+   - Copies `files/` (BT firmware, init scripts, web app) into the OpenWRT tree
+   - Copies `.config` with all required packages enabled
+   - Patches `package/kernel/linux/modules/other.mk` to enable `CONFIG_BT_HCIUART_BCM=y` and include `btbcm.ko`
+   - Patches `target/linux/bcm27xx/image/distroconfig.txt` to remove `dtoverlay=disable-bt` for Pi 3, freeing the PL011 UART for the onboard BCM4345C0 Bluetooth chip
+   - Patches `target/linux/bcm27xx/image/cmdline.txt` to remove the serial console from `ttyAMA0` (which is now used by Bluetooth)
+   - Runs `make defconfig` to resolve configuration dependencies
+
+3. Compile the image:
 ```bash
-./scripts/feeds update -a
-./scripts/feeds install -a
+cd /path/to/openwrt
+make -j$(nproc) V=s 2>&1 | tee build.log
 ```
 
-4. Copy the *files* folder and the *.config* file from the project’s */openwrt_resources/vulnzoo* directory to the OpenWRT repository.
-5. Compile the image:
-```bash
-make -j$(nproc)
-```
-
-6. Flash the squashfs image to the SD card.
+4. Flash the squashfs image to the SD card.
 
 ### Method 2: Using a Precompiled Image
 

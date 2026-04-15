@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 instance/
 .env
-venv/
+.venv/
 .env.*
 .vscode/
 docs/.obsidian/
@@ -16,5 +16,8 @@ openwrt_resources/careotter/
 /*.md
 /*.pdf
 labs/**/*.md
+cloud_api/*.md
 cloud_api/**/*.md
 releases/
+.aider*
+.qwen*

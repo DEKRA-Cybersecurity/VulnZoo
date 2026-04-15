@@ -45,6 +45,10 @@ lock = threading.Lock()
 log_lock = threading.Lock()
 log_buffer = []  # Buffer circular de logs
 
+# Alert thresholds — writable via POST /thresholds and BLE characteristic
+alert_thresholds = {"bpm_min": 40, "bpm_max": 120, "spo2_min": 90}
+thresholds_lock = threading.Lock()
+
 # ── Log rotación support ───────────────────────────────────
 class LogReopener:
     """Maneja la reapertura de logs ante señal SIGUSR1"""
@@ -253,7 +257,7 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         
         elif self.path == "/config":
-            """Devuelve los parámetros activos del servicio"""
+            # VULNERABILITY: _simulator_pid and _sensor_mode exposed — information disclosure
             config = {
                 "use_real_hardware": USE_REAL_HW,
                 "bpm": BPM_BASE,
@@ -263,6 +267,8 @@ class VitalsHandler(BaseHTTPRequestHandler):
                 "sample_rate": SAMPLE_RATE_HZ,
                 "summary_every_s": SUMMARY_EVERY,
                 "log_buffer_max": LOG_BUFFER_MAX,
+                "_simulator_pid": os.getpid(),
+                "_sensor_mode": "fake" if not USE_REAL_HW else "real",
             }
             body = json.dumps(config).encode()
             self.send_response(200)
@@ -271,6 +277,87 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
 
+        elif self.path == "/alerts":
+            with lock:
+                bpm = latest["bpm"]
+                spo2 = latest["spo2"]
+            with thresholds_lock:
+                thresholds = dict(alert_thresholds)
+            alert_firing = (
+                bpm < thresholds["bpm_min"] or
+                bpm > thresholds["bpm_max"] or
+                spo2 < thresholds["spo2_min"]
+            )
+            data = {
+                "thresholds": thresholds,
+                "current_bpm": bpm,
+                "current_spo2": spo2,
+                "alert_firing": alert_firing,
+                "alerts": {
+                    "bpm_low":  bpm < thresholds["bpm_min"],
+                    "bpm_high": bpm > thresholds["bpm_max"],
+                    "spo2_low": spo2 < thresholds["spo2_min"],
+                },
+            }
+            body = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
+        elif self.path.startswith("/history"):
+            # VULNERABILITY: minutes parameter accepted without validation
+            # minutes=99999 returns full buffer without error
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                minutes = int(qs.get("minutes", ["60"])[0])
+            except (ValueError, IndexError):
+                minutes = 60
+            cutoff = time.time() - (minutes * 60)
+            with log_lock:
+                # No validation on minutes — intentional
+                if minutes >= LOG_BUFFER_MAX:
+                    filtered = list(log_buffer)
+                else:
+                    filtered = [e for e in log_buffer if e.get("timestamp", 0) >= cutoff]
+            body = json.dumps(filtered).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/thresholds":
+            # VULNERABILITY: no authentication required — any client can change alert thresholds
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body)
+                with thresholds_lock:
+                    if "bpm_min"  in data: alert_thresholds["bpm_min"]  = int(data["bpm_min"])
+                    if "bpm_max"  in data: alert_thresholds["bpm_max"]  = int(data["bpm_max"])
+                    if "spo2_min" in data: alert_thresholds["spo2_min"] = int(data["spo2_min"])
+                    result = dict(alert_thresholds)
+                resp = json.dumps({"ok": True, "thresholds": result}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(resp))
+                self.end_headers()
+                self.wfile.write(resp)
+            except (ValueError, KeyError) as e:
+                err = json.dumps({"error": str(e)}).encode()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(err))
+                self.end_headers()
+                self.wfile.write(err)
         else:
             self.send_response(404)
             self.end_headers()

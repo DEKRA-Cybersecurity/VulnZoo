@@ -1,234 +1,294 @@
-# Architecture
+# CareOtter — Lab Documentation
 
-```plain
-┌─────────────────────────────────────────────────────────────────────┐
-│                    RASPBERRY PI 3B+ (OpenWrt)                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────┐│
-│  │  MAX30102    │  │  Vitals      │  │  REST API    │  │  BLE GATT ││
-│  │  (Sim/Real)  │→ │  Service     │→ │  (Flask)     │← │  Server   ││
-│  └──────────────┘  └──────────────┘  └──────────────┘  └─────┬─────┘│
-│         │                 │                  │                │     │
-│         └─────────────────┴──────────────────┴────────────────┘     │
-│                           │                                         │
-│                    ┌──────┴──────┐                                  │
-│                    │  Emergency  │                                  │
-│                    │  Controller │                                  │
-│                    └──────┬──────┘                                  │
-│                           │                                         │
-│              ┌────────────┼────────────┐                            │
-│              ▼            ▼            ▼                            │
-│  ┌─────────────────┐ ┌──────────┐ ┌──────────────┐                  │
-│  │ Actuator        │ │ Panic    │ │ Telephony    │                  │
-│  │ "Defibrillator" │ │ Button   │ │ Service      │                  │
-│  │ (GPIO/Relay)    │ │ (GPIO)   │ │ (Simulated)  │                  │
-│  └─────────────────┘ └──────────┘ └──────────────┘                  │
-└─────────────────────────────────────────────────────────────────────┘
-         │                    │                      │
-         │ BLE (primary)      │ HTTP (fallback)      │ MQTT (admin)
-         ▼                    ▼                      ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  Android App    │  │  Android App    │  │  Web Panel      │
-│  (CareOtter Mon)│  │  (Debug Mode)   │  │  (Admin/Doctor) │
-│  - Vitals Monitor│  │  - Configuration│  │  - Patient History│
-│  - BLE Alerts   │  │  - Emergency    │  │  - Patient Mgmt │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-         │
-         ▼
-┌────────────────────┐
-│  Database          │
-│  SQLite (local)    │  ◄── Vulnerability: SQLi without WAF
-│  /tmp/careotter.db │
-└────────────────────┘                                             
+CareOtter is a simulated **DAI (Desfibrilador Automático Implantable)** — an Implantable Cardioverter Defibrillator (ICD) cardiac device — running on Raspberry Pi 3B+ with OpenWRT. It emulates a modern cardiac rhythm management (CRM) implant used in clinical and remote-patient-monitoring scenarios. Like real ICDs, CareOtter exposes critical cardiac telemetry (heart rate and blood oxygenation) via BLE GATT for bedside or mobile clinician review, and streams the same data over HTTP to a hospital gateway. Device administration is performed through a legacy custom binary protocol (IGP v4) on TCP port 9999, and a Flask cloud API on the operator's machine acts as the HTTP-to-IGP bridge.
+
+## Simulated Clinical Context
+
+CareOtter is designed as a **generalist medical IoT security training scenario** representative of modern cardiac device ecosystems:
+
+- **Device**: A next-generation DAI/ICD simulator with integrated pulse-oximetry telemetry (BPM / SpO₂).
+- **Connectivity**: Dual-channel communication — **Bluetooth Low Energy (BLE)** for direct clinician/mobile app pairing, and **HTTP** for ward-to-cloud telemetry.
+- **Administration**: A legacy **IGP v4** binary admin protocol used for device provisioning, threshold configuration, and network management.
+- **Cloud/Gateway**: A Flask-based **Cloud API** that bridges external HTTP clients to the internal IGP admin service, mimicking hospital IT infrastructure and remote monitoring platforms.
+
+This lab explores security across the full stack: **BLE pairing and GATT exposure**, **network communication**, **device administration protocols**, and **cloud API/data persistence**.
+
+## Modern ICD Functions Emulated
+
+Modern Implantable Cardioverter Defibrillators (ICDs) act as **intelligent control hubs** that monitor the heart 24/7 and deliver tiered therapies based on the severity of detected arrhythmias. CareOtter emulates the following core therapeutic and diagnostic functions:
+
+- **Continuous cardiac monitoring** — real-time tracking of heart rate and rhythm to detect bradycardia, tachycardia, and fibrillation events.
+- **Tiered electrical therapy** — delivery of progressively stronger interventions:
+  - **Anti-tachycardia pacing (ATP)** — painless burst pacing to terminate fast but organized rhythms.
+  - **Cardioversion** — a low-energy shock to restore normal rhythm during sustained ventricular tachycardia (VT).
+  - **Defibrillation** — a high-energy shock to rescue the patient from ventricular fibrillation (VF).
+- **SpO₂ alert forwarding** — when blood-oxygen saturation falls below **95 %**, the device is programmed to generate a **clinical alert to the attending physician**. The specific transport channel and destination endpoint for this alert are **still under definition** in the current firmware release.
+
+### Security Relevance
+
+Each of the above functions represents a **critical therapeutic capability** that can be abused if the device is compromised:
+
+- **Illicit activation** — an attacker with administrative access could trigger unnecessary pacing shocks or high-energy defibrillation, causing patient harm and battery depletion.
+- **Therapy suppression** — by tampering with threshold configurations or injecting imprecise BPM readings, an attacker could **silently disable or delay life-saving therapies** (e.g., raising VT detection zones so that a real arrhythmia is ignored).
+- **Alert suppression / redirection** — manipulating the SpO₂ alert logic or blocking its transmission can prevent a physician from receiving early warning signs of hypoxemia.
+
+Because CareOtter mirrors the control surface of a real cardiac implant, the lab demonstrates how **protocol-level vulnerabilities** (IGP v4 command injection, TLV parsing flaws, BLE exposure, and cloud API weaknesses) can cascade into **life-threatening therapeutic consequences**.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                 RASPBERRY PI 3B+ — 192.168.2.1                   │
+│                                                                  │
+│  ┌────────────────────┐        ┌─────────────────────────────┐   │
+│  │  MAX30102 Simulator│        │  careservice (C)            │   │
+│  │  /opt/medical-     │        │  TCP :9999 — IGP v4         │   │
+│  │  sensor/           │        │  10 admin commands          │   │
+│  └────────┬───────────┘        └──────────────┬──────────────┘   │
+│           │                                   │                  │
+│  ┌────────▼───────────┐        ┌──────────────▼──────────────┐   │
+│  │  sensor_service.py │        │  ble_server.py              │   │
+│  │  HTTP :8081        │◄───────│  BlueZ D-Bus (dbus_fast)    │   │
+│  │  6 endpoints       │        │  3 GATT services            │   │
+│  └────────────────────┘        └─────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+        │ HTTP :8081                          │ BLE GATT
+        ▼                                    ▼
+┌──────────────────────────────┐   ┌──────────────────────┐
+│  CLOUD API — operator PC     │   │  Mobile App          │
+│  cloud_api/careotter/        │   │  (Android / Flutter) │
+│  Flask :5002                 │   │  BLE direct connect  │
+│  IGP v4 ← → HTTP REST        │   └──────────────────────┘
+│  Web UI admin panel          │
+└──────────────────────────────┘
 ```
 
-```zsh
-$ curl http://192.168.2.1:8081/config
-{"use_real_hardware": false, "bpm": 72, "spo2": 98, "http_port": 8081, "log_file": "/tmp/medical-logs/vitals.log", "sample_rate": 10, "summary_every_s": 60, "log_buffer_max": 1440}       
+---
+
+## Device Services
+
+### 1. Medical Sensor Service — HTTP :8081
+
+Python service (`/opt/medical-sensor/sensor_service.py`) that reads from a MAX30102 simulator (or real hardware) and exposes vitals over HTTP.
+
+| Method | Endpoint    | Auth | Description |
+|--------|-------------|------|-------------|
+| GET    | `/vitals`   | None | Current BPM, SpO2, raw ADC values, timestamp |
+| GET    | `/health`   | None | Returns `ok` (plain text) |
+| GET    | `/config`   | None | Active service configuration (sample rate, ports, log path) |
+| GET    | `/log`      | None | Full in-memory vitals history buffer (circular, up to 1440 entries) |
+| GET    | `/log/last` | None | Most recent vitals summary entry |
+| GET    | `/reload`   | None | Forces log file reopen (alternative to SIGUSR1) |
+
+**Example responses:**
+
+```bash
 $ curl http://192.168.2.1:8081/vitals
-{"bpm": 78, "spo2": 84, "red_raw": 61085, "ir_raw": 61036, "timestamp": 1773738799.8925164, "source": "simulator"}  
+{"bpm": 78, "spo2": 98, "red_raw": 61085, "ir_raw": 61036, "timestamp": 1773738799.89, "source": "simulator"}
+
+$ curl http://192.168.2.1:8081/config
+{"use_real_hardware": false, "bpm": 72, "spo2": 98, "http_port": 8081,
+ "log_file": "/tmp/medical-logs/vitals.log", "sample_rate": 10,
+ "summary_every_s": 60, "log_buffer_max": 1440}
 
 $ curl http://192.168.2.1:8081/log/last
-{"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738765.0571454, "source": "simulator"}   
+{"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 98.0,
+ "spo2_min": 98, "spo2_max": 98, "samples": 600, "timestamp": 1773738765.06, "source": "simulator"}
 
-$ curl http://192.168.2.1:8081/health  
+$ curl http://192.168.2.1:8081/health
 ok
-
-$ curl http://192.168.2.1:8081/log     
-[{"bpm_avg": 78.6, "bpm_min": 60, "bpm_max": 150, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773737968.7881646, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738035.142162, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738101.4962459, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738167.8478281, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738234.2053628, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738300.5681176, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738366.9227927, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738433.2807875, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738499.635625, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738565.9906137, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738632.345027, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738698.701854, "source": "simulator"}, {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738765.0571454, "source": "simulator"}, {"bpm_avg": 79.0, "bpm_min": 72, "bpm_max": 90, "spo2_avg": 84.0, "spo2_min": 84, "spo2_max": 84, "samples": 600, "timestamp": 1773738831.413544, "source": "simulator"}]
 ```
 
+---
 
-## 1. Communication Stack Pi ↔ Mobile (With Fallbacks)
+### 2. Admin Service — IGP v4 TCP :9999
 
-### Primary Protocol: BLE GATT (Low Energy)
+C daemon (`/opt/careotter/careservice`, source at `labs/careotter/careservice.c`) implementing the IoT Gateway Protocol v4 binary protocol.
 
-**Implementation:** BlueZ + Python `bleak` (server) / `flutter_blue_plus` (client)
+#### IGP v4 Header Format
 
-**Exposed BLE Services (Vulnerable by Design):**
-Service 0x180D (Heart Rate):
-  - Characteristic 0x2A37: BPM Notifications (plaintext data, no encryption)
-  - Characteristic 0x2A38: SpO2 (custom UUID, spoofable)
-  
-Service 0xFF00 (CareOtter Emergency):
-  - UUID: "careotter-emergency-uuid-1234"
-  - Properties: Write (no pairing authentication required)
-  - Vulnerability: Any BLE device can write "trigger-emergency"
-
-**Vulnerability #1 (Communications):**
-- Pairing mode: `JustWorks` (without MITM protection)
-- Hardcoded LTK (Long Term Key) in `/etc/bluetooth/careotter.conf`
-- Sniffing possible with Ubertooth One or even Bettercap on rooted Android
-```python
-# Vulnerable Flask (app.py)
-from flask import Flask, request, jsonify
-import sqlite3
-import os
-
-app = Flask(__name__)
-
-@app.route('/vitals/stream')
-def stream_vitals():
-    # No authentication, exposes everything
-    return jsonify(get_last_vitals())
-
-@app.route('/emergency/call', methods=['POST'])
-def emergency_call():
-    # VULNERABILITY #2: Command Injection
-    number = request.json.get('number')
-    os.system(f"asterisk -rx 'channel originate Local/{number} application Playback emergency'")
-    return {"status": "calling", "number": number}
+```
+Bytes  0–3:  Magic  = 0x474F4154  ("GOAT"), big-endian uint32
+Byte   4:    Cmd    = command code (uint8)
+Byte   5:    Status = 0x00 (reserved)
+Bytes  6–7:  Len    = payload length (big-endian uint16)
 ```
 
-### Fallback 2: MQTT (For Administration Panel)
+Total header: 8 bytes. Payload immediately follows. Server closes connection after sending response (EOF = delimiter).
 
-**Broker:** Mosquitto on port 1883 (without TLS) **Topics:**
-- `careotter/patient/+/vitals` (data publication)
-- `careotter/admin/config` (subscription for configuration changes)
-- `careotter/emergency/activate` (retained message with emergency payload)
+#### Command Reference
 
-**Vulnerability #3:**
-- No ACL: any client can publish to `careotter/emergency/activate`
-- QoS 0 on critical messages (real-time data loss)
-- Retained message poisoning: publish `{"spo2": 0, "bpm": 0}` with `-r` flag
+| Cmd  | Name            | Auth | Payload              | Response             | Notes |
+|------|-----------------|------|----------------------|----------------------|-------|
+| 0x01 | SYS_INFO        | No   | —                    | `v:<kernel>\|m:<arch>` | Kernel release + machine arch |
+| 0x02 | AUTHENTICATE    | No   | Token string         | `AUTH_SUCCESS` / `AUTH_FAIL` | **VULN: hardcoded token** |
+| 0x03 | GET_NETWORK     | Yes  | —                    | Raw `/etc/config/wireless` | **VULN: exposes WiFi PSK** |
+| 0x04 | SET_PREFS       | Yes  | TLV hex bytes        | `PREFS_SAVED` | **VULN: TLV integer underflow → BOF** |
+| 0x05 | VERIFY_STATUS   | No   | Module name string   | Status diagnostic text | **VULN: format string** |
+| 0x06 | SET_WIFI        | Yes  | `"SSID\|PSK"`        | `WIFI_UPDATED` / `WIFI_ERR` / `ERR_*` | **FLAW: shell injection via system()** |
+| 0x07 | GET_VITALS      | No   | —                    | Full HTTP response from :8081/vitals | IGP→HTTP proxy |
+| 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)   | `THRESHOLD_SET` | Clean parser, writes to `/tmp/careotter.thresholds` |
+| 0x09 | REBOOT_SERVICE  | Yes  | Service name string  | `SVC_RESTART_QUEUED` / `REBOOT_ERR` | **FLAW: no waitpid() → zombie processes** |
+| 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/tmp/careservice.log` | `LOG_EMPTY` if not present |
 
-## 2. Medical Actuation Services (CareOtter Actions)
+#### TLV Formats
 
-### Multi-Level Emergency System
+**SET_PREFS (0x04)** — vulnerable parser:
+```
+[Type(1)][Len(1)][Value(n)]...
+  0xAA = visual theme name (e.g. "Dark")
+  0xAB = language code (e.g. "es")
+  0xAC = screen mode (0x00=day, 0x01=night)
+```
 
-**A. Threshold Configuration (Vulnerable to IDOR)**
-### Fallback 1: HTTP REST (If BLE Fails)
-**Endpoint:** `http://192.168.4.1:8080/api/v1/`
+**SET_THRESHOLD (0x08)** — clean parser:
+```
+BB 04 [bpm_min uint16 BE] [bpm_max uint16 BE]
+CC 01 [spo2_min uint8]
+```
+
+#### Quick Test (Python)
 
 ```python
-@app.route('/config/thresholds/<patient_id>', methods=['PUT'])
-def set_thresholds(patient_id):
-    # VULNERABILITY #4: IDOR - you can change other patients' thresholds
-    # by changing patient_id in URL (1, 2, 3...)
-    data = request.json
-    query = f"UPDATE patients SET bpm_min={data['bpm_min']}, bpm_max={data['bpm_max']} WHERE id={patient_id}"
-    execute_query(query)  # SQLi also possible here
-    return {"updated": patient_id}
+import socket, struct
+
+MAGIC = 0x474F4154
+
+def igp(cmd, payload=b''):
+    hdr = struct.pack('>IBBH', MAGIC, cmd, 0, len(payload))
+    with socket.create_connection(('192.168.2.1', 9999)) as s:
+        s.sendall(hdr + payload)
+        return s.recv(4096)
+
+print(igp(0x01))                         # SYS_INFO
+print(igp(0x02, b'OtterMobile2026'))      # AUTHENTICATE → AUTH_SUCCESS
+print(igp(0x03))                         # GET_NETWORK (requires prior auth)
+print(igp(0x05, b'%x.%x.%x'))           # Format string leak
+print(igp(0x06, b"MySSID|mypassword123")) # SET_WIFI
+# Threshold TLV: BPM 50–120, SpO2 min 90%
+tlv = struct.pack('>BBHH', 0xBB, 4, 50, 120) + struct.pack('>BBB', 0xCC, 1, 90)
+print(igp(0x08, tlv))                    # SET_THRESHOLD
 ```
 
-**B. Panic Button (Physical GPIO + Simulated)**
-- **Physical:** GPIO 18 (input) on Pi → interrupt that publishes to MQTT/BLE
-- **Remote:** HTTP endpoint `POST /panic` or BLE write to characteristic 0xFF01
-- **Vulnerability #5:** Race Condition - spamming the panic button blocks the emergency service (DoS on the actuator)
+---
 
-**C. Simulated "Defibrillator" (Critical Actuator)** Controlled by GPIO 23 (Relay/LED simulating charge):
-```python
-@app.route('/defibrillator/charge', methods=['POST'])
-def charge_defib():
-    if request.json.get('auth_code') == "1234":  # Hardcoded credential
-        gpio_set(23, HIGH)
-        log_action("DEFIBRILLATOR ACTIVATED")
-        return {"status": "charging", "joules": 200}
-    return {"error": "unauthorized"}, 401
+### 3. BLE GATT Server
 
-@app.route('/defibrillator/discharge', methods=['POST'])
-def discharge():
-    # VULNERABILITY #6: No verification of previous state
-    # Allows discharge without prior charging (broken business logic)
-    # or continuous discharge (dangerous latch)
-    gpio_pulse(23, duration=10)  # 10 seconds of "shock"
-    return {"status": "shock delivered"}
+Python service (`/opt/medical-sensor/ble_server.py`) using `dbus_fast` over BlueZ D-Bus. Advertises as `CareOtter_HR`.
+
+| GATT Service | UUID | Characteristic | UUID | Properties |
+|---|---|---|---|---|
+| Heart Rate | `0000180d-…` | HR Measurement | `00002a37-…` | notify, read |
+| Pulse Oximeter | `00001822-…` | PLX Continuous | `00002a5f-…` | notify, read |
+| Battery | `0000180f-…` | Battery Level | `00002a19-…` | read |
+
+BLE reads vitals from the local sensor service at `http://127.0.0.1:8081/vitals` every notification cycle.
+
+---
+
+## Initialization Hooks
+
+Hooks run in order at device startup from `/usr/lib/vulnzoo-hooks/profile-init.d/`:
+
+| Hook | Description |
+|------|-------------|
+| `05-preflight.sh` | System pre-checks |
+| `15-python-deps.sh` | Python dependency validation |
+| `40-i2c.sh` | I2C bus initialization (MAX30102 interface) |
+| `50-medical-sensor.sh` | Starts `medical-sensor` init.d service |
+| `55-ble-server.sh` | Starts BLE GATT server |
+| `60-cron.sh` | Cron setup |
+| `70-careotter-admin.sh` | Starts `careservice` on TCP :9999 |
+| `80-wifi.sh` | WiFi connectivity setup |
+
+---
+
+## Cloud API
+
+Flask application at `cloud_api/careotter/api_server/` acting as HTTP-to-IGP bridge. Runs on port **5002** (`VULNERABLE=1`).
+
+### Authentication
+
+`POST /api/auth/login` — sends device token via IGP 0x02. On success, returns a JWT (HS256, 8h expiry).
+
+```bash
+curl -X POST http://localhost:5002/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"token": "OtterMobile2026"}'
+# → {"token": "<JWT>", "expires_in": "8h", "type": "Bearer"}
 ```
 
-**D. Telephony Service (Simulated Asterisk)**
+Protected endpoints require `Authorization: Bearer <JWT>`.
 
-- Script at `/usr/lib/careotter/phone.sh` that simulates emergency calls
-- Vulnerability #7: Path traversal in phone number
-    - Payload: `number="../../../../etc/passwd"` in emergency POST
+### API Endpoints
 
-## 3. Web API and Storage (Data Exfiltration Targets)
+| Method | Route | Auth | IGP Cmd | Description |
+|--------|-------|------|---------|-------------|
+| GET    | `/api/health`                 | No  | —     | API status, version, device address |
+| POST   | `/api/auth/login`             | No  | 0x02  | Authenticate with device token, get JWT |
+| GET    | `/api/device/info`            | No  | 0x01  | Kernel version and architecture |
+| GET    | `/api/device/status`          | No  | 0x05  | Subsystem diagnostic (`?module=CareOtter`) |
+| GET    | `/api/vitals`                 | No  | HTTP  | Current BPM and SpO2 from sensor |
+| GET    | `/api/vitals/history`         | No  | HTTP  | Vitals history buffer (up to 1440 entries) |
+| GET    | `/api/network`                | JWT | 0x03  | Network configuration (raw includes WiFi PSK) |
+| POST   | `/api/network/wifi`           | JWT | 0x06  | Configure WiFi `{"ssid": "...", "password": "..."}` |
+| POST   | `/api/config/preferences`     | JWT | 0x04  | Set preferences `{"tlv_hex": "AA04..."}` |
+| POST   | `/api/config/thresholds`      | JWT | 0x08  | Set alert thresholds `{"bpm_min": 50, "bpm_max": 120, "spo2_min": 90}` |
+| POST   | `/api/services/restart`       | JWT | 0x09  | Restart init.d service `{"service": "medical-sensor"}` |
+| GET    | `/api/logs`                   | JWT | 0x0A  | Last 512 bytes of device admin log |
 
-### Data Schema (Intentionally Vulnerable SQLite)
-```sql
--- careotter.db
-CREATE TABLE patients (
-    id INTEGER PRIMARY KEY,
-    name TEXT,
-    ssn TEXT,  -- SSN unencrypted
-    bpm_min INTEGER,
-    bpm_max INTEGER,
-    spo2_threshold INTEGER,
-    emergency_contact TEXT,
-    medical_notes TEXT  -- Sensitive medical history
-);
+**Services available for restart:** `medical-sensor`, `careservice`, `ble-server`
 
-CREATE TABLE vitals_log (
-    id INTEGER PRIMARY KEY,
-    patient_id INTEGER,
-    timestamp REAL,
-    bpm INTEGER,
-    spo2 INTEGER,
-    FOREIGN KEY(patient_id) REFERENCES patients(id)
-);
+### Web UI
+
+The admin panel is accessible at `http://localhost:5002/admin/login` after Docker startup.
+
+| URL | Page |
+|-----|------|
+| `/admin/login` | Token login form |
+| `/admin/dashboard` | Live vitals + device info |
+| `/admin/network` | View/change WiFi configuration |
+| `/admin/config` | Clinical thresholds + TLV preferences |
+| `/admin/services` | Restart init.d services |
+| `/admin/logs` | Device log viewer + vitals history table |
+
+### Docker Deployment
+
+```bash
+cd cloud_api/careotter
+docker compose up careotter-api
+
+# API:    http://localhost:5002/api/health
+# Panel:  http://localhost:5002/admin/login
 ```
 
-### Vulnerable Endpoints (For CTF Flags)
+---
 
-1. **`GET /api/v1/patients/<id>/records`**
-    - SQL Injection: `id=1 UNION SELECT * FROM patients--`
+## Vulnerability Map
 
-2. **`GET /api/v1/export?format=csv&patient_id=1`**
-    - Path traversal: `patient_id=../../../../etc/shadow`
-    - XXE if XML is used internally for processing
+| #   | Type                          | Location                                                                             | Trigger                                                                                                          |
+| --- | ----------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| 1   | Hardcoded credential          | `careservice.c` — `#define ADMIN_TOKEN "OtterMobile2026"`                            | `strings careservice` or IGP 0x02 brute-force                                                                    |
+| 2   | Information disclosure        | `careservice.c` — cmd 0x03 GET_NETWORK                                               | POST-auth IGP 0x03 returns `/etc/config/wireless` with WiFi PSK in plaintext                                     |
+| 3   | Integer underflow → stack BOF | `careservice.c` — `parse_preferences()`                                              | IGP 0x04 with TLV `Len=0xFF` and fewer real bytes; `remaining` underflows, `memcpy` overflows `local_store[128]` |
+| 4   | Format string                 | `careservice.c` — `get_system_status()`, `snprintf(report_header, 128, module_name)` | IGP 0x05 payload `%x.%x.%x` leaks stack; `%n` writes                                                             |
+| 5   | Shell injection (latent)      | `careservice.c` — cmd 0x06 SET_WIFI, `system(cmd)`                                   | IGP 0x06 with SSID `'; rm -rf /tmp #` — no shell metacharacter escaping                                          |
+| 6   | Global auth state             | `careservice.c` — `int authenticated = 0` (global)                                   | Auth in one TCP connection persists for all subsequent connections to the same process                           |
+| 7   | Weak JWT secret               | `config.py` — `JWT_SECRET = 'careotter_jwt_2026'`                                    | Brute-force HS256 with `hashcat` or `jwt_tool`                                                                   |
+| 8   | WiFi PSK exposed via API      | `app.py` — GET `/api/network`, `raw` field in response                               | GET `/api/network` with valid JWT in `VULNERABLE=1` mode                                                         |
+| 9   | Format string via API         | `app.py` — GET `/api/device/status?module=`                                          | `?module=%25x.%25x.%25x` passes format string to device when `VULNERABLE=1`                                      |
+| 10  | Flask debug mode              | `app.py` — `app.run(debug=(vuln == 1))`                                              | Werkzeug interactive debugger active; RCE via PIN bypass                                                         |
 
-3. **`POST /api/v1/login`**
-    - JWT signed with weak key `secret123` (crackable with jwt_tool)
-    - SQLi in username: `admin' OR '1'='1`
+---
 
-## 4. Vulnerability Tree by Attack Type
+## Network Configuration
 
-### Physical/IoT Attacks
-
-- **BLE Spoofing:** Clone the medical device by sending fake data (MAC spoofing)
-- **Jamming:** 2.4GHz interference to force fallback to HTTP (easier to intercept)
-- **Hardware Hacking:** Extract `/etc/careotter/secrets.conf` from Pi's UART port (if exposed)
-### Network Attacks
-
-- **BLE MITM:** Capture initial pairing (JustWorks) and decrypt LTK
-- **MQTT Subscribe:** Connect to broker without auth and subscribe to `#` (all topics)
-- **HTTP Interception:** Burp Proxy between App and Pi to modify BPM thresholds in transit
-
-### Application Attacks (Business Logic)
-
-- **Business Logic:** Send BPM=0 via API so defibrillator activates "automatically" (logic: if bpm < min_threshold → shock)
-- **Race Condition:** Two simultaneous requests to `/defibrillator/charge` cause simulated overload (state bug)
-- **Replay Attack:** Reuse old JWT tokens (no `iat` or `exp` verification)
-
-### Database Attacks
-
-- **SQLi:** Obtain all SSNs and medical notes
-- **RCE via SQLite:** `load_extension()` if enabled (rare but possible in custom builds)
-# Targets
-
-1. **Phase 1 (Core):** MAX30102 → Python → Local MQTT → SQLite (basic functionality)
-2. **Phase 2 (Comms):** Add BLE GATT server + HTTP fallback (multiprotocol)
-3. **Phase 3 (Actuators):** GPIO for panic button + "defibrillator" (LED/Relay)
-4. **Phase 4 (Vulnerabilities):**
-    - Hardcode credentials in `/etc/careotter/config.ini`
-    - Remove input validation in Flask.
-    - Disable TLS on Mosquitto.
-    - Enable `JustWorks` on BlueZ.
+| Component | Address |
+|-----------|---------|
+| Raspberry Pi (OpenWRT) | `192.168.2.1` |
+| IGP Admin Service | `192.168.2.1:9999` |
+| Medical Sensor HTTP | `192.168.2.1:8081` |
+| Cloud API (vulnerable) | `<operator-pc>:5002` |
+| BLE | Advertised as `CareOtter_HR` |

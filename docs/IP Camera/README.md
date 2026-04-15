@@ -24,7 +24,7 @@ To begin working with the IP Camera vulnerable profile, follow these steps:
      **b) Start the VulnZoo API (Backend) with Docker**
      - Open a terminal and navigate to the API folder:
          ```sh
-         cd /home/d4str3k/Desktop/VulnZoo/cloud_api
+         cd cloud_api
          ```
      - Make sure Docker and Docker Compose are installed.
      - Launch the API services:
@@ -50,7 +50,7 @@ To begin working with the IP Camera vulnerable profile, follow these steps:
 
      - To build and install the APK:
          ```sh
-         cd /home/d4str3k/Desktop/VulnZoo/vulnzoo_app
+         cd vulnzoo_app
          ./gradlew assembleDebug
          adb install -r app/build/outputs/apk/debug/app-debug.apk
          adb shell am start -n com.example.vulnzooapp/.MainActivity
@@ -90,7 +90,7 @@ To run the VulnZoo API backend using Docker, follow these steps:
 
 1. Open a terminal and navigate to the API directory:
     ```sh
-    cd /home/d4str3k/Desktop/VulnZoo/cloud_api
+    cd cloud_api
     ```
 
 2. Make sure you have Docker installed on your system.

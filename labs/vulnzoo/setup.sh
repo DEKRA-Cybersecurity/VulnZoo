@@ -87,9 +87,11 @@ log "Parcheando target/linux/bcm27xx/image/distroconfig.txt..."
 DISTRO_CFG="$TARGET_REPO/target/linux/bcm27xx/image/distroconfig.txt"
 
 if [ -f "$DISTRO_CFG" ]; then
-    sed -i '/^\[pi3\]$/,/^\[/{
-        s|^dtoverlay=disable-bt$|# Use PL011 UART (ttyAMA0) for Bluetooth - more reliable than Mini UART\n# miniuart-bt is disabled to allow proper Bluetooth operation\n# dtoverlay=miniuart-bt|
-    }' "$DISTRO_CFG"
+    # Remove disable-bt for pi3: PL011 (ttyAMA0) must be free for BCM4345C0 Bluetooth.
+    # Without this removal, the bootloader disables the BT chip at hardware level
+    # and hciattach times out. serial0 alias in cmdline.txt resolves to ttyS0 (Mini UART)
+    # for the console when PL011 is used for BT.
+    sed -i '/^\[pi3\]$/,/^\[/{/^dtoverlay=disable-bt$/d}' "$DISTRO_CFG"
 
     sed -i '/^\[pi4\]$/,/^\[/{
         s|^dtoverlay=disable-bt$|dtoverlay=miniuart-bt|
