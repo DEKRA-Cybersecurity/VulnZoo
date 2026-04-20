@@ -14,10 +14,13 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.UUID;
 
 /**
@@ -62,8 +65,20 @@ public class BleMonitorClient {
     private final Listener listener;
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothLeScanner scanner;
+    private static final String TAG = "BleMonitorClient";
+
     private BluetoothGatt gatt;
     private boolean scanning = false;
+
+    // Descriptor-write queue to serialise CCC writes and avoid Android BLE stack collisions
+    private final Queue<NotifyRequest> notifyQueue = new LinkedList<>();
+    private boolean descriptorWritePending = false;
+
+    private static class NotifyRequest {
+        final UUID serviceUuid;
+        final UUID chrUuid;
+        NotifyRequest(UUID s, UUID c) { this.serviceUuid = s; this.chrUuid = c; }
+    }
 
     public BleMonitorClient(Context context, Listener listener) {
         this.context = context;
@@ -127,23 +142,28 @@ public class BleMonitorClient {
         BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
         // AUTOCONNECT = false, no bonding enforced
         gatt = device.connectGatt(context, false, gattCallback);
+        Log.d(TAG, "connectGatt issued for " + address);
         listener.onLog("Connecting to " + address + "…");
     }
 
     public void disconnect() {
         if (gatt == null) return;
         if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
+        notifyQueue.clear();
+        descriptorWritePending = false;
         gatt.disconnect();
+        Log.d(TAG, "disconnect() called");
     }
 
     // ── Characteristic read/write ─────────────────────────────────────────────
 
     public void readThreshold() {
-        if (gatt == null) return;
+        if (gatt == null) { Log.w(TAG, "readThreshold: gatt is null"); return; }
         BluetoothGattCharacteristic chr = findCharacteristic(ALERT_SERVICE, ALERT_THRESHOLD);
         if (chr == null) { listener.onLog("ALERT_THRESHOLD characteristic not found"); return; }
         if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
-        gatt.readCharacteristic(chr);
+        boolean ok = gatt.readCharacteristic(chr);
+        Log.d(TAG, "readThreshold enqueued=" + ok);
     }
 
     /**
@@ -152,13 +172,24 @@ public class BleMonitorClient {
      * to the characteristic.
      */
     public void writeThreshold(String rawJson) {
-        if (gatt == null) return;
+        if (gatt == null) { Log.w(TAG, "writeThreshold: gatt is null"); return; }
         BluetoothGattCharacteristic chr = findCharacteristic(ALERT_SERVICE, ALERT_THRESHOLD);
         if (chr == null) { listener.onLog("ALERT_THRESHOLD characteristic not found"); return; }
         if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
         chr.setValue(rawJson.getBytes(StandardCharsets.UTF_8));
-        gatt.writeCharacteristic(chr);
+        boolean ok = gatt.writeCharacteristic(chr);
+        Log.d(TAG, "writeThreshold enqueued=" + ok + " val=" + rawJson);
         listener.onLog("WriteThreshold → " + rawJson);
+    }
+
+    /** Re-issue enableNotify for HR and PLX without reconnecting. Useful for recovery. */
+    public void resubscribeNotifications() {
+        if (gatt == null) { Log.w(TAG, "resubscribe: gatt is null"); return; }
+        Log.d(TAG, "resubscribeNotifications()");
+        listener.onLog("Re-subscribing notifications…");
+        enqueueNotify(HR_SERVICE, HR_MEASUREMENT);
+        enqueueNotify(PLX_SERVICE, PLX_CONTINUOUS);
+        processNotifyQueue();
     }
 
     // ── GATT Callback ─────────────────────────────────────────────────────────
@@ -167,14 +198,23 @@ public class BleMonitorClient {
 
         @Override
         public void onConnectionStateChange(BluetoothGatt g, int status, int newState) {
-            if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
+            Log.d(TAG, "onConnectionStateChange status=" + status + " newState=" + newState);
+            if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                Log.w(TAG, "Missing BLUETOOTH_CONNECT permission");
+                return;
+            }
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 String name = g.getDevice().getName();
                 String addr = g.getDevice().getAddress();
+                Log.d(TAG, "STATE_CONNECTED name=" + name + " addr=" + addr);
                 listener.onConnected(name != null ? name : addr, addr);
                 listener.onLog("Connected — discovering services…");
-                g.discoverServices();
+                boolean ok = g.discoverServices();
+                Log.d(TAG, "discoverServices() enqueued=" + ok);
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.d(TAG, "STATE_DISCONNECTED");
+                notifyQueue.clear();
+                descriptorWritePending = false;
                 listener.onDisconnected();
                 listener.onLog("Disconnected");
             }
@@ -182,15 +222,22 @@ public class BleMonitorClient {
 
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
+            Log.d(TAG, "onServicesDiscovered status=" + status);
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 listener.onLog("Service discovery failed: " + status);
+                Log.e(TAG, "Service discovery failed: " + status);
                 return;
             }
             listener.onLog("Services discovered — enabling notifications");
-            if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
+            if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                Log.w(TAG, "Missing BLUETOOTH_CONNECT permission");
+                return;
+            }
 
-            enableNotify(g, HR_SERVICE, HR_MEASUREMENT);
-            enableNotify(g, PLX_SERVICE, PLX_CONTINUOUS);
+            // Queue both notification subscriptions and process serially
+            enqueueNotify(HR_SERVICE, HR_MEASUREMENT);
+            enqueueNotify(PLX_SERVICE, PLX_CONTINUOUS);
+            processNotifyQueue();
 
             // Read device info
             readChrc(g, DEVINFO_SERVICE, MANUFACTURER_NAME);
@@ -198,8 +245,27 @@ public class BleMonitorClient {
         }
 
         @Override
+        public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor descriptor, int status) {
+            UUID chrUuid = descriptor.getCharacteristic().getUuid();
+            Log.d(TAG, "onDescriptorWrite chr=" + chrUuid + " status=" + status + " desc=" + descriptor.getUuid());
+            descriptorWritePending = false;
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "Descriptor write FAILED for " + chrUuid + " status=" + status);
+                listener.onLog("Descriptor write FAILED: " + chrUuid + " err=" + status);
+            } else {
+                Log.d(TAG, "Descriptor write OK for " + chrUuid);
+                listener.onLog("Descriptor write OK: " + chrUuid);
+            }
+            processNotifyQueue();
+        }
+
+        @Override
         public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return;
+            Log.d(TAG, "onCharacteristicRead uuid=" + c.getUuid() + " status=" + status);
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.w(TAG, "Characteristic read failed status=" + status);
+                return;
+            }
             UUID uuid = c.getUuid();
             String value = new String(c.getValue(), StandardCharsets.UTF_8);
 
@@ -212,49 +278,99 @@ public class BleMonitorClient {
         public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c) {
             UUID uuid = c.getUuid();
             byte[] value = c.getValue();
-            if (value == null) return;
+            Log.d(TAG, "onCharacteristicChanged uuid=" + uuid + " len=" + (value == null ? "null" : value.length));
+            if (value == null) { Log.w(TAG, "Changed characteristic value is null"); return; }
 
             if (uuid.equals(HR_MEASUREMENT) && value.length >= 2) {
                 int bpm = value[1] & 0xFF;
+                Log.d(TAG, "HR notify: " + bpm + " BPM  raw=" + bytesToHex(value));
                 listener.onBpmUpdated(bpm);
                 VitalsLogger.log(bpm, -1); // VULNERABILITY #3: plaintext log
             } else if (uuid.equals(PLX_CONTINUOUS) && value.length >= 2) {
                 int spo2 = value[1] & 0xFF;
+                Log.d(TAG, "SpO2 notify: " + spo2 + "%  raw=" + bytesToHex(value));
                 listener.onSpo2Updated(spo2);
                 VitalsLogger.log(-1, spo2);
+            } else {
+                Log.w(TAG, "Unhandled characteristic changed: " + uuid);
             }
         }
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
+            Log.d(TAG, "onCharacteristicWrite uuid=" + c.getUuid() + " status=" + status);
             listener.onLog("WriteThreshold result: " + (status == BluetoothGatt.GATT_SUCCESS ? "OK" : "FAIL " + status));
         }
     };
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private void enqueueNotify(UUID serviceUuid, UUID chrUuid) {
+        notifyQueue.offer(new NotifyRequest(serviceUuid, chrUuid));
+    }
+
+    private void processNotifyQueue() {
+        if (descriptorWritePending || notifyQueue.isEmpty()) return;
+        NotifyRequest req = notifyQueue.poll();
+        if (req == null) return;
+        if (gatt == null) { Log.w(TAG, "processNotifyQueue: gatt is null"); return; }
+        enableNotify(gatt, req.serviceUuid, req.chrUuid);
+    }
+
     private void enableNotify(BluetoothGatt g, UUID serviceUuid, UUID chrUuid) {
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
+        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            Log.w(TAG, "enableNotify: missing BLUETOOTH_CONNECT");
+            return;
+        }
+        Log.d(TAG, "enableNotify service=" + serviceUuid + " chr=" + chrUuid);
         BluetoothGattCharacteristic chr = findCharacteristic(serviceUuid, chrUuid);
-        if (chr == null) return;
-        g.setCharacteristicNotification(chr, true);
+        if (chr == null) {
+            Log.e(TAG, "enableNotify FAILED: characteristic not found " + chrUuid);
+            listener.onLog("EnableNotify FAILED: chr not found " + chrUuid);
+            return;
+        }
+        boolean notifyOk = g.setCharacteristicNotification(chr, true);
+        Log.d(TAG, "setCharacteristicNotification(" + chrUuid + ")=" + notifyOk);
         BluetoothGattDescriptor desc = chr.getDescriptor(CCC_DESCRIPTOR);
         if (desc != null) {
             desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            g.writeDescriptor(desc);
+            boolean writeOk = g.writeDescriptor(desc);
+            descriptorWritePending = writeOk;
+            Log.d(TAG, "writeDescriptor(" + chrUuid + ") enqueued=" + writeOk);
+        } else {
+            Log.w(TAG, "enableNotify: CCC descriptor missing for " + chrUuid);
         }
     }
 
     private void readChrc(BluetoothGatt g, UUID serviceUuid, UUID chrUuid) {
         if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
         BluetoothGattCharacteristic chr = findCharacteristic(serviceUuid, chrUuid);
-        if (chr != null) g.readCharacteristic(chr);
+        if (chr != null) {
+            boolean ok = g.readCharacteristic(chr);
+            Log.d(TAG, "readChrc(" + chrUuid + ") enqueued=" + ok);
+        } else {
+            Log.w(TAG, "readChrc: chr not found " + chrUuid);
+        }
     }
 
     private BluetoothGattCharacteristic findCharacteristic(UUID serviceUuid, UUID chrUuid) {
-        if (gatt == null) return null;
+        if (gatt == null) { Log.w(TAG, "findCharacteristic: gatt is null"); return null; }
         BluetoothGattService svc = gatt.getService(serviceUuid);
-        return (svc != null) ? svc.getCharacteristic(chrUuid) : null;
+        if (svc == null) {
+            Log.w(TAG, "findCharacteristic: service not found " + serviceUuid);
+            return null;
+        }
+        BluetoothGattCharacteristic chr = svc.getCharacteristic(chrUuid);
+        if (chr == null) {
+            Log.w(TAG, "findCharacteristic: characteristic not found " + chrUuid);
+        }
+        return chr;
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) sb.append(String.format("%02X ", b));
+        return sb.toString().trim();
     }
 
     private boolean hasPermission(String permission) {
@@ -266,6 +382,7 @@ public class BleMonitorClient {
         if (gatt != null && hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
             gatt.close();
             gatt = null;
+            Log.d(TAG, "gatt.close() called");
         }
     }
 }

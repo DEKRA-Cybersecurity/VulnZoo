@@ -7,7 +7,7 @@ import os
 import sys
 import time
 
-from dbus_fast import Variant, BusType
+from dbus_fast import Variant, BusType, Message, MessageType
 from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method, signal, dbus_property, PropertyAccess
 
@@ -48,6 +48,30 @@ connected_devices = {}  # MAC -> {name, connected_at}
 
 # Alert thresholds — writable by any BLE client without auth (vulnerability #3)
 alert_thresholds = {"bpm_min": 40, "bpm_max": 120, "spo2_min": 90}
+
+# Reference to the D-Bus message bus (set during main())
+_system_bus = None
+
+
+def _notify_characteristic(path: str, value_bytes: bytes):
+    """Emit a genuine org.freedesktop.DBus.Properties.PropertiesChanged signal
+    so that BlueZ forwards the notification to connected BLE clients."""
+    if _system_bus is None:
+        return
+    try:
+        msg = Message(
+            message_type=MessageType.SIGNAL,
+            interface="org.freedesktop.DBus.Properties",
+            path=path,
+            member="PropertiesChanged",
+            signature="sa{sv}as",
+            body=["org.bluez.GattCharacteristic1",
+                  {"Value": Variant("ay", value_bytes)},
+                  []]
+        )
+        _system_bus.send(msg)
+    except Exception as e:
+        print(f"[BLE] _notify_characteristic error: {e}")
 
 
 def fetch_vitals():
@@ -117,14 +141,10 @@ class HeartRateMeasurementChrc(ServiceInterface):
         fetch_vitals()
         bpm = int(latest_vitals["bpm"])
         self.value = [0x06, bpm]
-        
+
         if notifying_hr:
             try:
-                self.PropertiesChanged(
-                    "org.bluez.GattCharacteristic1",
-                    {"Value": Variant("ay", self.value)},
-                    []
-                )
+                _notify_characteristic(APP_PATH + "/service0/char0", bytes(self.value))
                 print(f"[BLE] Notificación HR: {bpm} BPM")
             except Exception as e:
                 print(f"[BLE] Error notificando HR: {e}")
@@ -185,14 +205,10 @@ class PulseOximeterChrc(ServiceInterface):
         spo2 = int(latest_vitals["spo2"])
         bpm = int(latest_vitals["bpm"])
         self.value = [0x03, spo2 & 0xFF, 0x00, bpm & 0xFF, 0x00]  # 0x03 = SpO2+PR uint16 (little endian)
-        
+
         if notifying_spo2:
             try:
-                self.PropertiesChanged(
-                    "org.bluez.GattCharacteristic1",
-                    {"Value": Variant("ay", self.value)},
-                    []
-                )
+                _notify_characteristic(APP_PATH + "/service1/char0", bytes(self.value))
                 print(f"[BLE] Notificación SpO2: {spo2}%")
             except Exception as e:
                 print(f"[BLE] Error notificando SpO2: {e}")
@@ -353,11 +369,7 @@ class AlertThresholdChrc(ServiceInterface):
     async def update_and_notify(self):
         if notifying_alert:
             try:
-                self.PropertiesChanged(
-                    "org.bluez.GattCharacteristic1",
-                    {"Value": Variant("ay", self._encode())},
-                    []
-                )
+                _notify_characteristic(APP_PATH + "/service4/char0", self._encode())
             except Exception as e:
                 print(f"[BLE] Error notificando AlertThreshold: {e}")
 
@@ -531,6 +543,8 @@ async def main():
     # Conectar a D-Bus system
     try:
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        global _system_bus
+        _system_bus = bus
         print(f"[BLE] Conectado a D-Bus: {bus.unique_name}")
     except Exception as e:
         print(f"[BLE] Error conectando a D-Bus: {e}")
