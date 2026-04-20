@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -103,6 +104,11 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
             tvDeviceName.setTextColor(0xFFFFB300);
             bleClient.startScan();
         });
+        // Long-press to force re-subscribe without reconnecting
+        btnConnect.setOnLongClickListener(v -> {
+            bleClient.resubscribeNotifications();
+            return true;
+        });
 
         btnDisconnect.setOnClickListener(v -> bleClient.disconnect());
 
@@ -152,8 +158,13 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     public void onBpmUpdated(int bpm) {
         lastBpm = bpm;
         uiHandler.post(() -> {
-            tvBpm.setText(String.valueOf(bpm));
-            checkAlerts();
+            try {
+                tvBpm.setText(String.valueOf(bpm));
+                checkAlerts();
+                Log.d("MainActivity", "UI updated BPM=" + bpm);
+            } catch (Exception e) {
+                Log.e("MainActivity", "onBpmUpdated UI crash", e);
+            }
         });
     }
 
@@ -161,26 +172,39 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     public void onSpo2Updated(int spo2) {
         lastSpo2 = spo2;
         uiHandler.post(() -> {
-            tvSpo2.setText(spo2 + "%");
-            checkAlerts();
+            try {
+                tvSpo2.setText(spo2 + "%");
+                checkAlerts();
+                Log.d("MainActivity", "UI updated SpO2=" + spo2);
+            } catch (Exception e) {
+                Log.e("MainActivity", "onSpo2Updated UI crash", e);
+            }
         });
     }
 
     @Override
     public void onManufacturerRead(String value) {
-        uiHandler.post(() -> tvManufacturer.setText(value));
+        uiHandler.post(() -> {
+            try { tvManufacturer.setText(value); } catch (Exception e) { Log.e("MainActivity", "UI crash manufacturer", e); }
+        });
     }
 
     @Override
     public void onModelRead(String value) {
-        uiHandler.post(() -> tvModel.setText(value));
+        uiHandler.post(() -> {
+            try { tvModel.setText(value); } catch (Exception e) { Log.e("MainActivity", "UI crash model", e); }
+        });
     }
 
     @Override
     public void onThresholdRead(String jsonValue) {
         uiHandler.post(() -> {
-            etThresholdJson.setText(jsonValue);
-            parseThresholds(jsonValue);
+            try {
+                etThresholdJson.setText(jsonValue);
+                parseThresholds(jsonValue);
+            } catch (Exception e) {
+                Log.e("MainActivity", "UI crash threshold read", e);
+            }
         });
     }
 

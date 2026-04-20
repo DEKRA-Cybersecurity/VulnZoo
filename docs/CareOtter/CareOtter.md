@@ -45,7 +45,7 @@ Because CareOtter mirrors the control surface of a real cardiac implant, the lab
 │  ┌────────────────────┐        ┌─────────────────────────────┐   │
 │  │  MAX30102 Simulator│        │  careservice (C)            │   │
 │  │  /opt/medical-     │        │  TCP :9999 — IGP v4         │   │
-│  │  sensor/           │        │  10 admin commands          │   │
+│  │  sensor/           │        │  12 admin commands          │   │
 │  └────────┬───────────┘        └──────────────┬──────────────┘   │
 │           │                                   │                  │
 │  ┌────────▼───────────┐        ┌──────────────▼──────────────┐   │
@@ -132,6 +132,8 @@ Total header: 8 bytes. Payload immediately follows. Server closes connection aft
 | 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)   | `THRESHOLD_SET` | Clean parser, writes to `/tmp/careotter.thresholds` |
 | 0x09 | REBOOT_SERVICE  | Yes  | Service name string  | `SVC_RESTART_QUEUED` / `REBOOT_ERR` | **FLAW: no waitpid() → zombie processes** |
 | 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/tmp/careservice.log` | `LOG_EMPTY` if not present |
+| 0x0B | DEFIBRILLATE    | Yes  | Any string           | `DEFIB_TRIGGERED:200J:<timestamp>` | **VULN: format string in event log**; simulates 200 J discharge |
+| 0x0C | EMERGENCY_ALERT | Yes  | Alert message string | `ALERT_SENT:<msg>` | **FLAW: command injection via `curl` in `system()`**; reads endpoint from `/etc/careotter/alert.conf` |
 
 #### TLV Formats
 
@@ -280,6 +282,8 @@ docker compose up careotter-api
 | 8   | WiFi PSK exposed via API      | `app.py` — GET `/api/network`, `raw` field in response                               | GET `/api/network` with valid JWT in `VULNERABLE=1` mode                                                         |
 | 9   | Format string via API         | `app.py` — GET `/api/device/status?module=`                                          | `?module=%25x.%25x.%25x` passes format string to device when `VULNERABLE=1`                                      |
 | 10  | Flask debug mode              | `app.py` — `app.run(debug=(vuln == 1))`                                              | Werkzeug interactive debugger active; RCE via PIN bypass                                                         |
+| 11  | Format string (therapy log)   | `careservice.c` — cmd 0x0B DEFIBRILLATE, `snprintf(fmt_buf, sizeof(fmt_buf), payload)` | Payload `%x.%x.%x` leaks stack into `/tmp/careotter_events.log`; `%n` writes                                      |
+| 12  | Command injection (alert)     | `careservice.c` — cmd 0x0C EMERGENCY_ALERT, `system(cmd)` with `curl … msg=%s`      | Payload `test'; reboot #` injects shell metacharacters through curl's `-d` parameter                              |
 
 ---
 
@@ -292,3 +296,72 @@ docker compose up careotter-api
 | Medical Sensor HTTP | `192.168.2.1:8081` |
 | Cloud API (vulnerable) | `<operator-pc>:5002` |
 | BLE | Advertised as `CareOtter_HR` |
+
+## THINGS TO DO
+
+This section tracks the remaining development work required to align the CareOtter lab implementation with its documented DAI/ICD scenario. Items are grouped by priority.
+
+### ✅ Completed
+
+1. **Synchronize IGP command reference in documentation**
+   - Added `DEFIBRILLATE` (0x0B) and `EMERGENCY_ALERT` (0x0C) to the Command Reference table with payloads, responses, and vulnerability annotations.
+   - Added vulnerabilities #11 (format string in therapy log) and #12 (command injection in alert dispatch) to the Vulnerability Map.
+   - Updated architecture diagram from "10 admin commands" to "12 admin commands".
+
+### 🔴 Critical — Blocking for lab coherence
+
+2. **Decide and implement the SpO₂ < 95 % alert channel**
+   - The documentation states that the DAI must generate a clinical alert to the attending physician when SpO₂ drops below 95 %.
+   - **Currently no transport channel is implemented** in any component (sensor service, Cloud API, or mobile apps).
+   - **Action:** Define the alert transport (options: HTTP POST from sensor to Cloud API, BLE notify to patient app with retransmission, or dedicated IGP command 0x0C as proxy). Implement the sender in `sensor_service.py` and the receiver/notification logic in the Cloud API dashboard.
+
+3. **Unify clinical threshold persistence**
+   - `careservice.c` command 0x08 (`SET_THRESHOLD`) writes to `/tmp/careotter.thresholds`.
+   - `sensor_service.py` maintains its own in-memory `alert_thresholds` and never reads the file written by the admin service.
+   - **Action:** Make the Python sensor service load thresholds from `/tmp/careotter.thresholds` on startup and reload it on SIGHUP/SIGUSR1 so that administrative changes take effect.
+
+### 🟡 Medium — Functional improvement and realism
+
+4. **Implement differentiated DAI therapies in `careservice.c`**
+   - The "Modern ICD Functions" section describes three tiered therapies: ATP, Cardioversion, and Defibrillation.
+   - The current binary only exposes a generic `DEFIBRILLATE` command (0x0B) with no energy levels or charge states.
+   - **Action:** Extend the IGP protocol with sub-modes or energy-level parameters (e.g., ATP=1 J, Cardioversion=5 J, Defibrillation=20 J simulation) and return the simulated therapy applied. Alternatively, document explicitly that `DEFIBRILLATE` is a single placeholder command for the lab.
+
+5. **Expose therapy commands through the Cloud API**
+   - The Cloud API currently proxies administrative commands only. There are no HTTP endpoints to trigger or simulate therapies.
+   - **Action:** Add protected REST endpoints (e.g., `POST /api/therapy/defibrillate`, `POST /api/therapy/emergency`) that forward to IGP 0x0B/0x0C, returning the device response. This allows the web admin panel to demonstrate therapy hijacking vulnerabilities.
+
+6. **Add HTTP fallback to the patient Android app (`careotter_app`)**
+   - The patient app is BLE-only. If the Bluetooth adapter is absent or out of range, the app cannot display vitals.
+   - **Action:** Implement an HTTP client in `MainActivity` that polls `http://192.168.2.1:8081/vitals` (or the Cloud API) when BLE is unavailable, with a manual toggle or automatic fallback.
+
+7. **Integrate Cloud API into the admin Android app (`careotter_admin`)**
+   - The admin app connects directly via raw TCP to `:9999`. It does not use JWT, HTTP, or the Cloud API at all.
+   - **Action:** Add an HTTP/JWT client layer so the admin app can authenticate against the Cloud API (`:5002`) and perform administrative operations remotely, mirroring real-world hospital IT workflows.
+
+### 🟢 Low — Polish and documentation
+
+8. **Create missing `CONTEXT.md` for `careotter_admin`**
+   - `vulnzoo_apps/careotter_admin/` lacks a `CONTEXT.md` stage contract, unlike `careotter_app`.
+   - **Action:** Write the stage contract documenting inputs, process, outputs, and the intended vulnerability surface of the admin app.
+
+9. **Update `labs/careotter/CONTEXT.md` to DAI/ICD framing**
+   - The file still describes the device as a "pulse oximeter device simulator" rather than a DAI/ICD.
+   - **Action:** Rewrite the scenario and architecture sections to match the cardiac-device narrative, and update the command reference to 12 commands.
+
+10. **Create an OpenWRT init script for the BLE server**
+    - `ble_server.py` is started directly by hook `55-ble-server.sh`. There is no `/etc/init.d/ble-server` procd script.
+    - **Action:** Create a standard procd init script for `ble-server` consistent with `medical-sensor` and `careservice`, including `start`, `stop`, `restart`, and health-check semantics.
+
+11. **Add rate limiting and TLS documentation to the Cloud API**
+    - The Flask API has no request throttling and serves over plain HTTP.
+    - **Action:** Add `flask-limiter` for basic rate limiting on authentication endpoints, and document that production deployments must place the container behind an HTTPS reverse proxy.
+
+12. **Wire up unused database service methods**
+    - `database_service.py` implements `log_event()` and `cleanup_old_data()`, but neither is invoked from `app.py`.
+    - **Action:** Call `log_event()` when critical device events occur (e.g., threshold changes, service restarts) and schedule `cleanup_old_data()` on application startup or via a periodic endpoint.
+
+13. **Design and implement an OTA firmware update vulnerability**
+    - Real cardiac implants support over-the-air firmware updates via BLE or the clinic's wand programmer. A compromised OTA mechanism is a high-impact attack vector that can alter therapy algorithms, disable safety interlocks, or implant persistent malware.
+    - **Action:** Define an OTA update flow for CareOtter (e.g., signed/unsigned firmware packages, BLE DFU, or IGP-based image transfer). Introduce at least one intentional vulnerability in the verification or installation stage (examples: missing signature validation, downgrade attack, plaintext firmware image, insecure temporary storage, or race condition during flash write). Document the attack chain and add the corresponding endpoint/command to the Cloud API or IGP protocol.
+
