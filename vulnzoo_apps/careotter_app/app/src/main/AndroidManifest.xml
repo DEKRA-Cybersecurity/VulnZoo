@@ -2,7 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- BLE permissions — no INTERNET (BLE-only app) -->
+    <!-- INTERNET required for login to Cloud API -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- BLE permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
@@ -25,15 +29,27 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Careotter_app"
+        android:usesCleartextTraffic="true"
         tools:targetApi="31">
+        <!-- Launcher: login screen -->
         <activity
-            android:name=".MainActivity"
+            android:name=".LoginActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Patient monitoring (BLE) — reached after login with role=patient -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <!-- Admin panel (IGP v4) — reached after login with role=admin -->
+        <activity
+            android:name=".AdminActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

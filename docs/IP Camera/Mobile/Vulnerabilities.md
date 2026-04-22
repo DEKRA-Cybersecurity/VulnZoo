@@ -1,6 +1,6 @@
 # M6: Inadequate Privacy Controls
 
-## Definition
+## Definition by OWASP
 
 **Inadequate Privacy Controls** refers to the failure of mobile applications to properly protect user data in accordance with privacy regulations, user expectations, and declared privacy policies. This risk encompasses situations where applications collect, process, store, or transmit personal information beyond what is reasonably necessary for the stated functionality, without obtaining meaningful informed consent, or in ways that are not transparent to the user.
 
@@ -134,7 +134,7 @@ The VulnZoo scenario is not hypothetical. It reproduces patterns observed in **v
 
 # M9: Insecure Data Storage
 
-## Definition
+## Definition by OWASP
 
 > Insecure data storage in a mobile application can attract various threat agents who aim to exploit the vulnerabilities and gain unauthorised access to sensitive information. These threat agents include skilled adversaries who target mobile apps to extract valuable data, malicious insiders within the organisation or app development team who misuse their privileges, state-sponsored actors conducting cyber espionage, cybercriminals seeking financial gain through data theft or ransom, script kiddies utilising pre-built tools for simple attacks, data brokers looking to exploit insecure storage for selling personal information, competitors and industrial spies aiming to gain a competitive advantage, and activists or hacktivists with ideological motives.
 

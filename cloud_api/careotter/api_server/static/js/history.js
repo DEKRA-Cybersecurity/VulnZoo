@@ -16,7 +16,9 @@
         currentPage: 1,
         rowsPerPage: CONFIG.defaultRowsPerPage,
         totalCount: 0,
-        isLoading: false
+        isLoading: false,
+        chartBpm: null,
+        chartSpo2: null
     };
 
     // ── Theme Toggle ──────────────────────────────────────────────────────────
@@ -34,6 +36,8 @@
             const isDark = !document.body.classList.contains('dark-mode');
             document.body.classList.toggle('dark-mode', isDark);
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            // Redraw charts with updated grid/label colors
+            renderCharts(state.filteredReadings);
         });
     }
 
@@ -144,7 +148,7 @@
         if (pageData.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="empty-state">
+                    <td colspan="9" class="empty-state">
                         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
                         <h4>No data available</h4>
                         <p>No readings found for the selected time range.</p>
@@ -160,6 +164,8 @@
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${formatTimestamp(reading.timestamp)}</td>
+                <td><span class="source-badge">${reading.patient_username || '—'}</span></td>
+                <td><code>${reading.device_mac || '—'}</code></td>
                 <td>${reading.bpm ?? '—'}</td>
                 <td>${reading.spo2 ?? '—'}%</td>
                 <td>${reading.ir_raw?.toLocaleString() ?? '—'}</td>
@@ -196,7 +202,7 @@
         if (tbody) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="loading-row">
+                    <td colspan="9" class="loading-row">
                         <span class="spin-sm"></span>
                         Loading data...
                     </td>
@@ -222,6 +228,7 @@
         }
 
         updateStats(statsData);
+        renderCharts(state.filteredReadings);
         renderTable();
 
         state.isLoading = false;
@@ -285,6 +292,135 @@
         }
     }
 
+    // ── Charts ────────────────────────────────────────────────────────────────
+    function buildChartData(readings) {
+        // Downsample to at most 300 points so charts stay readable
+        const MAX_POINTS = 300;
+        const sorted = [...readings].reverse(); // oldest → newest
+        const step = Math.max(1, Math.floor(sorted.length / MAX_POINTS));
+        const sampled = sorted.filter((_, i) => i % step === 0);
+
+        return {
+            labels: sampled.map(r => {
+                const d = new Date(r.timestamp * 1000);
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }),
+            bpm:  sampled.map(r => r.bpm  ?? null),
+            spo2: sampled.map(r => r.spo2 ?? null)
+        };
+    }
+
+    function renderCharts(readings) {
+        if (typeof Chart === 'undefined') return;
+        const isDark = document.body.classList.contains('dark-mode');
+        const gridColor  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+        const labelColor = isDark ? '#94a3b8' : '#64748b';
+
+        const { labels, bpm, spo2 } = buildChartData(readings);
+
+        const commonOptions = (yLabel, yMin, yMax) => ({
+            responsive: true,
+            maintainAspectRatio: true,
+            animation: { duration: 300 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} ${yLabel}` } }
+            },
+            scales: {
+                x: {
+                    ticks: { color: labelColor, maxTicksLimit: 8, maxRotation: 0 },
+                    grid:  { color: gridColor }
+                },
+                y: {
+                    min: yMin, max: yMax,
+                    ticks: { color: labelColor },
+                    grid:  { color: gridColor },
+                    title: { display: true, text: yLabel, color: labelColor }
+                }
+            }
+        });
+
+        // BPM chart
+        const ctxBpm = document.getElementById('chart-bpm');
+        if (ctxBpm) {
+            if (state.chartBpm) state.chartBpm.destroy();
+            state.chartBpm = new Chart(ctxBpm, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Normal range',
+                            data: labels.map(() => 100),
+                            borderColor: 'transparent',
+                            backgroundColor: 'rgba(229,57,53,0.08)',
+                            fill: '+1',
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'Normal range low',
+                            data: labels.map(() => 60),
+                            borderColor: 'rgba(229,57,53,0.3)',
+                            borderDash: [4, 4],
+                            backgroundColor: 'transparent',
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'BPM',
+                            data: bpm,
+                            borderColor: '#E53935',
+                            backgroundColor: 'rgba(229,57,53,0.15)',
+                            fill: false,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            tension: 0.3,
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: commonOptions('BPM', 30, 160)
+            });
+        }
+
+        // SpO2 chart
+        const ctxSpo2 = document.getElementById('chart-spo2');
+        if (ctxSpo2) {
+            if (state.chartSpo2) state.chartSpo2.destroy();
+            state.chartSpo2 = new Chart(ctxSpo2, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Critical threshold',
+                            data: labels.map(() => 95),
+                            borderColor: 'rgba(239,68,68,0.6)',
+                            borderDash: [4, 4],
+                            backgroundColor: 'transparent',
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'SpO₂',
+                            data: spo2,
+                            borderColor: '#1E88E5',
+                            backgroundColor: 'rgba(30,136,229,0.12)',
+                            fill: false,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            tension: 0.3,
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: commonOptions('%', 80, 101)
+            });
+        }
+    }
+
     // ── Export to CSV ──────────────────────────────────────────────────────────
     function exportToCSV() {
         if (state.filteredReadings.length === 0) {
@@ -292,9 +428,11 @@
             return;
         }
 
-        const headers = ['Timestamp', 'BPM', 'SpO2', 'IR Raw', 'Red Raw', 'Source'];
+        const headers = ['Timestamp', 'Patient', 'Device MAC', 'BPM', 'SpO2', 'IR Raw', 'Red Raw', 'Source'];
         const rows = state.filteredReadings.map(r => [
             formatTimestamp(r.timestamp),
+            r.patient_username || '',
+            r.device_mac || '',
             r.bpm ?? '',
             r.spo2 ?? '',
             r.ir_raw ?? '',

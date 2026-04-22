@@ -8,6 +8,7 @@ de forma persistente en una base de datos SQLite embebida.
 import sqlite3
 import os
 import logging
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
@@ -44,10 +45,10 @@ class DatabaseService:
                 logger.warning(f"[DB] Falling back to: {self.db_path}")
         
         logger.info(f"[DB] Using database: {self.db_path}")
-        
-        # Verificar que podemos escribir
+
         try:
             self._init_db()
+            self._migrate_db()
             logger.info("[DB] Database initialized successfully")
         except Exception as e:
             logger.error(f"[DB] Failed to initialize database: {e}")
@@ -57,23 +58,50 @@ class DatabaseService:
         """Inicializa el esquema de la base de datos si no existe."""
         with sqlite3.connect(self.db_path) as conn:
             conn.executescript('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_users_username
+                    ON users(username);
+
+                -- Each physical device (identified by BLE MAC) is owned by one patient user.
+                -- VULNERABILITY: MAC is stored and returned in plaintext — info disclosure.
+                CREATE TABLE IF NOT EXISTS devices (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mac TEXT UNIQUE NOT NULL,
+                    patient_username TEXT NOT NULL,
+                    device_name TEXT,
+                    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (patient_username) REFERENCES users(username)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_devices_mac
+                    ON devices(mac);
+
+                CREATE INDEX IF NOT EXISTS idx_devices_patient
+                    ON devices(patient_username);
+
                 CREATE TABLE IF NOT EXISTS vitals_readings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_mac TEXT NOT NULL,
                     timestamp REAL NOT NULL,
                     bpm INTEGER,
                     spo2 INTEGER,
                     ir_raw INTEGER,
                     red_raw INTEGER,
                     source TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (device_mac) REFERENCES devices(mac)
                 );
-                
-                CREATE INDEX IF NOT EXISTS idx_vitals_timestamp 
+
+                CREATE INDEX IF NOT EXISTS idx_vitals_timestamp
                     ON vitals_readings(timestamp);
-                
-                CREATE INDEX IF NOT EXISTS idx_vitals_created 
-                    ON vitals_readings(created_at);
-                
+
                 CREATE TABLE IF NOT EXISTS device_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     event_type TEXT NOT NULL,
@@ -81,10 +109,10 @@ class DatabaseService:
                     ip_address TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
-                
-                CREATE INDEX IF NOT EXISTS idx_events_timestamp 
+
+                CREATE INDEX IF NOT EXISTS idx_events_timestamp
                     ON device_events(timestamp);
-                
+
                 CREATE TABLE IF NOT EXISTS device_config (
                     key TEXT PRIMARY KEY,
                     value TEXT,
@@ -93,23 +121,292 @@ class DatabaseService:
             ''')
             conn.commit()
 
-    def store_vitals(self, data: dict) -> bool:
+    def _migrate_db(self):
+        """Apply incremental schema migrations to existing databases."""
+        with sqlite3.connect(self.db_path) as conn:
+            existing = {row[1] for row in
+                        conn.execute('PRAGMA table_info(vitals_readings)').fetchall()}
+
+            # Migration: add device_mac column if missing
+            if 'device_mac' not in existing:
+                logger.info("[DB] Migration: adding device_mac to vitals_readings")
+                default_mac = 'AA:BB:CC:DD:EE:FF'
+                # SQLite requires a literal constant default (no ? placeholder) for ALTER TABLE
+                conn.execute(
+                    f"ALTER TABLE vitals_readings "
+                    f"ADD COLUMN device_mac TEXT NOT NULL DEFAULT '{default_mac}'"
+                )
+                conn.commit()
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_vitals_mac "
+                    "ON vitals_readings(device_mac)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_vitals_mac_timestamp "
+                    "ON vitals_readings(device_mac, timestamp)")
+                conn.commit()
+                n = conn.execute('SELECT COUNT(*) FROM vitals_readings').fetchone()[0]
+                logger.info(f"[DB] Migration: backfilled {n} rows with mac={default_mac}")
+
+    # ── User management ───────────────────────────────────────────────────────
+    
+    def _hash_password(self, password: str) -> str:
+        """Simple SHA-256 hash for lab purposes (not production-safe)."""
+        return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    
+    def create_user(self, username: str, password: str, role: str = 'user') -> bool:
         """
-        Almacena una lectura de vitales en la base de datos.
+        Crea un nuevo usuario.
         
         Args:
-            data: Diccionario con keys: timestamp, bpm, spo2, ir_raw, red_raw, source
+            username: Nombre de usuario único
+            password: Contraseña en plaintext (se almacena como hash SHA-256)
+            role: Rol del usuario (admin, user, doctor, etc.)
             
         Returns:
-            True si se almacenó correctamente, False en caso contrario
+            True si se creó correctamente, False si ya existe o falló
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
-                    INSERT INTO vitals_readings 
-                    (timestamp, bpm, spo2, ir_raw, red_raw, source)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (username, password_hash, role)
+                    VALUES (?, ?, ?)
+                ''', (username, self._hash_password(password), role))
+                conn.commit()
+                logger.info(f"[DB] User created: {username} (role={role})")
+                return True
+        except sqlite3.IntegrityError:
+            logger.warning(f"[DB] User already exists: {username}")
+            return False
+        except Exception as e:
+            logger.error(f"[DB] Error creating user: {e}")
+            return False
+    
+    def get_user_by_username(self, username: str) -> Optional[Dict]:
+        """
+        Obtiene un usuario por su nombre de usuario.
+        
+        Args:
+            username: Nombre de usuario
+            
+        Returns:
+            Diccionario con datos del usuario o None si no existe
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    'SELECT id, username, password_hash, role, created_at FROM users WHERE username = ?',
+                    (username,)
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching user: {e}")
+            return None
+    
+    def verify_user(self, username: str, password: str) -> Optional[Dict]:
+        """
+        Verifica credenciales de un usuario.
+        
+        Args:
+            username: Nombre de usuario
+            password: Contraseña en plaintext
+            
+        Returns:
+            Diccionario con datos del usuario (sin password_hash) si es válido,
+            None si las credenciales son incorrectas
+        """
+        user = self.get_user_by_username(username)
+        if not user:
+            return None
+        if user['password_hash'] == self._hash_password(password):
+            return {
+                'id': user['id'],
+                'username': user['username'],
+                'role': user['role'],
+                'created_at': user['created_at']
+            }
+        return None
+    
+    # ── Device management ─────────────────────────────────────────────────────
+
+    def register_device(self, mac: str, patient_username: str,
+                        device_name: str = None) -> bool:
+        """Register a device MAC and associate it with a patient user."""
+        mac = mac.upper()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute('''
+                    INSERT INTO devices (mac, patient_username, device_name)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(mac) DO UPDATE SET
+                        patient_username = excluded.patient_username,
+                        device_name      = excluded.device_name
+                ''', (mac, patient_username, device_name))
+                conn.commit()
+                logger.info(f"[DB] Device registered: {mac} → {patient_username}")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error registering device: {e}")
+            return False
+
+    def get_device(self, mac: str) -> Optional[Dict]:
+        """Return device info including owning patient username."""
+        mac = mac.upper()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    'SELECT * FROM devices WHERE mac = ?', (mac,)
+                ).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching device: {e}")
+            return None
+
+    def list_devices(self) -> List[Dict]:
+        """Return all registered devices with their patient owner."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    'SELECT * FROM devices ORDER BY registered_at DESC'
+                ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] Error listing devices: {e}")
+            return []
+
+    def ensure_default_devices(self) -> bool:
+        """Seed the default CareOtter device linked to the default patient user."""
+        try:
+            default_mac = "AA:BB:CC:DD:EE:FF"
+            if not self.get_device(default_mac):
+                self.register_device(default_mac, "patient", "CareOtter_HR")
+                logger.info(f"[DB] Default device seeded: {default_mac}")
+            return True
+        except Exception as e:
+            logger.error(f"[DB] Error seeding default device: {e}")
+            return False
+
+    def ensure_default_users(self) -> bool:
+        """
+        Asegura que existan usuarios por defecto en la base de datos.
+        Crea un usuario 'admin' si no existe.
+        
+        Returns:
+            True si el usuario admin existe o fue creado correctamente
+        """
+        try:
+            defaults = [
+                ('admin',    'CareOtter2026!', 'admin'),
+                ('admin123', 'admin123',        'admin'),
+                ('patient',  'patient123',      'patient'),
+            ]
+            for uname, pwd, role in defaults:
+                if not self.get_user_by_username(uname):
+                    if self.create_user(uname, pwd, role):
+                        logger.info(f"[DB] Default user created: {uname} ({role})")
+                    else:
+                        logger.warning(f"[DB] Failed to create default user: {uname}")
+
+            self.ensure_default_devices()
+            return True
+        except Exception as e:
+            logger.error(f"[DB] Error ensuring default users: {e}")
+            return False
+    
+    def list_users(self) -> List[Dict]:
+        """
+        Lista todos los usuarios (sin password_hash).
+        
+        Returns:
+            Lista de diccionarios con datos de usuarios
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    'SELECT id, username, role, created_at FROM users ORDER BY id'
+                )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[DB] Error listing users: {e}")
+            return []
+    
+    def update_user_role(self, username: str, new_role: str) -> bool:
+        """
+        Actualiza el rol de un usuario.
+        
+        Args:
+            username: Nombre de usuario
+            new_role: Nuevo rol
+            
+        Returns:
+            True si se actualizó correctamente
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    'UPDATE users SET role = ? WHERE username = ?',
+                    (new_role, username)
+                )
+                conn.commit()
+                if cursor.rowcount > 0:
+                    logger.info(f"[DB] Updated role for {username} to {new_role}")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[DB] Error updating user role: {e}")
+            return False
+    
+    def delete_user(self, username: str) -> bool:
+        """
+        Elimina un usuario.
+        
+        Args:
+            username: Nombre de usuario a eliminar
+            
+        Returns:
+            True si se eliminó correctamente
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    'DELETE FROM users WHERE username = ?',
+                    (username,)
+                )
+                conn.commit()
+                if cursor.rowcount > 0:
+                    logger.info(f"[DB] Deleted user: {username}")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[DB] Error deleting user: {e}")
+            return False
+
+    def store_vitals(self, data: dict, device_mac: str = None) -> bool:
+        """Almacena una lectura de vitales asociada a la MAC del dispositivo.
+
+        Si device_mac no se pasa, se intenta leer de data['device_mac'].
+        Si la MAC no está registrada, la lectura se rechaza.
+        """
+        mac = (device_mac or data.get('device_mac', '')).upper()
+        if not mac:
+            logger.warning("[DB] store_vitals called without device_mac — rejected")
+            return False
+        # Auto-register with default patient if MAC unknown (lab convenience)
+        if not self.get_device(mac):
+            logger.warning(f"[DB] Unknown MAC {mac} — auto-registering with patient")
+            self.register_device(mac, "patient", "CareOtter_HR")
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute('''
+                    INSERT INTO vitals_readings
+                    (device_mac, timestamp, bpm, spo2, ir_raw, red_raw, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''', (
+                    mac,
                     data.get('timestamp'),
                     data.get('bpm'),
                     data.get('spo2'),
@@ -123,63 +420,69 @@ class DatabaseService:
             logger.error(f"[DB] Error storing vitals: {e}")
             return False
 
-    def get_vitals_history(self, hours: int = 24, limit: int = 1000) -> List[Dict]:
-        """
-        Obtiene el historial de lecturas de vitales.
-        
-        Args:
-            hours: Número de horas hacia atrás para obtener datos
-            limit: Límite máximo de registros a retornar
-            
-        Returns:
-            Lista de diccionarios con las lecturas
-        """
+    def get_vitals_history(self, hours: int = 24, limit: int = 1000,
+                           device_mac: str = None) -> List[Dict]:
+        """Historial de vitales con info del dispositivo y paciente propietario."""
         since = (datetime.now() - timedelta(hours=hours)).timestamp()
-        
+        mac = device_mac.upper() if device_mac else None
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                cursor = conn.execute('''
-                    SELECT id, timestamp, bpm, spo2, ir_raw, red_raw, source, created_at
-                    FROM vitals_readings 
-                    WHERE timestamp >= ?
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                ''', (since, limit))
-                
-                return [dict(row) for row in cursor.fetchall()]
+                if mac:
+                    rows = conn.execute('''
+                        SELECT v.id, v.device_mac, v.timestamp, v.bpm, v.spo2,
+                               v.ir_raw, v.red_raw, v.source, v.created_at,
+                               d.patient_username, d.device_name
+                        FROM vitals_readings v
+                        LEFT JOIN devices d ON v.device_mac = d.mac
+                        WHERE v.timestamp >= ? AND v.device_mac = ?
+                        ORDER BY v.timestamp DESC
+                        LIMIT ?
+                    ''', (since, mac, limit)).fetchall()
+                else:
+                    rows = conn.execute('''
+                        SELECT v.id, v.device_mac, v.timestamp, v.bpm, v.spo2,
+                               v.ir_raw, v.red_raw, v.source, v.created_at,
+                               d.patient_username, d.device_name
+                        FROM vitals_readings v
+                        LEFT JOIN devices d ON v.device_mac = d.mac
+                        WHERE v.timestamp >= ?
+                        ORDER BY v.timestamp DESC
+                        LIMIT ?
+                    ''', (since, limit)).fetchall()
+                return [dict(r) for r in rows]
         except Exception as e:
             logger.error(f"[DB] Error fetching history: {e}")
             return []
 
-    def get_vitals_stats(self, hours: int = 24) -> Dict:
-        """
-        Obtiene estadísticas agregadas de las lecturas de vitales.
-        
-        Args:
-            hours: Número de horas hacia atrás para calcular estadísticas
-            
-        Returns:
-            Diccionario con estadísticas de BPM y SpO2
-        """
+    def get_vitals_stats(self, hours: int = 24, device_mac: str = None) -> Dict:
+        """Estadísticas agregadas, opcionalmente filtradas por MAC de dispositivo."""
         since = (datetime.now() - timedelta(hours=hours)).timestamp()
-        
+        mac = device_mac.upper() if device_mac else None
         try:
             with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute('''
-                    SELECT 
-                        AVG(bpm) as avg_bpm,
-                        MIN(bpm) as min_bpm,
-                        MAX(bpm) as max_bpm,
-                        AVG(spo2) as avg_spo2,
-                        MIN(spo2) as min_spo2,
-                        MAX(spo2) as max_spo2,
-                        COUNT(*) as total_readings,
-                        COUNT(CASE WHEN bpm < 60 OR bpm > 100 THEN 1 END) as bpm_alerts,
-                        COUNT(CASE WHEN spo2 < 95 THEN 1 END) as spo2_alerts
-                    FROM vitals_readings 
-                    WHERE timestamp >= ?
-                ''', (since,))
+                if mac:
+                    cursor = conn.execute('''
+                        SELECT
+                            AVG(bpm), MIN(bpm), MAX(bpm),
+                            AVG(spo2), MIN(spo2), MAX(spo2),
+                            COUNT(*),
+                            COUNT(CASE WHEN bpm < 60 OR bpm > 100 THEN 1 END),
+                            COUNT(CASE WHEN spo2 < 95 THEN 1 END)
+                        FROM vitals_readings
+                        WHERE timestamp >= ? AND device_mac = ?
+                    ''', (since, mac))
+                else:
+                    cursor = conn.execute('''
+                        SELECT
+                            AVG(bpm), MIN(bpm), MAX(bpm),
+                            AVG(spo2), MIN(spo2), MAX(spo2),
+                            COUNT(*),
+                            COUNT(CASE WHEN bpm < 60 OR bpm > 100 THEN 1 END),
+                            COUNT(CASE WHEN spo2 < 95 THEN 1 END)
+                        FROM vitals_readings
+                        WHERE timestamp >= ?
+                    ''', (since,))
                 
                 row = cursor.fetchone()
                 return {

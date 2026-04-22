@@ -37,7 +37,26 @@
         <form id="login-form" class="login-form" autocomplete="off" novalidate>
 
             <div class="form-group">
-                <label for="token-input">Administrator Token</label>
+                <label for="username-input">Username</label>
+                <div class="input-wrapper">
+                    <!-- User icon -->
+                    <svg class="input-icon" viewBox="0 0 24 24">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <input
+                        type="text"
+                        id="username-input"
+                        name="username"
+                        placeholder="Enter your username"
+                        autocomplete="off"
+                        spellcheck="false"
+                    >
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="password-input">Password</label>
                 <div class="input-wrapper">
                     <!-- Padlock icon -->
                     <svg class="input-icon" viewBox="0 0 24 24">
@@ -46,13 +65,13 @@
                     </svg>
                     <input
                         type="password"
-                        id="token-input"
-                        name="token"
-                        placeholder="Enter the access token"
+                        id="password-input"
+                        name="password"
+                        placeholder="Enter your password"
                         autocomplete="off"
                         spellcheck="false"
                     >
-                    <button type="button" class="toggle-visibility" id="toggle-visibility" title="Show token">
+                    <button type="button" class="toggle-visibility" id="toggle-visibility" title="Show password">
                         <!-- Open eye -->
                         <svg class="eye-open" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         <!-- Closed eye (hidden by default) -->
@@ -62,7 +81,7 @@
             </div>
 
             <button type="submit" class="btn-login" id="btn-login">
-                <span class="btn-text">Access Panel</span>
+                <span class="btn-text">Log In</span>
                 <div class="spinner"></div>
             </button>
 
