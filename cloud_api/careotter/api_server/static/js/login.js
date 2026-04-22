@@ -3,19 +3,20 @@
 (function () {
     'use strict';
 
-    const form     = document.getElementById('login-form');
-    const tokenIn  = document.getElementById('token-input');
-    const btnLogin = document.getElementById('btn-login');
-    const alertErr = document.getElementById('alert-error');
-    const alertOk  = document.getElementById('alert-success');
-    const toggleVis = document.getElementById('toggle-visibility');
+    const form        = document.getElementById('login-form');
+    const usernameIn  = document.getElementById('username-input');
+    const passwordIn  = document.getElementById('password-input');
+    const btnLogin    = document.getElementById('btn-login');
+    const alertErr    = document.getElementById('alert-error');
+    const alertOk     = document.getElementById('alert-success');
+    const toggleVis   = document.getElementById('toggle-visibility');
 
-    /* ── Token visibility toggle ───────────────────────────────────────────── */
+    /* ── Password visibility toggle ────────────────────────────────────────── */
     if (toggleVis) {
         toggleVis.addEventListener('click', () => {
-            const isText = tokenIn.type === 'text';
-            tokenIn.type = isText ? 'password' : 'text';
-            toggleVis.title = isText ? 'Show token' : 'Hide token';
+            const isText = passwordIn.type === 'text';
+            passwordIn.type = isText ? 'password' : 'text';
+            toggleVis.title = isText ? 'Show password' : 'Hide password';
             toggleVis.querySelector('.eye-open').style.display  = isText ? 'block' : 'none';
             toggleVis.querySelector('.eye-closed').style.display = isText ? 'none'  : 'block';
         });
@@ -45,10 +46,16 @@
         alertErr.classList.remove('show');
         alertOk.classList.remove('show');
 
-        const token = tokenIn.value.trim();
-        if (!token) {
-            showError('Enter the administrator token.');
-            tokenIn.focus();
+        const username = usernameIn.value.trim();
+        const password = passwordIn.value;
+        if (!username) {
+            showError('Enter your username.');
+            usernameIn.focus();
+            return;
+        }
+        if (!password) {
+            showError('Enter your password.');
+            passwordIn.focus();
             return;
         }
 
@@ -58,17 +65,19 @@
             const res = await fetch('/api/auth/login', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ token })
+                body:    JSON.stringify({ username, password })
             });
 
             const data = await res.json();
 
             if (!res.ok) {
-                const msg = data.device_response === 'AUTH_FAIL'
-                    ? 'Incorrect token. Verify the administrator token.'
+                const msg = data.code === 'AUTH_FAIL'
+                    ? 'Invalid username or password.'
+                    : data.code === 'FORBIDDEN'
+                    ? 'Admin access required.'
                     : (data.error || `Error ${res.status}`);
                 showError(msg);
-                tokenIn.select();
+                passwordIn.select();
                 return;
             }
 
@@ -87,7 +96,7 @@
     });
 
     /* ── Auto-focus ────────────────────────────────────────────────────────── */
-    tokenIn.focus();
+    usernameIn.focus();
 
     /* ── Redirect if active session exists ─────────────────────────────────── */
     if (localStorage.getItem('careotter_token')) {

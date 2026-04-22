@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="CareOtter"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:textColor="#E53935"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Medical Device System"
+        android:textSize="14sp"
+        android:textColor="#666666"
+        android:layout_marginBottom="40dp" />
+
+    <EditText
+        android:id="@+id/etUsername"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Username"
+        android:inputType="text"
+        android:textSize="14sp"
+        android:layout_marginBottom="12dp"
+        android:padding="12dp"
+        android:background="@android:drawable/edit_text" />
+
+    <EditText
+        android:id="@+id/etPassword"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Password"
+        android:inputType="textPassword"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp"
+        android:padding="12dp"
+        android:background="@android:drawable/edit_text" />
+
+    <!-- API URL — hidden from user, auto-discovered via BLE ManufacturerData.
+         VULNERABILITY: stored in plaintext SharedPreferences and travels over HTTP. -->
+    <EditText
+        android:id="@+id/etApiUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="textUri"
+        android:textSize="11sp"
+        android:textColor="#888888"
+        android:padding="10dp"
+        android:background="@android:drawable/edit_text"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnLogin"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="LOGIN"
+        android:backgroundTint="#E53935"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvLoginStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="12sp"
+        android:textColor="#E53935"
+        android:gravity="center" />
+
+</LinearLayout>

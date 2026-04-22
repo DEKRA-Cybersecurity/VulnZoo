@@ -6,6 +6,19 @@ import urllib.request
 import os
 import sys
 import time
+import struct
+import binascii
+import fcntl
+import socket
+from typing import Optional
+from urllib.parse import urlparse
+
+try:
+    from Crypto.Cipher import AES
+    _HAS_AES = True
+except ImportError:
+    _HAS_AES = False
+    print("[BLE] WARNING: pycryptodome not available — CSCP v1 disabled")
 
 from dbus_fast import Variant, BusType, Message, MessageType
 from dbus_fast.aio import MessageBus
@@ -14,6 +27,72 @@ from dbus_fast.service import ServiceInterface, method, signal, dbus_property, P
 # URLs y configuración
 SENSOR_URL = "http://127.0.0.1:8081/vitals"
 DEVICE_NAME = "CareOtter_HR"
+
+# Cloud API address embedded in BLE advertising ManufacturerData (binary, 10 bytes):
+#   [0:4]  Cloud API IPv4  big-endian  (e.g. 192.168.1.50)
+#   [4:6]  Cloud API port  big-endian  (e.g. 5002)
+#   [6:10] Device WiFi IP  big-endian  (wlan0, read at runtime)
+#
+# VULNERABILITY: passive BLE scan (no pairing, no auth) reveals both the
+# cloud management endpoint and the device's WiFi address — information disclosure.
+CLOUD_API_URL = os.getenv("CLOUD_API_URL", "http://192.168.2.2:5002")
+
+
+def _fetch_api_wifi_ip(api_base_url: str) -> str:
+    """Query the Cloud API /api/health over Ethernet to get its WiFi IP.
+    Returns '0.0.0.0' if unreachable or not configured."""
+    try:
+        parsed = urlparse(api_base_url)
+        health_url = f"{parsed.scheme}://{parsed.netloc}/api/health"
+        with urllib.request.urlopen(health_url, timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+            ip = data.get("wifi_ip", "0.0.0.0")
+            port = int(data.get("api_port", parsed.port or 5002))
+            return ip, port
+    except Exception as e:
+        print(f"[BLE] Could not fetch API wifi_ip: {e}")
+        return "0.0.0.0", parsed.port or 5002
+
+
+def _get_wlan0_ip() -> str:
+    """Return the current IPv4 address of wlan0, or '0.0.0.0' on failure."""
+    SIOCGIFADDR = 0x8915
+    iface = b"wlan0\x00" * 1
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        res = fcntl.ioctl(s.fileno(), SIOCGIFADDR, iface.ljust(40, b"\x00"))
+        s.close()
+        return socket.inet_ntoa(res[20:24])
+    except Exception:
+        return os.getenv("DEVICE_WIFI_IP", "0.0.0.0")
+
+
+def _build_mfr_payload(api_url: str) -> bytes:
+    """Return 10-byte binary ManufacturerData payload.
+
+    Layout (big-endian):
+        [0:4]  Cloud API WiFi IPv4 (fetched from /api/health over Ethernet)
+        [4:6]  Cloud API port
+        [6:10] Device wlan0 IPv4
+
+    The API WiFi IP is queried at startup so the Android app (WiFi-only)
+    gets an address it can actually reach, not the Ethernet IP.
+    """
+    api_wifi_ip, api_port = _fetch_api_wifi_ip(api_url)
+    dev_ip = _get_wlan0_ip()
+    try:
+        api_ip_bytes = socket.inet_aton(api_wifi_ip)
+    except OSError:
+        api_ip_bytes = b"\x00" * 4
+    try:
+        dev_ip_bytes = socket.inet_aton(dev_ip)
+    except OSError:
+        dev_ip_bytes = b"\x00" * 4
+    return api_ip_bytes + struct.pack(">H", api_port) + dev_ip_bytes
+
+# Fake company ID 0x08D4 ("CareOtter Medical Devices") used in ManufacturerData AD type.
+# Any BLE scanner (nRF Connect, btmon, bleak) can read this without pairing.
+CAREOTTER_COMPANY_ID = 0x08D4
 
 # UUIDs estándar Bluetooth SIG
 HR_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
@@ -306,17 +385,73 @@ class ModelNumberChrc(ServiceInterface):
 
 
 class AlertThresholdChrc(ServiceInterface):
-    """Custom alert threshold characteristic (0xFF01).
-    READ + WRITE + NOTIFY — no authentication required.
-    VULNERABILITY: any BLE client can overwrite alarm thresholds."""
+    """Custom alert threshold characteristic (0xFF01) — CSCP v1 (CareOtter Secure Config Protocol).
+
+    READ + WRITE + NOTIFY — framed with AES-128-ECB + CRC32 "security".
+
+    VULNERABILITY (M1 — Improper Credential Usage):
+      CSCP_KEY is hardcoded in firmware and Android APK. Extracting either allows
+      an attacker to forge valid 24-byte packets that the server accepts unconditionally.
+
+    VULNERABILITY (M3 — Insecure Authentication/Authorization):
+      Any BLE client (no pairing required) can write valid CSCP v1 packets.
+      The "encryption" serves as serialisation format, not an authentication barrier.
+
+    CSCP v1 packet layout (24 bytes, big-endian):
+        [0:4]  Magic   — 0xCAFE0DDA
+        [4:8]  CRC32   — crc32(ciphertext[8:24]) & 0xFFFFFFFF
+        [8:24] Payload — AES-128-ECB(plaintext, key=CSCP_KEY)
+
+    Plaintext block (16 bytes):
+        [0]    bpm_min  (uint8)
+        [1]    bpm_max  (uint8)
+        [2]    spo2_min (uint8)
+        [3:16] padding  (0x00)
+    """
+
+    # VULNERABILITY: hardcoded symmetric key — identical across all CareOtter devices
+    CSCP_KEY   = b"careotter-key-16"   # 16 bytes AES-128
+    CSCP_MAGIC = 0xCAFE0DDA
 
     def __init__(self):
         super().__init__("org.bluez.GattCharacteristic1")
-        self.uuid = ALERT_THRESHOLD_UUID
+        self.uuid  = ALERT_THRESHOLD_UUID
         self.flags = ["read", "write", "notify"]
 
-    def _encode(self):
-        return json.dumps(alert_thresholds).encode()
+    # ── CSCP v1 helpers ──────────────────────────────────────────────────────
+
+    def _pack_and_encrypt(self, thresholds: dict) -> bytes:
+        """Serialise thresholds to 24-byte CSCP v1 packet."""
+        plaintext = struct.pack("BBB", thresholds["bpm_min"],
+                                       thresholds["bpm_max"],
+                                       thresholds["spo2_min"]) + b"\x00" * 13
+        if _HAS_AES:
+            cipher     = AES.new(self.CSCP_KEY, AES.MODE_ECB)
+            ciphertext = cipher.encrypt(plaintext)
+        else:
+            ciphertext = plaintext   # fallback: no encryption (still exposes vuln structure)
+        crc = binascii.crc32(ciphertext) & 0xFFFFFFFF
+        return struct.pack(">II", self.CSCP_MAGIC, crc) + ciphertext
+
+    def _decrypt_and_unpack(self, packet: bytes) -> Optional[dict]:
+        """Parse and validate a 24-byte CSCP v1 packet. Returns None on error."""
+        if len(packet) != 24:
+            return None
+        magic, crc = struct.unpack(">II", packet[:8])
+        if magic != self.CSCP_MAGIC:
+            return None
+        ciphertext = packet[8:]
+        if (binascii.crc32(ciphertext) & 0xFFFFFFFF) != crc:
+            return None
+        if _HAS_AES:
+            cipher    = AES.new(self.CSCP_KEY, AES.MODE_ECB)
+            plaintext = cipher.decrypt(ciphertext)
+        else:
+            plaintext = ciphertext
+        bpm_min, bpm_max, spo2_min = struct.unpack("BBB", plaintext[:3])
+        return {"bpm_min": bpm_min, "bpm_max": bpm_max, "spo2_min": spo2_min}
+
+    # ── D-Bus properties ─────────────────────────────────────────────────────
 
     @dbus_property(access=PropertyAccess.READ)
     def UUID(self) -> "s":
@@ -332,23 +467,36 @@ class AlertThresholdChrc(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Value(self) -> "ay":
-        return self._encode()
+        return self._pack_and_encrypt(alert_thresholds)
+
+    # ── GATT operations ──────────────────────────────────────────────────────
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
-        return self._encode()
+        pkt = self._pack_and_encrypt(alert_thresholds)
+        print(f"[BLE] CSCP v1 ReadValue: {pkt.hex()} (thresholds={alert_thresholds})")
+        return pkt
 
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
-        # VULNERABILITY: unauthenticated write — any BLE client can change thresholds
-        try:
-            data = json.loads(bytes(value).decode())
-            if "bpm_min"  in data: alert_thresholds["bpm_min"]  = int(data["bpm_min"])
-            if "bpm_max"  in data: alert_thresholds["bpm_max"]  = int(data["bpm_max"])
-            if "spo2_min" in data: alert_thresholds["spo2_min"] = int(data["spo2_min"])
-            print(f"[BLE] Alert thresholds updated: {alert_thresholds}")
-        except Exception as e:
-            print(f"[BLE] WriteValue error: {e}")
+        # VULNERABILITY (M3): no session authentication — any paired BLE client writes freely
+        # VULNERABILITY (M1): key extracted from firmware/APK breaks "encryption" barrier
+        raw = bytes(value)
+        thresholds = self._decrypt_and_unpack(raw)
+        if thresholds is None:
+            print(f"[BLE] CSCP v1 WriteValue: rejected (bad magic/CRC/size) {raw.hex()}")
+            return
+        # VULNERABILITY: no clinical range validation — bpm_min=0, bpm_max=255, spo2_min=0 accepted
+        alert_thresholds["bpm_min"]  = thresholds["bpm_min"]
+        alert_thresholds["bpm_max"]  = thresholds["bpm_max"]
+        alert_thresholds["spo2_min"] = thresholds["spo2_min"]
+        print(f"[BLE] CSCP v1 thresholds updated: {alert_thresholds}")
+        if notifying_alert:
+            try:
+                _notify_characteristic(APP_PATH + "/service4/char0",
+                                       self._pack_and_encrypt(alert_thresholds))
+            except Exception as e:
+                print(f"[BLE] Error notificando AlertThreshold: {e}")
 
     @method()
     def StartNotify(self):
@@ -369,7 +517,8 @@ class AlertThresholdChrc(ServiceInterface):
     async def update_and_notify(self):
         if notifying_alert:
             try:
-                _notify_characteristic(APP_PATH + "/service4/char0", self._encode())
+                _notify_characteristic(APP_PATH + "/service4/char0",
+                                       self._pack_and_encrypt(alert_thresholds))
             except Exception as e:
                 print(f"[BLE] Error notificando AlertThreshold: {e}")
 
@@ -400,31 +549,53 @@ class GattService(ServiceInterface):
 
 
 class Advertisement(ServiceInterface):
-    """Advertising LE"""
-    
+    """Advertising LE — peripheral only, BR/EDR Not Supported flag set.
+
+    ManufacturerData embeds the Cloud API URL (CLOUD_API_URL env var).
+
+    VULNERABILITY: any passive BLE scanner discovers the management API
+    endpoint without connecting or authenticating — information disclosure.
+    The URL is visible in nRF Connect, btmon, bleak ScanResult.metadata, etc.
+    """
+
     def __init__(self):
         super().__init__("org.bluez.LEAdvertisement1")
         self.type = "peripheral"
         self.local_name = DEVICE_NAME
         self.service_uuids = [HR_SERVICE_UUID, PLX_SERVICE_UUID]
-        self.discoverable = True
-        
+        self.flags = ["general-discoverable", "le-only"]
+        # Encode API URL as manufacturer-specific data:
+        #   [Company ID 2 bytes LE] [URL bytes UTF-8]
+        # BlueZ ManufacturerData dict maps company_id (uint16) -> Variant("ay", bytes)
+        mfr_bytes = _build_mfr_payload(CLOUD_API_URL)
+        self.manufacturer_data = {CAREOTTER_COMPANY_ID: Variant("ay", mfr_bytes)}
+        import struct as _s
+        api_ip = socket.inet_ntoa(mfr_bytes[0:4])
+        api_port = _s.unpack(">H", mfr_bytes[4:6])[0]
+        dev_ip = socket.inet_ntoa(mfr_bytes[6:10])
+        print(f"[BLE] ManufacturerData (0x{CAREOTTER_COMPANY_ID:04X}): "
+              f"api_wifi={api_ip}:{api_port} dev_wifi={dev_ip}")
+
     @dbus_property(access=PropertyAccess.READ)
     def Type(self) -> "s":
         return self.type
-    
+
     @dbus_property(access=PropertyAccess.READ)
     def LocalName(self) -> "s":
         return self.local_name
-    
+
     @dbus_property(access=PropertyAccess.READ)
     def ServiceUUIDs(self) -> "as":
         return self.service_uuids
-    
+
     @dbus_property(access=PropertyAccess.READ)
-    def Discoverable(self) -> "b":
-        return self.discoverable
-    
+    def Flags(self) -> "as":
+        return self.flags
+
+    @dbus_property(access=PropertyAccess.READ)
+    def ManufacturerData(self) -> "a{qv}":  # type: ignore[return]
+        return self.manufacturer_data
+
     @method()
     def Release(self):
         print("[BLE] Advertising liberado")
@@ -455,7 +626,7 @@ async def setup_adapter(bus: MessageBus):
     await adapter.set_alias(DEVICE_NAME)
     await adapter.set_powered(True)
     await adapter.set_discoverable(True)
-    await adapter.set_pairable(True)
+    await adapter.set_pairable(False)  # BLE-only — BR/EDR pairing disabled
     
     print(f"[BLE] Adaptador configurado: {DEVICE_NAME}")
 

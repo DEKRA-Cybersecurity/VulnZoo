@@ -15,25 +15,14 @@ services:
       - JWT_EXPIRATION_HOURS=8
       - PORT=5002
       - DB_PATH=/app/data/careotter.db
-    ports:
-      - "5002:5002"
     volumes:
       # Volumen persistente para la base de datos SQLite
       - careotter_data:/app/data
-    networks:
-      - careotter_bridge
-      - careotter_iot
+    # Host networking: container shares the host network stack so the API
+    # can read wlan0 IP directly and report it via /api/health.
+    # Also allows routing to the device at 192.168.2.1 via eth0.
+    network_mode: host
     restart: unless-stopped
-
-networks:
-  # Red externa — expuesta al host para que los clientes accedan a la API
-  careotter_bridge:
-    driver: bridge
-
-  # Red interna — comunicación con el dispositivo IoT en 192.168.2.0/24
-  careotter_iot:
-    driver: bridge
-    internal: false   # false para permitir ruteo hacia 192.168.2.1
 
 volumes:
   careotter_data:

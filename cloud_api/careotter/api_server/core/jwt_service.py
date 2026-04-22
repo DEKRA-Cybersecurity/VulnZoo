@@ -18,23 +18,30 @@ from config import Config
 class JWTService:
 
     @staticmethod
-    def generate_token(username: str) -> str:
+    def generate_token(username: str, role: str = 'user') -> str:
         """
         Genera un JWT HS256 con expiración configurable.
         El 'sub' contiene el nombre de usuario del operador autenticado.
+        El 'role' se incluye en el payload para validación posterior.
         """
         payload = {
-            'sub': username,
-            'iat': datetime.now(timezone.utc),
-            'exp': datetime.now(timezone.utc) + timedelta(
+            'sub':  username,
+            'role': role,
+            'iat':  datetime.now(timezone.utc),
+            'exp':  datetime.now(timezone.utc) + timedelta(
                 hours=Config.JWT_EXPIRATION_HOURS
             ),
         }
-        return jwt.encode(
+        token = jwt.encode(
             payload,
             Config.JWT_SECRET,
             algorithm=Config.JWT_ALGORITHM
         )
+        # PyJWT 1.x devuelve bytes; 2.x devuelve str.
+        # Forzamos str para que jsonify no serialice como array de enteros.
+        if isinstance(token, bytes):
+            token = token.decode('utf-8')
+        return token
 
     @staticmethod
     def decode_token(token: str) -> dict:

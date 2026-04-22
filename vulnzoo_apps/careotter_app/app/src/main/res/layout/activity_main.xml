@@ -10,15 +10,32 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Title -->
-        <TextView
+        <!-- Title row: title (5 taps = diag panel) + logout button -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="CareOtter Monitor"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:paddingBottom="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@+id/tvTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="CareOtter Monitor"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:gravity="center" />
+
+            <Button
+                android:id="@+id/btnLogout"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="LOGOUT"
+                android:textSize="10sp"
+                android:backgroundTint="#888888" />
+        </LinearLayout>
 
         <!-- Alert banner — hidden by default -->
         <TextView
@@ -181,46 +198,55 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Alert threshold JSON -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Alert Thresholds (raw JSON):"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:paddingBottom="4dp" />
-
-        <EditText
-            android:id="@+id/etThresholdJson"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textSize="12sp"
-            android:layout_marginBottom="8dp" />
-
+        <!-- Diagnostic panel — hidden by default, unlocked via secret gesture -->
         <LinearLayout
+            android:id="@+id/diagnosticPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
+            android:orientation="vertical"
+            android:visibility="gone">
 
-            <Button
-                android:id="@+id/btnReadThreshold"
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="READ THRESHOLD"
-                android:textSize="11sp" />
+                android:text="[DIAG] Alert Thresholds (raw JSON):"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#FF6B00"
+                android:paddingBottom="4dp" />
 
-            <Button
-                android:id="@+id/btnWriteThreshold"
-                android:layout_width="0dp"
+            <EditText
+                android:id="@+id/etThresholdJson"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="WRITE THRESHOLD"
-                android:backgroundTint="#FF9800"
-                android:textSize="11sp" />
+                android:fontFamily="monospace"
+                android:textSize="12sp"
+                android:layout_marginBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btnReadThreshold"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="READ THRESHOLD"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnWriteThreshold"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="WRITE THRESHOLD"
+                    android:backgroundTint="#FF9800"
+                    android:textSize="11sp" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Log output -->

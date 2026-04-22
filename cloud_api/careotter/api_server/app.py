@@ -17,6 +17,11 @@ Operating modes (environment var VULNERABLE):
 """
 
 import os
+import time
+import threading
+import socket
+import fcntl
+import struct
 import logging
 from flask import Flask, jsonify, request, render_template, redirect, url_for
 from config import Config
@@ -34,6 +39,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _get_wifi_ip() -> str:
+    """Return the IPv4 address of the first WiFi interface found (wlan0, wlan1, …).
+    Falls back to any non-loopback, non-Ethernet (192.168.2.x), non-Docker (172.x)
+    address so the result is always the WiFi-reachable IP.
+    Requires network_mode: host in docker-compose so host interfaces are visible.
+    """
+    SIOCGIFADDR = 0x8915
+    for iface in ("wlan0", "wlan1", "wlp2s0", "wlp3s0"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            res = fcntl.ioctl(s.fileno(), SIOCGIFADDR,
+                              iface.encode().ljust(40, b"\x00"))
+            s.close()
+            return socket.inet_ntoa(res[20:24])
+        except OSError:
+            pass
+    # Generic fallback: iterate all addresses, skip loopback/eth/docker
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127.") \
+               and not ip.startswith("192.168.2.") \
+               and not ip.startswith("172."):
+                return ip
+    except Exception:
+        pass
+    return "0.0.0.0"
+
+
 app  = Flask(__name__)
 vuln = Config.VULNERABLE
 
@@ -45,6 +80,9 @@ vitals = VitalsService()
 try:
     db = DatabaseService()
     logger.info(f"[App] Database initialized at: {Config.DB_PATH}")
+    # Asegurar usuario admin por defecto
+    if db and db.ensure_default_users():
+        logger.info("[App] Default admin user ensured")
 except Exception as e:
     logger.error(f"[App] Failed to initialize database: {e}")
     db = None
@@ -114,12 +152,17 @@ def history_page():
 
 @app.route('/api/health')
 def api_health():
-    """API status — no authentication."""
+    """API status — no authentication.
+    Exposes wifi_ip so the BLE server (on the device) can embed the
+    WiFi-reachable API address in ManufacturerData advertising.
+    """
     return jsonify({
-        'status':  'ok',
-        'service': 'careotter-api',
-        'version': '1.0.0',
-        'device':  f"{Config.DEVICE_IP}:{Config.IGP_PORT}"
+        'status':   'ok',
+        'service':  'careotter-api',
+        'version':  '1.0.0',
+        'device':   f"{Config.DEVICE_IP}:{Config.IGP_PORT}",
+        'wifi_ip':  _get_wifi_ip(),
+        'api_port': int(os.getenv('PORT', 5002)),
     })
 
 
@@ -128,41 +171,53 @@ def api_health():
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     """
-    Authenticates operator against device (IGP 0x02).
+    Authenticates operator against the local SQLite user database.
 
-    The device admin token is sent in the request body and retransmitted
-    to the device via IGP. If the device responds AUTH_SUCCESS, a JWT session
-    token is issued for the operator.
+    Expects JSON body with 'username' and 'password'.
+    Verifies credentials against the 'users' table and requires role='admin'.
+    On success, issues a JWT session token.
 
-    NOTE: the token 'OtterMobile2026' travels in the body unencrypted —
-    visible in proxy logs, interception tools, and APM dashboards.
+    NOTE: passwords are hashed with SHA-256 without salt —
+    an intentional vulnerability for the lab.
 
     Body JSON:
-        {"token": "OtterMobile2026"}
-      or {"password": "OtterMobile2026"}
+        {"username": "admin", "password": "CareOtter2026!"}
     """
-    data  = request.get_json(force=True, silent=True) or {}
-    token = data.get('token') or data.get('password', '')
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
 
-    if not token:
-        return jsonify({'error': 'Field "token" required'}), 400
+    if not username:
+        return jsonify({'error': 'Field "username" required', 'code': 'MISSING_FIELD'}), 400
+    if not password:
+        return jsonify({'error': 'Field "password" required', 'code': 'MISSING_FIELD'}), 400
 
-    try:
-        result = device.authenticate(token)
-    except IGPError as e:
-        return jsonify({'error': str(e), 'code': 'DEVICE_UNREACHABLE'}), 503
+    if db is None:
+        return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
 
-    if not result['success']:
+    user = db.verify_user(username, password)
+    if not user:
         return jsonify({
-            'error':           'Authentication failed',
-            'device_response': result['device_response']
+            'error': 'Invalid username or password',
+            'code':  'AUTH_FAIL'
         }), 401
 
-    jwt_token = JWTService.generate_token(username='operator')
+    # Allow both 'admin' and 'patient' roles — role is returned so the mobile
+    # app can route to the correct screen without a second request.
+    allowed_roles = ('admin', 'patient')
+    if user.get('role') not in allowed_roles:
+        return jsonify({
+            'error': 'Access denied for this role',
+            'code':  'FORBIDDEN'
+        }), 403
+
+    jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'patient'))
     return jsonify({
         'token':      jwt_token,
         'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
-        'type':       'Bearer'
+        'type':       'Bearer',
+        'role':       user.get('role'),
+        'username':   username
     }), 200
 
 
@@ -225,7 +280,11 @@ def get_vitals():
     
     # Almacenar en base de datos (fire-and-forget)
     if db:
-        success = db.store_vitals(data)
+        device_mac = request.args.get('device_mac') or data.get('device_mac',
+                     os.getenv('DEFAULT_DEVICE_MAC', 'AA:BB:CC:DD:EE:FF'))
+        # Always use server time — sensor clock may be wrong (Raspberry Pi NTP drift)
+        data['timestamp'] = time.time()
+        success = db.store_vitals(data, device_mac=device_mac)
         if success:
             logger.debug(f"[API] Stored vitals: BPM={data.get('bpm')}, SpO2={data.get('spo2')}")
         else:
@@ -250,33 +309,80 @@ def get_vitals_history():
 
 @app.route('/api/vitals/db/history')
 def get_vitals_db_history():
+    """Historial de vitales desde la base de datos.
+    Query params: ?hours=24 &limit=1000 &device_mac=AA:BB:CC:DD:EE:FF
     """
-    Obtiene historial de vitales desde la base de datos local.
-    Query params: ?hours=24 (default), ?limit=1000
-    """
-    hours = request.args.get('hours', 24, type=int)
-    limit = request.args.get('limit', 1000, type=int)
-    
-    readings = db.get_vitals_history(hours=hours, limit=limit)
+    hours      = request.args.get('hours', 24, type=int)
+    limit      = request.args.get('limit', 1000, type=int)
+    device_mac = request.args.get('device_mac', None)
+
+    readings    = db.get_vitals_history(hours=hours, limit=limit, device_mac=device_mac)
     total_count = db.get_vitals_count(hours=hours)
-    
+
     return jsonify({
-        'hours': hours,
-        'count': len(readings),
+        'hours':       hours,
+        'count':       len(readings),
         'total_count': total_count,
-        'readings': readings
+        'device_mac':  device_mac,
+        'readings':    readings
     }), 200
 
 
 @app.route('/api/vitals/db/stats')
 def get_vitals_db_stats():
+    """Estadísticas agregadas de vitales.
+    Query params: ?hours=24 &device_mac=AA:BB:CC:DD:EE:FF
     """
-    Obtiene estadísticas agregadas de vitales desde la base de datos.
-    Query params: ?hours=24 (default)
-    """
-    hours = request.args.get('hours', 24, type=int)
-    stats = db.get_vitals_stats(hours=hours)
+    hours      = request.args.get('hours', 24, type=int)
+    device_mac = request.args.get('device_mac', None)
+    stats      = db.get_vitals_stats(hours=hours, device_mac=device_mac)
     return jsonify(stats), 200
+
+
+# ── Devices ───────────────────────────────────────────────────────────────────
+
+@app.route('/api/devices', methods=['GET'])
+@token_required
+def list_devices():
+    """List all registered devices with their patient owner. Requires JWT."""
+    return jsonify({'devices': db.list_devices()}), 200
+
+
+@app.route('/api/devices', methods=['POST'])
+@token_required
+def register_device():
+    """Register or update a device MAC → patient association. Requires JWT.
+
+    Body JSON: {"mac": "AA:BB:CC:DD:EE:FF", "patient_username": "patient",
+                "device_name": "CareOtter_HR"}
+    """
+    data             = request.get_json(force=True, silent=True) or {}
+    mac              = data.get('mac', '').strip()
+    patient_username = data.get('patient_username', '').strip()
+    device_name      = data.get('device_name', '').strip() or None
+
+    if not mac or not patient_username:
+        return jsonify({'error': 'Fields "mac" and "patient_username" required'}), 400
+
+    if not db.get_user_by_username(patient_username):
+        return jsonify({'error': f'User "{patient_username}" not found'}), 404
+
+    ok = db.register_device(mac, patient_username, device_name)
+    if not ok:
+        return jsonify({'error': 'Failed to register device'}), 500
+
+    return jsonify({'ok': True, 'mac': mac.upper(),
+                    'patient_username': patient_username}), 200
+
+
+@app.route('/api/devices/<mac>', methods=['GET'])
+@token_required
+def get_device(mac):
+    """Get device info and patient owner by MAC. Requires JWT."""
+    device = db.get_device(mac)
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    return jsonify(device), 200
 
 
 # ── Network ───────────────────────────────────────────────────────────────────
@@ -463,8 +569,32 @@ def test_db_store():
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
+def _vitals_collector():
+    """Background thread: poll sensor every 30s and persist to DB.
+    Runs independently of HTTP clients — history is recorded even when no
+    browser or mobile app is connected.
+    """
+    default_mac = os.getenv('DEFAULT_DEVICE_MAC', 'AA:BB:CC:DD:EE:FF')
+    logger.info("[Collector] Vitals collector started (interval=30s)")
+    while True:
+        try:
+            result = vitals.get_current()
+            if result['success'] and db:
+                data = result['data']
+                data['timestamp'] = time.time()
+                db.store_vitals(data, device_mac=default_mac)
+                logger.debug(f"[Collector] Stored BPM={data.get('bpm')} SpO2={data.get('spo2')}")
+        except Exception as e:
+            logger.warning(f"[Collector] Error: {e}")
+        time.sleep(30)
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5002))
+
+    collector = threading.Thread(target=_vitals_collector, daemon=True)
+    collector.start()
+
     # VULNERABILITY (vuln=1): debug=True activates Werkzeug interactive debugger
     # which allows arbitrary code execution on the server if the PIN is obtained
-    app.run(host='0.0.0.0', port=port, debug=(vuln == 1))
+    app.run(host='0.0.0.0', port=port, debug=(vuln == 1), use_reloader=False)

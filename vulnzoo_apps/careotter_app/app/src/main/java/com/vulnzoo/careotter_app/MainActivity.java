@@ -1,6 +1,8 @@
 package com.vulnzoo.careotter_app;
 
 import android.Manifest;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -9,8 +11,10 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -47,21 +51,29 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     // Last scanned device address (for quick connect)
     private String lastScannedAddress = null;
 
+    // Hidden diagnostic panel unlock state
+    private int     diagTapCount  = 0;
+    private long    diagLastTapMs = 0;
+    private static final int  DIAG_TAP_TARGET  = 5;
+    private static final long DIAG_TAP_WINDOW  = 3000; // ms
+
     // UI
-    private TextView  tvDeviceName;
-    private TextView  tvBpm;
-    private TextView  tvSpo2;
-    private TextView  tvAlertBanner;
-    private TextView  tvManufacturer;
-    private TextView  tvModel;
-    private EditText  etThresholdJson;
-    private Button    btnScan;
-    private Button    btnConnect;
-    private Button    btnDisconnect;
-    private Button    btnReadThreshold;
-    private Button    btnWriteThreshold;
-    private TextView  tvOutput;
-    private ScrollView scrollOutput;
+    private TextView     tvTitle;
+    private TextView     tvDeviceName;
+    private TextView     tvBpm;
+    private TextView     tvSpo2;
+    private TextView     tvAlertBanner;
+    private TextView     tvManufacturer;
+    private TextView     tvModel;
+    private LinearLayout diagnosticPanel;
+    private EditText     etThresholdJson;
+    private Button       btnScan;
+    private Button       btnConnect;
+    private Button       btnDisconnect;
+    private Button       btnReadThreshold;
+    private Button       btnWriteThreshold;
+    private TextView     tvOutput;
+    private ScrollView   scrollOutput;
 
     private BleMonitorClient bleClient;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
@@ -71,12 +83,14 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        tvTitle          = findViewById(R.id.tvTitle);
         tvDeviceName     = findViewById(R.id.tvDeviceName);
         tvBpm            = findViewById(R.id.tvBpm);
         tvSpo2           = findViewById(R.id.tvSpo2);
         tvAlertBanner    = findViewById(R.id.tvAlertBanner);
         tvManufacturer   = findViewById(R.id.tvManufacturer);
         tvModel          = findViewById(R.id.tvModel);
+        diagnosticPanel  = findViewById(R.id.diagnosticPanel);
         etThresholdJson  = findViewById(R.id.etThresholdJson);
         btnScan          = findViewById(R.id.btnScan);
         btnConnect       = findViewById(R.id.btnConnect);
@@ -86,10 +100,35 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         tvOutput         = findViewById(R.id.tvOutput);
         scrollOutput     = findViewById(R.id.scrollOutput);
 
-        // VULNERABILITY #4: default thresholds hardcoded
+        // VULNERABILITY #4: default thresholds hardcoded — visible via APK decompilation
         etThresholdJson.setText(DEFAULT_THRESHOLDS);
 
         bleClient = new BleMonitorClient(this, this);
+
+        // Logout button — clears session and returns to LoginActivity
+        Button btnLogout = findViewById(R.id.btnLogout);
+        btnLogout.setOnClickListener(v -> {
+            bleClient.disconnect();
+            getSharedPreferences("careotter_prefs", MODE_PRIVATE)
+                    .edit().remove("jwt_token").remove("user_role").remove("username").apply();
+            startActivity(new Intent(this, LoginActivity.class));
+            finish();
+        });
+
+        // Hidden diagnostic panel: 5 rapid taps on the title reveals threshold controls.
+        // Discoverable via static analysis (tapCount variable + click listener in decompiled APK).
+        tvTitle.setOnClickListener(v -> {
+            long now = System.currentTimeMillis();
+            if (now - diagLastTapMs > DIAG_TAP_WINDOW) diagTapCount = 0;
+            diagLastTapMs = now;
+            diagTapCount++;
+            if (diagTapCount >= DIAG_TAP_TARGET) {
+                diagTapCount = 0;
+                diagnosticPanel.setVisibility(View.VISIBLE);
+                Toast.makeText(this, "Diagnostic mode enabled", Toast.LENGTH_SHORT).show();
+                appendLog("[DIAG] Threshold panel unlocked");
+            }
+        });
 
         // SCAN: busca CareOtter_HR y conecta automáticamente al encontrarlo
         btnScan.setOnClickListener(v -> {

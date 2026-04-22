@@ -21,3 +21,8 @@ cloud_api/**/*.md
 releases/
 .aider*
 .qwen*
+
+# Android IDE and Gradle caches
+vulnzoo_apps/**/.idea/
+vulnzoo_apps/**/.gradle/
+vulnzoo_apps/**/gradle/gradle-daemon-jvm.properties

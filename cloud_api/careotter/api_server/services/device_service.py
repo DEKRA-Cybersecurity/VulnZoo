@@ -11,8 +11,19 @@ from core.igp_client import IGPClient, IGPError
 
 class DeviceService:
 
+    # Token de administrador IGP hardcodeado en el dispositivo (vulnerabilidad intencional)
+    _ADMIN_TOKEN = "OtterMobile2026"
+
     def __init__(self):
         self._igp = IGPClient()
+
+    def _ensure_igp_auth(self) -> None:
+        """
+        Envía el comando IGP 0x02 AUTHENTICATE antes de comandos protegidos.
+        El careservice mantiene un flag 'authenticated' global que persiste
+        entre conexiones, por lo que esta llamada es idempotente.
+        """
+        self._igp.authenticate(self._ADMIN_TOKEN)
 
     # ── Información del sistema ─────────────────────────────────────────────
 
@@ -59,6 +70,7 @@ class DeviceService:
         /etc/config/wireless incluyendo la clave PSK en texto plano.
         El campo 'raw' de la respuesta expone estos datos directamente.
         """
+        self._ensure_igp_auth()
         raw  = self._igp.get_network()
         text = raw.decode('utf-8', errors='replace').strip()
         return {
@@ -68,6 +80,7 @@ class DeviceService:
 
     def set_wifi(self, ssid: str, password: str) -> dict:
         """IGP 0x06 — Configura SSID y contraseña WiFi (requiere auth)."""
+        self._ensure_igp_auth()
         raw  = self._igp.set_wifi(ssid, password)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
@@ -96,6 +109,7 @@ class DeviceService:
         IGP 0x04 — Preferencias de la app en formato TLV (requiere auth).
         Tipos: 0xAA=tema, 0xAB=idioma, 0xAC=modo pantalla.
         """
+        self._ensure_igp_auth()
         raw  = self._igp.set_prefs(tlv_payload)
         text = raw.decode('utf-8', errors='replace').strip()
         return {'status': text}
@@ -109,6 +123,7 @@ class DeviceService:
             [0xCC][0x01][spo2_min]
         Total: 9 bytes
         """
+        self._ensure_igp_auth()
         tlv  = struct.pack('>BBHH', 0xBB, 4, bpm_min, bpm_max)
         tlv += struct.pack('>BBB',  0xCC, 1, spo2_min)
         raw  = self._igp.set_threshold(tlv)
@@ -129,6 +144,7 @@ class DeviceService:
         IGP 0x09 — Reinicia un servicio init.d del dispositivo (requiere auth).
         Nombres válidos: medical-sensor, careservice, ble-server, etc.
         """
+        self._ensure_igp_auth()
         raw  = self._igp.reboot_service(service_name)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
@@ -138,6 +154,7 @@ class DeviceService:
 
     def get_log(self) -> dict:
         """IGP 0x0A — Últimos 512 bytes del log del servicio (requiere auth)."""
+        self._ensure_igp_auth()
         raw  = self._igp.get_log()
         text = raw.decode('utf-8', errors='replace')
         return {'log': text}
