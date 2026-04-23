@@ -1,234 +1,674 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:background="#F4FBFF">
 
-    <LinearLayout
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="12dp">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="false">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
+            android:orientation="vertical"
+            android:padding="16dp">
 
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="CareOtter Admin"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="#E53935" />
-
-            <Button
-                android:id="@+id/btnAdminLogout"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="LOGOUT"
-                android:textSize="10sp"
-                android:backgroundTint="#888888" />
-        </LinearLayout>
-
-        <!-- Device IP / Port -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-
-            <EditText
-                android:id="@+id/etIp"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="3"
-                android:hint="Device IP"
-                android:text="192.168.2.1"
-                android:inputType="text"
-                android:textSize="12sp"
-                android:layout_marginEnd="4dp" />
-
-            <EditText
-                android:id="@+id/etPort"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:hint="Port"
-                android:text="9999"
-                android:inputType="number"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- Module / message input -->
-        <EditText
-            android:id="@+id/etModuleName"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Module name / alert message"
-            android:inputType="text"
-            android:textSize="12sp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Row 1: info commands -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="4dp">
-
-            <Button
-                android:id="@+id/btnSysInfo"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="SYS INFO"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnAuthenticate"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="AUTHENTICATE"
-                android:backgroundTint="#4CAF50"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnWifiConfig"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="WIFI CONFIG"
-                android:textSize="10sp" />
-        </LinearLayout>
-
-        <!-- Row 2: exploit commands -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="4dp">
-
-            <Button
-                android:id="@+id/btnStatus"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="STATUS"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnFormatString"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="FMT STR LEAK"
-                android:backgroundTint="#FF9800"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnUnderflow"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="UNDERFLOW"
-                android:backgroundTint="#FF9800"
-                android:textSize="10sp" />
-        </LinearLayout>
-
-        <!-- Row 3: medical/injection -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="4dp">
-
-            <Button
-                android:id="@+id/btnDefibrillate"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="DEFIBRILLATE"
-                android:backgroundTint="#E53935"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnEmergencyAlert"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="EMERGENCY ALERT"
-                android:backgroundTint="#FF9800"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnCmdInjection"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="CMD INJECTION"
-                android:backgroundTint="#9C27B0"
-                android:textSize="10sp" />
-        </LinearLayout>
-
-        <!-- Row 4: check + logs -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-
-            <Button
-                android:id="@+id/btnCheckStatus"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="CHECK STATUS"
-                android:textSize="10sp" />
-
-            <Button
-                android:id="@+id/btnSetTheme"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="SET THEME"
-                android:textSize="10sp" />
-        </LinearLayout>
-
-        <!-- Output -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="IGP Output:"
-            android:textStyle="bold"
-            android:textSize="12sp"
-            android:paddingBottom="4dp" />
-
-        <ScrollView
-            android:id="@+id/scrollAdminOutput"
-            android:layout_width="match_parent"
-            android:layout_height="300dp"
-            android:background="#F0F0F0"
-            android:padding="6dp">
-            <TextView
-                android:id="@+id/tvAdminOutput"
+            <!-- Header -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textSize="10sp"
-                android:text="" />
-        </ScrollView>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="14dp">
 
-    </LinearLayout>
-</ScrollView>
+                <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:src="@mipmap/ic_launcher_round"
+                    android:layout_marginEnd="10dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Admin"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A"
+                            android:layout_marginEnd="6dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ROOT"
+                            android:textSize="9sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:background="@drawable/pill_danger"
+                            android:paddingStart="7dp"
+                            android:paddingEnd="7dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvAdminUser"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Signed in as admin"
+                        android:textSize="11sp"
+                        android:textColor="#64748B" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnAdminLogout"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="Log out"
+                    android:textSize="12sp"
+                    android:textColor="#475569"
+                    android:backgroundTint="#F1F5F9" />
+            </LinearLayout>
+
+            <!-- Target device card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_background"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="TARGET DEVICE"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.1"
+                    android:textColor="#64748B"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <EditText
+                        android:id="@+id/etIp"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="3"
+                        android:layout_marginEnd="8dp"
+                        android:hint="Device IP"
+                        android:text="192.168.2.1"
+                        android:inputType="text"
+                        android:textSize="13sp"
+                        android:fontFamily="monospace"
+                        android:textColor="#0F172A"
+                        android:background="@drawable/input_background"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp" />
+
+                    <EditText
+                        android:id="@+id/etPort"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:hint="Port"
+                        android:text="9999"
+                        android:inputType="number"
+                        android:textSize="13sp"
+                        android:fontFamily="monospace"
+                        android:textColor="#0F172A"
+                        android:background="@drawable/input_background"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● Reachable"
+                        android:textSize="12sp"
+                        android:textColor="#16A34A"
+                        android:background="@drawable/pill_background"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="rtt 12ms"
+                        android:textSize="10sp"
+                        android:fontFamily="monospace"
+                        android:textColor="#94A3B8"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Tab bar -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:orientation="horizontal"
+                android:background="@drawable/card_background"
+                android:padding="4dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="1dp">
+
+                <Button
+                    android:id="@+id/tabInfo"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="Info"
+                    android:textSize="12sp"
+                    android:backgroundTint="#2563EB"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/tabConfig"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="Config"
+                    android:textSize="12sp"
+                    android:textColor="#64748B"
+                    android:backgroundTint="#00000000" />
+
+                <Button
+                    android:id="@+id/tabDiag"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="Diag"
+                    android:textSize="12sp"
+                    android:textColor="#64748B"
+                    android:backgroundTint="#00000000" />
+
+                <Button
+                    android:id="@+id/tabCritical"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="Critical"
+                    android:textSize="12sp"
+                    android:textColor="#64748B"
+                    android:backgroundTint="#00000000" />
+            </LinearLayout>
+
+            <!-- Module / message input (used by Config + Diag tabs) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_background"
+                android:padding="14dp"
+                android:layout_marginBottom="10dp"
+                android:elevation="2dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MODULE / MESSAGE"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:textColor="#64748B"
+                    android:layout_marginBottom="6dp" />
+
+                <EditText
+                    android:id="@+id/etModuleName"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:hint="module name or alert text"
+                    android:inputType="text"
+                    android:textSize="13sp"
+                    android:textColor="#0F172A"
+                    android:textColorHint="#94A3B8"
+                    android:background="@drawable/input_background"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:layout_marginBottom="6dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Used as payload for WiFi config, Set theme, Emergency alert"
+                    android:textSize="11sp"
+                    android:textColor="#94A3B8" />
+            </LinearLayout>
+
+            <!-- INFO tab rows -->
+            <LinearLayout
+                android:id="@+id/panelInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- System info row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="System info"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Firmware, hardware, uptime, serial"
+                            android:textSize="12sp"
+                            android:textColor="#64748B"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button
+                        android:id="@+id/btnSysInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:text="Request"
+                        android:textSize="12sp"
+                        android:backgroundTint="#2563EB" />
+                </LinearLayout>
+
+                <!-- Authenticate row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Authenticate"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Open admin session on device"
+                            android:textSize="12sp"
+                            android:textColor="#64748B"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button
+                        android:id="@+id/btnAuthenticate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:text="Authenticate"
+                        android:textSize="12sp"
+                        android:backgroundTint="#16A34A" />
+                </LinearLayout>
+
+                <!-- Status row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Status"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Current device state &amp; alerts"
+                            android:textSize="12sp"
+                            android:textColor="#64748B"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button
+                        android:id="@+id/btnStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:text="Check"
+                        android:textSize="12sp"
+                        android:backgroundTint="#2563EB" />
+                </LinearLayout>
+
+                <!-- Self-check row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Self-check"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Run built-in POST"
+                            android:textSize="12sp"
+                            android:textColor="#64748B"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button
+                        android:id="@+id/btnCheckStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:text="Run"
+                        android:textSize="12sp"
+                        android:backgroundTint="#2563EB" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- CONFIG tab rows -->
+            <LinearLayout
+                android:id="@+id/panelConfig"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Wi-Fi configuration" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Read current SSID / credentials" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnWifiConfig" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Read" android:textSize="12sp" android:backgroundTint="#2563EB" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Set theme" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Push theme token to device" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnSetTheme" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Apply" android:textSize="12sp" android:backgroundTint="#2563EB" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Emergency alert" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Broadcast message to all stations" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnEmergencyAlert" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Broadcast" android:textSize="12sp" android:backgroundTint="#F59E0B" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- DIAG tab rows -->
+            <LinearLayout
+                android:id="@+id/panelDiag"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Warning banner -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="top"
+                    android:background="@drawable/card_warn"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⚠ " android:textSize="14sp" android:textColor="#92400E" android:layout_marginEnd="8dp" android:layout_marginTop="2dp" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Vulnerability research" android:textSize="13sp" android:textStyle="bold" android:textColor="#92400E" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="These probes exploit known device flaws. Use on authorized test units only." android:textSize="12sp" android:textColor="#92400E" android:layout_marginTop="2dp" android:lineSpacingMultiplier="1.3" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Format string leak" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" android:layout_marginEnd="6dp" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="FMT" android:textSize="9sp" android:textStyle="bold" android:textColor="#92400E" android:background="@drawable/pill_warn" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="2dp" android:paddingBottom="2dp" />
+                        </LinearLayout>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="%x/%s read of raw stack" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnFormatString" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Probe" android:textSize="12sp" android:backgroundTint="#F59E0B" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Integer underflow" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" android:layout_marginEnd="6dp" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="UF" android:textSize="9sp" android:textStyle="bold" android:textColor="#92400E" android:background="@drawable/pill_warn" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="2dp" android:paddingBottom="2dp" />
+                        </LinearLayout>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Negative length in module name" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnUnderflow" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Send" android:textSize="12sp" android:backgroundTint="#F59E0B" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- CRITICAL tab rows -->
+            <LinearLayout
+                android:id="@+id/panelCritical"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Danger banner -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="top"
+                    android:background="@drawable/card_danger"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⊗ " android:textSize="16sp" android:textColor="#DC2626" android:layout_marginEnd="8dp" android:layout_marginTop="1dp" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Critical actions" android:textSize="13sp" android:textStyle="bold" android:textColor="#DC2626" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Confirmation required. Physical safety risk." android:textSize="12sp" android:textColor="#DC2626" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Defibrillate" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Charge 200J and discharge" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnDefibrillate" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Discharge" android:textSize="12sp" android:backgroundTint="#DC2626" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Command injection" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Shell payload via module name" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnCmdInjection" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Inject" android:textSize="12sp" android:backgroundTint="#7C3AED" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- IGP Output console -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="IGP output"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#0F172A" />
+
+                <TextView
+                    android:id="@+id/tvLogCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="10sp"
+                    android:textColor="#64748B"
+                    android:background="@drawable/pill_background"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:layout_marginStart="8dp" />
+
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+                <Button
+                    android:id="@+id/btnClearLog"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="Clear"
+                    android:textSize="11sp"
+                    android:textColor="#64748B"
+                    android:backgroundTint="#F1F5F9" />
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/scrollAdminOutput"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:background="@drawable/console_background"
+                android:padding="10dp">
+                <TextView
+                    android:id="@+id/tvAdminOutput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="10sp"
+                    android:textColor="#94A3B8"
+                    android:text="" />
+            </ScrollView>
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

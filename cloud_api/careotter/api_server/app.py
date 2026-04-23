@@ -23,11 +23,11 @@ import socket
 import fcntl
 import struct
 import logging
-from flask import Flask, jsonify, request, render_template, redirect, url_for
+from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response
 from config import Config
 from core.igp_client import IGPError
 from core.jwt_service import JWTService
-from core.decorators import token_required
+from core.decorators import token_required, web_login_required, web_admin_required, web_patient_required
 from services.device_service import DeviceService
 from services.vitals_service import VitalsService
 from services.database_service import DatabaseService
@@ -108,10 +108,11 @@ def handle_exception(e):
 # ── HTML Routes ────────────────────────────────────────────────────────────────
 
 @app.route('/')
+@web_patient_required
 def index():
     """
-    Public home page — Medical device monitor.
-    Displays real-time vital signs without requiring authentication.
+    Patient home page — Medical device monitor.
+    Displays real-time vital signs. Requires patient login.
     """
     return render_template('index.html')
 
@@ -120,30 +121,45 @@ def admin_login():
     return render_template('login.html')
 
 @app.route('/admin/dashboard')
+@web_admin_required
 def admin_dashboard():
     return render_template('dashboard.html')
 
 @app.route('/admin/network')
+@web_admin_required
 def admin_network():
     return render_template('network.html')
 
 @app.route('/admin/config')
+@web_admin_required
 def admin_config():
     return render_template('config.html')
 
 @app.route('/admin/services')
+@web_admin_required
 def admin_services():
     return render_template('services.html')
 
 @app.route('/admin/logs')
+@web_admin_required
 def admin_logs():
     return render_template('logs.html')
 
+@app.route('/patient/login')
+def patient_login():
+    return render_template('patient_login.html')
+
+@app.route('/patient/dashboard')
+@web_patient_required
+def patient_dashboard():
+    return render_template('patient_dashboard.html')
+
 @app.route('/history')
+@web_patient_required
 def history_page():
     """
-    Public history page — View all historical vitals from database.
-    Displays stored readings without requiring authentication.
+    Patient history page — View all historical vitals from database.
+    Requires patient login.
     """
     return render_template('history.html')
 
@@ -212,13 +228,68 @@ def login():
         }), 403
 
     jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'patient'))
-    return jsonify({
+    resp = make_response(jsonify({
         'token':      jwt_token,
         'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
         'type':       'Bearer',
         'role':       user.get('role'),
         'username':   username
-    }), 200
+    }))
+    resp.set_cookie('careotter_token', jwt_token, httponly=True, samesite='Lax', max_age=3600*Config.JWT_EXPIRATION_HOURS)
+    return resp, 200
+
+
+@app.route('/api/auth/login/patient', methods=['POST'])
+def login_patient():
+    """
+    Patient-only login endpoint.
+
+    Same authentication flow as /api/auth/login, but rejects non-patient roles.
+    Used by the patient portal web UI and mobile app patient mode.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    if not username:
+        return jsonify({'error': 'Field "username" required', 'code': 'MISSING_FIELD'}), 400
+    if not password:
+        return jsonify({'error': 'Field "password" required', 'code': 'MISSING_FIELD'}), 400
+
+    if db is None:
+        return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
+
+    user = db.verify_user(username, password)
+    if not user:
+        return jsonify({
+            'error': 'Invalid username or password',
+            'code':  'AUTH_FAIL'
+        }), 401
+
+    if user.get('role') != 'patient':
+        return jsonify({
+            'error': 'Access denied for this role',
+            'code':  'FORBIDDEN'
+        }), 403
+
+    jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'patient'))
+    resp = make_response(jsonify({
+        'token':      jwt_token,
+        'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
+        'type':       'Bearer',
+        'role':       user.get('role'),
+        'username':   username
+    }))
+    resp.set_cookie('careotter_token', jwt_token, httponly=True, samesite='Lax', max_age=3600*Config.JWT_EXPIRATION_HOURS)
+    return resp, 200
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Borra la cookie de sesión JWT."""
+    resp = make_response(jsonify({'message': 'Logged out'}))
+    resp.set_cookie('careotter_token', '', expires=0)
+    return resp
 
 
 # ── Device Information ────────────────────────────────────────────────────────

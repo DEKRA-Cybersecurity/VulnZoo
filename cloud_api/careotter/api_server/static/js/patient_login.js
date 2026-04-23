@@ -1,4 +1,4 @@
-/* login.js — CareOtter login form handler */
+/* patient_login.js — CareOtter patient portal login handler */
 
 (function () {
     'use strict';
@@ -62,7 +62,7 @@
         setLoading(true);
 
         try {
-            const res = await fetch('/api/auth/login', {
+            const res = await fetch('/api/auth/login/patient', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ username, password })
@@ -74,7 +74,7 @@
                 const msg = data.code === 'AUTH_FAIL'
                     ? 'Invalid username or password.'
                     : data.code === 'FORBIDDEN'
-                    ? 'Admin access required.'
+                    ? 'This account does not have patient access.'
                     : (data.error || `Error ${res.status}`);
                 showError(msg);
                 passwordIn.select();
@@ -86,7 +86,7 @@
             localStorage.setItem('careotter_expires', data.expires_in || '8h');
 
             showSuccess('Authentication successful. Redirecting…');
-            setTimeout(() => { window.location.href = '/admin/dashboard'; }, 900);
+            setTimeout(() => { window.location.href = '/patient/dashboard'; }, 900);
 
         } catch (err) {
             showError('Unable to connect to the server. Check the network.');
