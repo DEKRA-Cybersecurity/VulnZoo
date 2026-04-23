@@ -70,7 +70,9 @@ public class LoginActivity extends AppCompatActivity {
     private EditText  etPassword;
     private EditText  etApiUrl;
     private Button    btnLogin;
+    private Button    btnScanApi;
     private TextView  tvStatus;
+    private TextView  tvApiAddress;
 
     private BluetoothLeScanner bleScanner;
     private boolean            scanning = false;
@@ -123,7 +125,8 @@ public class LoginActivity extends AppCompatActivity {
             uiHandler.post(() -> {
                 etApiUrl.setText(discoveredUrl);
                 tvStatus.setTextColor(0xFF4CAF50);
-                tvStatus.setText("API: " + discoveredUrl + "  |  Device: " + devIp);
+                tvStatus.setText("API address discovered via BLE");
+                showApiAddress(discoveredUrl, devIp);
             });
         }
 
@@ -141,17 +144,37 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        etUsername = findViewById(R.id.etUsername);
-        etPassword = findViewById(R.id.etPassword);
-        etApiUrl   = findViewById(R.id.etApiUrl);
-        btnLogin   = findViewById(R.id.btnLogin);
-        tvStatus   = findViewById(R.id.tvLoginStatus);
+        etUsername    = findViewById(R.id.etUsername);
+        etPassword    = findViewById(R.id.etPassword);
+        etApiUrl      = findViewById(R.id.etApiUrl);
+        btnLogin      = findViewById(R.id.btnLogin);
+        btnScanApi    = findViewById(R.id.btnScanApi);
+        tvStatus      = findViewById(R.id.tvLoginStatus);
+        tvApiAddress  = findViewById(R.id.tvApiAddress);
 
         // Restore last-used API URL while scan runs
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        etApiUrl.setText(prefs.getString(KEY_API_URL, DEFAULT_API));
+        String savedUrl = prefs.getString(KEY_API_URL, "");
+        if (!savedUrl.isEmpty()) {
+            etApiUrl.setText(savedUrl);
+            showApiAddress(savedUrl, prefs.getString(KEY_DEVICE_IP, ""));
+        }
 
         btnLogin.setOnClickListener(v -> attemptLogin());
+
+        btnScanApi.setOnClickListener(v -> {
+            tvApiAddress.setVisibility(android.view.View.GONE);
+            if (hasBlePermissions()) {
+                stopBleScan();
+                startBleScan();
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                }, REQ_PERMISSIONS);
+            }
+        });
 
         // Request BLE permissions then start discovery scan
         if (hasBlePermissions()) {
@@ -304,6 +327,17 @@ public class LoginActivity extends AppCompatActivity {
         int code = conn.getResponseCode();
         java.io.InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
         return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    private void showApiAddress(String apiUrl, String deviceIp) {
+        if (tvApiAddress == null) return;
+        StringBuilder sb = new StringBuilder();
+        sb.append("API:    ").append(apiUrl);
+        if (deviceIp != null && !deviceIp.isEmpty() && !deviceIp.equals("0.0.0.0")) {
+            sb.append("\nDevice: ").append(deviceIp);
+        }
+        tvApiAddress.setText(sb.toString());
+        tvApiAddress.setVisibility(android.view.View.VISIBLE);
     }
 
     private void routeByRole(String role) {

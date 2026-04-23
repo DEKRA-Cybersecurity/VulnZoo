@@ -1,100 +1,142 @@
 <!DOCTYPE html>
-<html><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
-    <title>VulnZoo - Device Simulator</title>
-    <meta charset="utf-8">
-    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
-    <link rel="stylesheet" href="/assets/css/style.css">
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VulnZoo — Device Catalog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="../assets/images/vulnzoo.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
-    <div id="navbar">
-        <div id="logo">
-            <img src="/assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
-            <a href="/index.html" style="text-decoration: none;"><h1>VulnZoo</h1></a>
-        </div>
-        <div id="nav-menus">
-            <div class="dropdown">
-                <button class="dropdown-btn">Administration
-                    <span class="dropdown-arrow">
-                        <svg width="18" height="10" viewBox="0 0 18 10" fill="none" aria-hidden="true">
-                            <path d="M1 1L9 9L17 1" stroke="currentColor" stroke-width="2"/>
-                        </svg>
-                    </span>
-                </button>
-                <div class="dropdown-content">
-                    <a href="/pages/admin.html">Administration Panel</a>
-                    <a href="/pages/admin.html#logs" onclick="showLogs()">View Logs</a>
-                </div>
-            </div>
-        </div>
+
+  <div id="navbar">
+    <div id="logo">
+      <a href="../index.html" style="text-decoration:none; display:flex; align-items:center; gap:14px;">
+        <img src="../assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+        <h1>VulnZoo</h1>
+      </a>
     </div>
-    
-    <div class="device-card">
-        <div class="device-info">
-            <h3><span class="vuln-glitch">Rout</span>Coon</h3>
-            <p>Test your skills against this environment where you will have to exploit typical vulnerabilities of a router environment.</p>
-        </div>
-        <div class="device-btn-wrapper">
-            <a href="/pages/routcoon.html" class="btn">Go to RoutCoon</a>
-        </div>
+    <div id="nav-menus">
+      <a href="../index.html" class="nav-link">Overview</a>
+      <a href="devices.html" class="nav-link" aria-current="page">Devices</a>
+      <a href="admin.html" class="nav-link">Admin</a>
+      <a href="https://github.com/VulnZoo/VulnZoo" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+
+  <div class="main-content">
+
+    <header class="devices-header">
+      <div>
+        <div class="eyebrow" style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:oklch(0.80 0.14 75); margin-bottom:6px;">vulnzoo / catalog</div>
+        <h2>Vulnerable devices</h2>
+      </div>
+      <div class="count"><span class="n">05</span> specimens · <span class="n">03</span> available</div>
+    </header>
+
+    <div class="device-list">
+
+      <!-- RoutCoon -->
+      <div class="device-card" data-device="routcoon">
         <div class="device-img-wrapper">
             <img src="/assets/images/routcoon.png" alt="RoutCoon" class="device-img">
         </div>
-    </div>
-    <div class="device-card">
         <div class="device-info">
-            <h3>Owl<span class="vuln-glitch">Cam</span></h3>
-            <p>Can you find the hidden vulnerabilities in this security camera setup?</p>
+          <div class="meta-row">Network · Router</div>
+          <h3><span class="vuln-glitch">Rout</span>Coon</h3>
+          <p>OpenWRT router environment with intentional LuCI misconfigurations across authentication, exposed services and credential storage. Classic network-layer pentesting playground.</p>
+        </div>
+        <div class="device-status-cell">
+          <span class="status stopped">Ready</span>
         </div>
         <div class="device-btn-wrapper">
-            <a href="/pages/owlcam.html" class="btn">Go to OwlCam</a>
+          <a href="routcoon.html" class="btn btn-primary">Enter →</a>
         </div>
+      </div>
+
+      <!-- OwlCam -->
+      <div class="device-card" data-device="owlcam">
         <div class="device-img-wrapper">
             <img src="/assets/images/owlcam.png" alt="OwlCam" class="device-img">
         </div>
-    </div>
-    <div class="device-card">
         <div class="device-info">
-            <h3><span class="vuln-glitch">Care</span>Otter</h3>
-            <p>Challenge yourself with vulnerabilities in healthcare and wellness IoT devices. Can you keep the otter safe?</p>
+          <div class="meta-row">IoT · Surveillance</div>
+          <h3>Owl<span class="vuln-glitch">Cam</span></h3>
+          <p>Enterprise video-surveillance service with a private API, mobile app, and per-tenant cameras. Practice authN/authZ, domain segregation and privilege escalation against a realistic SaaS-style target.</p>
+        </div>
+        <div class="device-status-cell">
+          <span class="status stopped">Ready</span>
         </div>
         <div class="device-btn-wrapper">
-            <a href="/pages/careotter.html" class="btn">Go to CareOtter</a>
+          <a href="owlcam.html" class="btn btn-primary">Enter →</a>
         </div>
+      </div>
+
+      <!-- CareOtter -->
+      <div class="device-card" data-device="careotter">
         <div class="device-img-wrapper">
             <img src="/assets/images/careotter.png" alt="CareOtter" class="device-img">
         </div>
-    </div>
-    <div class="device-card">
         <div class="device-info">
-            <h3>Auto<span class="vuln-glitch">Pwned</span></h3>
-            <p>Explore and exploit vulnerabilities in automotive and generic mobility device. Can you take control?</p>
-            <p style="color: orange; font-weight: bold;">(On development - Not available yet)</p>
+          <div class="meta-row">Medical · ICD</div>
+          <h3><span class="vuln-glitch">Care</span>Otter</h3>
+          <p>Life-critical implantable cardioverter-defibrillator simulator. Four security phases (BLE, cloud, data, baseline) let you progressively weaken the surface and practice against real medical-IoT attack vectors.</p>
+        </div>
+        <div class="device-status-cell">
+          <span class="status stopped">Ready</span>
         </div>
         <div class="device-btn-wrapper">
-            <a href="#" class="btn" style="pointer-events: none; opacity: 0.6;">Not available</a>
+          <a href="careotter.html" class="btn btn-primary">Enter →</a>
         </div>
+      </div>
+
+      <!-- AutoPwned (WIP) -->
+      <div class="device-card wip" data-device="autopwned">
         <div class="device-img-wrapper">
             <img src="/assets/images/autopwned.png" alt="AutoPwned" class="device-img">
         </div>
-    </div>
-    <div class="device-card">
         <div class="device-info">
-            <h3>Octo<span class="vuln-glitch">Bot</span></h3>
-            <p>Try your hand at exploiting vulnerabilities in this octopus-themed robot!</p>
-            <p style="color: orange; font-weight: bold;">(On development - Not available yet)</p>
+          <div class="meta-row">Automotive</div>
+          <h3>Auto<span class="vuln-glitch">Pwned</span></h3>
+          <p>Automotive and generic mobility device. Vulnerabilities in the telematics, CAN gateway and companion-app surface.</p>
+        </div>
+        <div class="device-status-cell">
+          <span class="status loading">In development</span>
         </div>
         <div class="device-btn-wrapper">
-            <a href="#" class="btn" style="pointer-events: none; opacity: 0.6;">Not available</a>
+          <a href="#" class="btn" aria-disabled="true" style="pointer-events:none; opacity:0.5;">Soon</a>
         </div>
+      </div>
+
+      <!-- OctoBot (WIP) -->
+      <div class="device-card wip" data-device="octobot">
         <div class="device-img-wrapper">
-            <img src="/assets/images/octobot.png" alt="Octobot" class="device-img">
+            <img src="/assets/images/octobot.png" alt="OctoBot" class="device-img">
         </div>
+        <div class="device-info">
+          <div class="meta-row">Robotics · Industrial</div>
+          <h3>Octo<span class="vuln-glitch">Bot</span></h3>
+          <p>Robotics platform — try your hand at exploiting vulnerabilities in this octopus-themed robot.</p>
+        </div>
+        <div class="device-status-cell">
+          <span class="status loading">In development</span>
+        </div>
+        <div class="device-btn-wrapper">
+          <a href="#" class="btn" aria-disabled="true" style="pointer-events:none; opacity:0.5;">Soon</a>
+        </div>
+      </div>
+
     </div>
-    <footer>
-        <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
-    </footer>
+  </div>
 
-    <script src="/assets/js/vulnzoo.js"></script>
+  <footer>
+    <p>
+      <a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener">
+        VulnZoo Project © 2025 · github.com/VulnZoo
+      </a>
+    </p>
+  </footer>
 
-</body></html>
+  <script src="../assets/js/vulnzoo.js"></script>
+</body>
+</html>
