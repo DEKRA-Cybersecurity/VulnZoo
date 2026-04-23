@@ -1,98 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>VulnZoo - CareOtter Simulator</title>
-    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
-    <link rel="stylesheet" href="/assets/css/style.css">
+  <meta charset="UTF-8">
+  <title>VulnZoo — CareOtter Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="../assets/images/vulnzoo.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
-    <div id="navbar">
-        <div id="logo">
-            <img src="/assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
-            <a href="/index.html" style="text-decoration: none;"><h1>VulnZoo</h1></a>
-        </div>
-        <div id="nav-menus">
-            <a href="/index.html" class="nav-link">Home</a>
-            <a href="/pages/devices.html" class="nav-link">Devices</a>
-        </div>
+  <div id="navbar">
+    <div id="logo">
+      <a href="../index.html" style="text-decoration:none; display:flex; align-items:center; gap:14px;">
+        <img src="../assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+        <h1>VulnZoo</h1>
+      </a>
     </div>
-    
-    <div class="main-content">
-        <div class="content-section">
-            <h2>Device Status</h2>
-            <p>Current status: <span id="device-status" class="status stopped">Stopped</span></p>
-            <p>Active device: <span id="active-device">None</span></p>
-        </div>
-
-        <div class="content-section">
-            <h2>CareOtter Control</h2>
-            <button class="btn" onclick="loadDevice('careotter')" style="margin-right: 10px;">Load CareOtter</button>
-            <button class="btn" onclick="stopCurrentDevice()" style="margin-right: 10px;">Stop Device</button>
-            <a href="admin.html" class="btn" style="margin-right: 10px; text-decoration: none; display: inline-block; vertical-align: top;">VulnZoo Admin</a>
-            <button class="btn" onclick="openDeviceInterface('careotter')" style="margin-right: 10px;" id="careotter-interface-btn" disabled>CareOtter Interface</button>
-        </div>
-        
-        <div class="content-section">
-            <h2>What is this environment?</h2>
-            <p>
-                <strong>CareOtter</strong> is a vulnerable IoT healthcare device simulator designed for security testing and learning. This lab reproduces a modern cardiac implantable electronic device similar to a <strong>ICD (Implantable Cardioverter-Defibrillator)</strong> — a sophisticated computer that manages autonomous heart rhythm control.
-            </p>
-            <p>
-                Modern DAIs have evolved from simple "arrhythmia extinguishers" into sophisticated cardiac computers that manage life-or-death situations in milliseconds. Like a small pacemaker, they maintain the heart at a marked rhythm when it weakens, but they can also deliver an electric shock when a critical arrhythmia is detected.
-            </p>
-            <p>
-                When a DAI releases an electric shock (defibrillation), a series of automatic actions and medical protocols are triggered, since a discharge is considered a critical event. The CareOtter simulator models this complex medical environment with realistic telemetry, cloud synchronization, and mobile monitoring — allowing security researchers to understand the real-world impact of vulnerabilities in life-critical medical IoT devices.
-            </p>
-            <p>
-                <strong>VulnZoo WWW Interface</strong>: Used for device management, loading/stopping the CareOtter simulator, and project administration.
-            </p>
-            <p>
-                <strong>CareOtter Device Interface</strong>: The actual vulnerable IoT device with BLE services, web panel, and API endpoints — this is where you perform penetration testing on medical IoT vulnerabilities.
-            </p>
-        </div>
-        
-        <div class="content-section">
-            <h2>Device Architecture</h2>
-            <p>
-                The CareOtter lab comprises multiple interconnected components that mirror a real-world connected medical device ecosystem:
-            </p>
-            <ul>
-                <li><strong>BLE Communication</strong>: The device exposes Bluetooth Low Energy GATT services for continuous heart rate and SpO₂ monitoring, allowing direct interaction with mobile health applications and wearable controllers.</li>
-                <li><strong>Cloud API</strong>: A backend gateway bridges the binary device protocol to HTTP REST APIs, enabling remote patient monitoring, clinician dashboards, and firmware configuration over the network.</li>
-                <li><strong>Web Interface</strong>: An embedded dashboard provides real-time visualization of cardiac telemetry, device status, and administrative controls accessible from any browser on the local network.</li>
-                <li><strong>Data Storage</strong>: The simulator maintains persistent telemetry logs and configuration data, modeling how real medical devices store sensitive patient information over time.</li>
-                <li><strong>Mobile App</strong>: An Android companion application connects to the device via both BLE and the cloud API, simulating how patients and caregivers interact with modern implantable cardiac devices remotely.</li>
-            </ul>
-        </div>
-        
-        <div class="content-section">
-            <h2>Security Training Focus</h2>
-            <p>
-                CareOtter supports multiple security profiles for different training scenarios. Each phase is managed through idempotent hooks that reconfigure the device without requiring code changes.
-            </p>
-            <ul>
-                <li><strong>Phase 1 (Secure)</strong>: Baseline secure configuration with all protections enabled</li>
-                <li><strong>Phase 2 (Wireless)</strong>: Relaxed BLE security controls — practice wireless attack surfaces</li>
-                <li><strong>Phase 3 (Network)</strong>: Weakened cloud and API protections — practice network-based attacks</li>
-                <li><strong>Phase 4 (Data)</strong>: Reduced storage and logging protections — practice data extraction</li>
-            </ul>
-            <p>
-                When CareOtter is loaded, you can explore vulnerabilities across multiple attack surfaces including wireless communication protocols, cloud synchronization mechanisms, web-based management interfaces, local data persistence, and mobile application integrations.
-            </p>
-        </div>
-        
-        <div class="content-section">
-            <h2>Simulator Link</h2>
-            <p>
-                Access the vulnerable device simulator from <a href="/index.html">VulnZoo - Device Simulator</a>.
-            </p>
-        </div>
+    <div id="nav-menus">
+      <a href="../index.html" class="nav-link">Overview</a>
+      <a href="devices.html" class="nav-link">Devices</a>
+      <a href="admin.html" class="nav-link">Admin</a>
+      <a href="https://github.com/VulnZoo/VulnZoo" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
-    <footer>
-        <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
-    </footer>
+  </div>
 
-    <script src="/assets/js/vulnzoo.js"></script>
+  <div class="main-content">
+    <div class="page-wrap">
+
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">vulnzoo / device / medical</div>
+          <h2>CareOtter</h2>
+        </div>
+        <span id="device-status" class="status stopped">Stopped</span>
+      </div>
+
+      <div class="content-section">
+        <h2>Device status</h2>
+        <p>Active device: <span id="active-device">None</span></p>
+      </div>
+
+      <div class="content-section">
+        <h2>CareOtter control</h2>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="loadDevice('careotter')">Load CareOtter</button>
+          <button class="btn btn-danger" onclick="stopCurrentDevice()">Stop device</button>
+          <a href="admin.html" class="btn">VulnZoo admin</a>
+          <button class="btn" onclick="openDeviceInterface('careotter')" id="careotter-interface-btn" disabled>Open interface</button>
+        </div>
+      </div>
+
+      <div class="content-section">
+        <h2>What is this environment?</h2>
+        <p><strong>CareOtter</strong> is a vulnerable IoT healthcare device simulator for security testing and learning. The lab reproduces a modern cardiac implantable electronic device similar to an <strong>ICD (Implantable Cardioverter-Defibrillator)</strong> — a sophisticated computer that manages autonomous heart rhythm control.</p>
+        <p>Modern ICDs have evolved from simple arrhythmia extinguishers into cardiac computers managing life-or-death events in milliseconds. Like a pacemaker, they maintain a marked rhythm when the heart weakens, and deliver electric shocks on critical arrhythmia.</p>
+        <p><strong>VulnZoo WWW interface</strong> — device management, loading/stopping the CareOtter simulator, and project administration.</p>
+        <p><strong>CareOtter device interface</strong> — the actual vulnerable IoT device with BLE services, web panel, and API endpoints. This is where you perform penetration testing.</p>
+      </div>
+
+      <div class="content-section">
+        <h2>Device architecture</h2>
+        <ul>
+          <li><strong>BLE</strong> — GATT services for continuous heart rate and SpO₂ monitoring, interacting with mobile apps and wearables.</li>
+          <li><strong>Cloud API</strong> — backend gateway bridging the binary device protocol to REST, enabling remote monitoring and clinician dashboards.</li>
+          <li><strong>Web interface</strong> — embedded dashboard with real-time cardiac telemetry, device status, and admin controls.</li>
+          <li><strong>Data storage</strong> — persistent telemetry logs and configuration data.</li>
+          <li><strong>Mobile app</strong> — Android companion connecting via both BLE and the cloud API.</li>
+        </ul>
+      </div>
+
+      <div class="content-section">
+        <h2>Security training focus</h2>
+        <p>CareOtter supports multiple security profiles via idempotent hooks that reconfigure the device without code changes.</p>
+        <ul>
+          <li><strong>Phase 1 — Secure</strong>. Baseline secure configuration with all protections enabled.</li>
+          <li><strong>Phase 2 — Wireless</strong>. Relaxed BLE controls for wireless attack surface practice.</li>
+          <li><strong>Phase 3 — Network</strong>. Weakened cloud and API protections for network attacks.</li>
+          <li><strong>Phase 4 — Data</strong>. Reduced storage and logging protections for data extraction.</li>
+        </ul>
+      </div>
+
+      <div class="content-section">
+        <h2>Simulator link</h2>
+        <p>Access the vulnerable device simulator from <a href="../index.html">VulnZoo — Device Simulator</a>.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener">VulnZoo Project © 2025 · github.com/VulnZoo</a></p>
+  </footer>
+
+  <script src="../assets/js/vulnzoo.js"></script>
 </body>
 </html>

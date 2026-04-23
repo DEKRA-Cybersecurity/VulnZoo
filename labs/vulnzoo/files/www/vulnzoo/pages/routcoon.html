@@ -1,65 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>VulnZoo - RoutCoon Simulator</title>
-    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
-    <link rel="stylesheet" href="/assets/css/style.css">
+  <meta charset="UTF-8">
+  <title>VulnZoo — RoutCoon Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="../assets/images/vulnzoo.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
-    <div id="navbar">
-        <div id="logo">
-            <img src="/assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
-            <a href="/index.html" style="text-decoration: none;"><h1>VulnZoo</h1></a>
-        </div>
-        <div id="nav-menus">
-            <a href="/index.html" class="nav-link">Home</a>
-            <a href="/pages/devices.html" class="nav-link">Devices</a>
-        </div>
+  <div id="navbar">
+    <div id="logo">
+      <a href="../index.html" style="text-decoration:none; display:flex; align-items:center; gap:14px;">
+        <img src="../assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+        <h1>VulnZoo</h1>
+      </a>
     </div>
-    
-    <div class="main-content">
-        <div class="content-section">
-            <h2>Device Status</h2>
-            <p>Current status: <span id="device-status" class="status stopped">Stopped</span></p>
-            <p>Active device: <span id="active-device">None</span></p>
-        </div>
-
-        <div class="content-section">
-            <h2>RoutCoon Control</h2>
-            <button class="btn" onclick="loadDevice('routcoon')" style="margin-right: 10px;">Load RoutCoon</button>
-            <button class="btn" onclick="stopCurrentDevice()" style="margin-right: 10px;">Stop Device</button>
-            <a href="admin.html" class="btn" style="margin-right: 10px; text-decoration: none; display: inline-block; vertical-align: top;">VulnZoo Admin</a>
-            <button class="btn" onclick="openDeviceInterface('routcoon')" style="margin-right: 10px;" id="routcoon-interface-btn" disabled>RoutCoon Interface</button>
-        </div>
-        
-        <div class="content-section">
-            <h2>What is this environment?</h2>
-            <p>
-                This section of the VulnZoo project provides a vulnerable environment that simulates the operation of an OpenWRT-based router. When loaded, RoutCoon exposes its native LuCI administrative interface with intentional vulnerabilities for security testing and learning.
-            </p>
-            <p>
-                <strong>VulnZoo WWW Interface</strong>: Used for device management, loading/stopping devices, and project administration.
-            </p>
-            <p>
-                <strong>RoutCoon LuCI Interface</strong>: The actual vulnerable router administrative interface (available at port 4343 when RoutCoon is loaded) - this is where you perform penetration testing.
-            </p>
-            <p>
-                The simulator is inspired by and based on the <a href="https://owasp.org/www-project-internet-of-things/" target="_blank">OWASP Internet of Things</a> project, allowing users to experiment and practice pentesting techniques on IoT devices safely.
-            </p>
-        </div>
-        
-        <div class="content-section">
-            <h2>Simulator Link</h2>
-            <p>
-                Access the vulnerable device simulator from <a href="/index.html">VulnZoo - Device Simulator</a>.
-            </p>
-        </div>
+    <div id="nav-menus">
+      <a href="../index.html" class="nav-link">Overview</a>
+      <a href="devices.html" class="nav-link">Devices</a>
+      <a href="admin.html" class="nav-link">Admin</a>
+      <a href="https://github.com/VulnZoo/VulnZoo" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
-    <footer>
-        <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
-    </footer>
+  </div>
 
-    <script src="/assets/js/vulnzoo.js"></script>
+  <div class="main-content">
+    <div class="page-wrap">
+
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">vulnzoo / device / network</div>
+          <h2>RoutCoon</h2>
+        </div>
+        <span id="device-status" class="status stopped">Stopped</span>
+      </div>
+
+      <div class="content-section">
+        <h2>Device status</h2>
+        <p>Active device: <span id="active-device">None</span></p>
+      </div>
+
+      <div class="content-section">
+        <h2>RoutCoon control</h2>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="loadDevice('routcoon')">Load RoutCoon</button>
+          <button class="btn btn-danger" onclick="stopCurrentDevice()">Stop device</button>
+          <a href="admin.html" class="btn">VulnZoo admin</a>
+          <button class="btn" onclick="openDeviceInterface('routcoon')" id="routcoon-interface-btn" disabled>Open interface</button>
+        </div>
+      </div>
+
+      <div class="content-section">
+        <h2>What is this environment?</h2>
+        <p>This section of the VulnZoo project provides a vulnerable environment that simulates the operation of an OpenWRT-based router. When loaded, RoutCoon exposes its native LuCI administrative interface with intentional vulnerabilities for security testing and learning.</p>
+        <p><strong>VulnZoo WWW interface</strong> — device management, loading/stopping devices, and project administration.</p>
+        <p><strong>RoutCoon LuCI interface</strong> — the actual vulnerable router administrative interface (available at port 4343 when RoutCoon is loaded). This is where you perform penetration testing.</p>
+        <p>Inspired by the <a href="https://owasp.org/www-project-internet-of-things/" target="_blank" rel="noopener">OWASP Internet of Things</a> project, allowing users to experiment and practice pentesting techniques on IoT devices safely.</p>
+      </div>
+
+      <div class="content-section">
+        <h2>Simulator link</h2>
+        <p>Access the vulnerable device simulator from <a href="../index.html">VulnZoo — Device Simulator</a>.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener">VulnZoo Project © 2025 · github.com/VulnZoo</a></p>
+  </footer>
+
+  <script src="../assets/js/vulnzoo.js"></script>
 </body>
 </html>

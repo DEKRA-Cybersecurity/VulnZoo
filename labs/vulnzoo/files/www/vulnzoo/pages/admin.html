@@ -1,48 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>VulnZoo - Administration Panel</title>
-    <link rel="icon" type="image/x-icon" href="/assets/images/vulnzoo.ico">
-    <link rel="stylesheet" href="/assets/css/style.css">
+  <meta charset="UTF-8">
+  <title>VulnZoo — Administration Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="../assets/images/vulnzoo.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
-    <div id="navbar">
-        <div id="logo">
-            <img src="/assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
-            <a href="/index.html" style="text-decoration: none;"><h1>VulnZoo</h1></a>
-        </div>
-        <div id="nav-menus">
-            <a href="/index.html" class="nav-link">Home</a>
-            <a href="/pages/devices.html" class="nav-link">Devices</a>
-        </div>
+  <div id="navbar">
+    <div id="logo">
+      <a href="../index.html" style="text-decoration:none; display:flex; align-items:center; gap:14px;">
+        <img src="../assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+        <h1>VulnZoo</h1>
+      </a>
     </div>
-    
-    <div class="main-content">
-        <div id="current-device">
-            <h2>Current Device: <span id="active-device">None</span></h2>
-            <span id="device-status" class="status stopped">Stopped</span>
-        </div>
-
-        <div id="admin-panel">
-            <h2>Administration Panel</h2>
-            <button class="btn" onclick="stopCurrentDevice()">Stop Current Device</button>
-            <button class="btn" onclick="restartServices()">Restart Services</button>
-            <button class="btn" onclick="showLogs()">View Logs</button>
-            <div id="device-link-container"></div>
-        </div>
-
-        <div id="logs" style="display:none; margin-top: 20px;">
-            <h3>System Logs</h3>
-            <textarea id="log-content" rows="15" cols="80" readonly="readonly"></textarea>
-        </div>
+    <div id="nav-menus">
+      <a href="../index.html" class="nav-link">Overview</a>
+      <a href="devices.html" class="nav-link">Devices</a>
+      <a href="admin.html" class="nav-link" aria-current="page">Admin</a>
+      <a href="https://github.com/VulnZoo/VulnZoo" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
+  </div>
 
-    <footer>
-        <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">VulnZoo Project &copy; 2025</a></p>
-    </footer>
+  <div class="main-content">
+    <div class="page-wrap">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">vulnzoo / admin</div>
+          <h2>Administration</h2>
+        </div>
+      </div>
 
-    <script src="/assets/js/vulnzoo.js"></script>
-    <script src="/assets/js/admin.js"></script>
+      <div id="current-device">
+        <h2>
+          <span class="label">Current device</span>
+          <span id="active-device">None</span>
+        </h2>
+        <span id="device-status" class="status stopped">Stopped</span>
+      </div>
+
+      <div id="admin-panel">
+        <h2>Controls</h2>
+        <div class="btn-row">
+          <button class="btn btn-danger" onclick="stopCurrentDevice()">Stop current device</button>
+          <button class="btn" onclick="restartServices()">Restart services</button>
+          <button class="btn" onclick="showLogs()">View logs</button>
+          <div id="device-link-container" style="display:inline-flex; gap:10px;"></div>
+        </div>
+      </div>
+
+      <div id="logs" style="display:none;">
+        <h3>System logs</h3>
+        <textarea id="log-content" rows="15" cols="80" readonly="readonly"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener">VulnZoo Project © 2025 · github.com/VulnZoo</a></p>
+  </footer>
+
+  <script src="../assets/js/vulnzoo.js"></script>
+  <script src="../assets/js/admin.js"></script>
 </body>
 </html>

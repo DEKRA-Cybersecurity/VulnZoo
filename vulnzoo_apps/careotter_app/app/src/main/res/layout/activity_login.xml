@@ -66,7 +66,33 @@
         android:backgroundTint="#E53935"
         android:textColor="#FFFFFF"
         android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <!-- BLE API discovery button -->
+    <Button
+        android:id="@+id/btnScanApi"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SCAN FOR API ADDRESS"
+        android:backgroundTint="#37474F"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
         android:layout_marginBottom="16dp" />
+
+    <!-- Discovered API address — shown after successful BLE scan -->
+    <TextView
+        android:id="@+id/tvApiAddress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="11sp"
+        android:textColor="#37474F"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#F0F4F8"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/tvLoginStatus"
