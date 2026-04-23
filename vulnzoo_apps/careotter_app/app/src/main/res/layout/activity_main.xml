@@ -1,286 +1,515 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:background="#F4FBFF">
 
-    <LinearLayout
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
-
-        <!-- Title row: title (5 taps = diag panel) + logout button -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:id="@+id/tvTitle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="CareOtter Monitor"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                android:gravity="center" />
-
-            <Button
-                android:id="@+id/btnLogout"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="LOGOUT"
-                android:textSize="10sp"
-                android:backgroundTint="#888888" />
-        </LinearLayout>
-
-        <!-- Alert banner — hidden by default -->
-        <TextView
-            android:id="@+id/tvAlertBanner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="⚠ ALERT"
-            android:textColor="#FFFFFF"
-            android:background="#CC0000"
-            android:textStyle="bold"
-            android:textSize="16sp"
-            android:gravity="center"
-            android:padding="10dp"
-            android:layout_marginBottom="8dp"
-            android:visibility="gone" />
-
-        <!-- Device info -->
-        <TextView
-            android:id="@+id/tvDeviceName"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Dispositivo: —"
-            android:textColor="#FF6B6B"
-            android:textSize="13sp"
-            android:gravity="center"
-            android:paddingBottom="8dp" />
-
-        <!-- Vitals display -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:background="#F5F5F5"
-                android:padding="12dp"
-                android:layout_marginEnd="4dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="BPM"
-                    android:textSize="12sp"
-                    android:textColor="#666666" />
-                <TextView
-                    android:id="@+id/tvBpm"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="--"
-                    android:textSize="48sp"
-                    android:textStyle="bold"
-                    android:textColor="#E53935" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:background="#F5F5F5"
-                android:padding="12dp"
-                android:layout_marginStart="4dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="SpO₂"
-                    android:textSize="12sp"
-                    android:textColor="#666666" />
-                <TextView
-                    android:id="@+id/tvSpo2"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="--"
-                    android:textSize="48sp"
-                    android:textStyle="bold"
-                    android:textColor="#1E88E5" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Device info fields -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Mfr: "
-                android:textSize="12sp" />
-            <TextView
-                android:id="@+id/tvManufacturer"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="—"
-                android:textSize="12sp"
-                android:fontFamily="monospace" />
-        </LinearLayout>
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="false">
 
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Model: "
-                android:textSize="12sp" />
-            <TextView
-                android:id="@+id/tvModel"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="—"
-                android:textSize="12sp"
-                android:fontFamily="monospace" />
-        </LinearLayout>
-
-        <!-- Scan / Connect / Disconnect -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-
-            <Button
-                android:id="@+id/btnScan"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="SCAN"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnConnect"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="CONNECT"
-                android:backgroundTint="#4CAF50"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnDisconnect"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="DISCONNECT"
-                android:backgroundTint="#FF6B6B"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- Diagnostic panel — hidden by default, unlocked via secret gesture -->
-        <LinearLayout
-            android:id="@+id/diagnosticPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:visibility="gone">
+            android:padding="16dp">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="[DIAG] Alert Thresholds (raw JSON):"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:textColor="#FF6B00"
-                android:paddingBottom="4dp" />
-
-            <EditText
-                android:id="@+id/etThresholdJson"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textSize="12sp"
-                android:layout_marginBottom="8dp" />
-
+            <!-- Header -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+                android:gravity="center_vertical"
+                android:layout_marginBottom="14dp">
 
-                <Button
-                    android:id="@+id/btnReadThreshold"
+                <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:src="@mipmap/ic_launcher_round"
+                    android:layout_marginEnd="10dp" />
+
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:text="READ THRESHOLD"
-                    android:textSize="11sp" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Monitor"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A" />
+
+                    <TextView
+                        android:id="@+id/tvSubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Signed in as patient"
+                        android:textSize="11sp"
+                        android:textColor="#64748B" />
+                </LinearLayout>
 
                 <Button
-                    android:id="@+id/btnWriteThreshold"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="WRITE THRESHOLD"
-                    android:backgroundTint="#FF9800"
-                    android:textSize="11sp" />
+                    android:id="@+id/btnLogout"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="Log out"
+                    android:textSize="12sp"
+                    android:textColor="#475569"
+                    android:backgroundTint="#F1F5F9" />
             </LinearLayout>
-        </LinearLayout>
 
-        <!-- Log output -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="BLE Events:"
-            android:textStyle="bold"
-            android:textSize="12sp"
-            android:paddingBottom="4dp" />
-
-        <ScrollView
-            android:id="@+id/scrollOutput"
-            android:layout_width="match_parent"
-            android:layout_height="180dp"
-            android:background="#F0F0F0"
-            android:padding="6dp">
-            <TextView
-                android:id="@+id/tvOutput"
+            <!-- Alert banner -->
+            <LinearLayout
+                android:id="@+id/tvAlertBanner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/alert_background"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚠ "
+                    android:textSize="16sp"
+                    android:textColor="#92400E"
+                    android:layout_marginEnd="8dp" />
+
+                <TextView
+                    android:id="@+id/tvAlertText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text=""
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#92400E" />
+            </LinearLayout>
+
+            <!-- Device status card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/card_background"
+                android:padding="14dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:background="@drawable/icon_bg_grey"
+                    android:layout_marginEnd="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="▣"
+                        android:textSize="18sp"
+                        android:textColor="#64748B" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvDeviceName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="No device connected"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A" />
+
+                    <TextView
+                        android:id="@+id/tvModel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Tap Scan to look for CareOtter devices"
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvConnectionStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="● Idle"
+                    android:textSize="11sp"
+                    android:textColor="#94A3B8"
+                    android:background="@drawable/pill_background"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp" />
+            </LinearLayout>
+
+            <!-- Heart Rate card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_background"
+                android:padding="18dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="♥  HEART RATE"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.08"
+                        android:textColor="#E53935" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="60–100"
+                        android:textSize="11sp"
+                        android:textColor="#2563EB"
+                        android:background="@drawable/pill_blue"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="bottom">
+
+                    <TextView
+                        android:id="@+id/tvBpm"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textSize="56sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A"
+                        android:fontFamily="monospace" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="bpm"
+                        android:textSize="14sp"
+                        android:textColor="#64748B"
+                        android:layout_marginStart="6dp"
+                        android:layout_marginBottom="10dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvWaveformHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="64dp"
+                    android:text="Connect device to stream waveform"
+                    android:textSize="12sp"
+                    android:textColor="#94A3B8"
+                    android:gravity="center"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <!-- SpO2 card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/card_background"
+                android:padding="18dp"
+                android:layout_marginBottom="14dp"
+                android:elevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="110dp"
+                    android:layout_height="110dp"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:background="@drawable/spo2_ring_bg"
+                    android:layout_marginEnd="16dp">
+
+                    <TextView
+                        android:id="@+id/tvSpo2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textSize="28sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A"
+                        android:fontFamily="monospace" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="%"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:textColor="#64748B" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="OXYGEN SATURATION"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:textColor="#2563EB"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SpO₂"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A"
+                        android:layout_marginBottom="6dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Normal range ≥ 95%\nThreshold alert below 92%"
+                        android:textSize="12sp"
+                        android:textColor="#64748B"
+                        android:lineSpacingMultiplier="1.4" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Manufacturer (shown when connected) -->
+            <LinearLayout
+                android:id="@+id/layoutManufacturer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Mfr: "
+                    android:textSize="12sp"
+                    android:textColor="#64748B" />
+                <TextView
+                    android:id="@+id/tvManufacturer"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="—"
+                    android:textSize="12sp"
+                    android:fontFamily="monospace"
+                    android:textColor="#0F172A" />
+            </LinearLayout>
+
+            <!-- Diagnostic panel (5 taps on title) -->
+            <LinearLayout
+                android:id="@+id/diagnosticPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_warn"
+                android:padding="14dp"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="DIAG"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:textColor="#92400E"
+                        android:background="@drawable/pill_warn"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Alert thresholds (raw JSON)"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A" />
+                </LinearLayout>
+
+                <EditText
+                    android:id="@+id/etThresholdJson"
+                    android:layout_width="match_parent"
+                    android:layout_height="90dp"
+                    android:fontFamily="monospace"
+                    android:textSize="12sp"
+                    android:textColor="#0F172A"
+                    android:background="@drawable/input_background"
+                    android:padding="10dp"
+                    android:gravity="top"
+                    android:layout_marginBottom="10dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnReadThreshold"
+                        android:layout_width="0dp"
+                        android:layout_height="42dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="Read threshold"
+                        android:textSize="12sp"
+                        android:textColor="#0F172A"
+                        android:backgroundTint="#F1F5F9" />
+
+                    <Button
+                        android:id="@+id/btnWriteThreshold"
+                        android:layout_width="0dp"
+                        android:layout_height="42dp"
+                        android:layout_weight="1"
+                        android:text="Write threshold"
+                        android:textSize="12sp"
+                        android:backgroundTint="#F59E0B" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Connection buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="14dp">
+
+                <Button
+                    android:id="@+id/btnScan"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="Scan"
+                    android:textSize="13sp"
+                    android:textColor="#0F172A"
+                    android:backgroundTint="#F1F5F9" />
+
+                <Button
+                    android:id="@+id/btnConnect"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="Connect"
+                    android:textSize="13sp"
+                    android:backgroundTint="#16A34A" />
+
+                <Button
+                    android:id="@+id/btnDisconnect"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:text="Disconnect"
+                    android:textSize="13sp"
+                    android:backgroundTint="#F1F5F9"
+                    android:textColor="#64748B" />
+            </LinearLayout>
+
+            <!-- BLE events log -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="BLE events"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#0F172A" />
+
+                <TextView
+                    android:id="@+id/tvEventCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="10sp"
+                    android:textColor="#64748B"
+                    android:background="@drawable/pill_background"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="/sdcard/careotter_vitals.log"
                 android:textSize="10sp"
-                android:text="" />
-        </ScrollView>
+                android:fontFamily="monospace"
+                android:textColor="#94A3B8"
+                android:layout_marginBottom="6dp" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Log: /sdcard/careotter_vitals.log"
-            android:textSize="10sp"
-            android:textColor="#999"
-            android:gravity="center"
-            android:paddingTop="4dp" />
+            <ScrollView
+                android:id="@+id/scrollOutput"
+                android:layout_width="match_parent"
+                android:layout_height="160dp"
+                android:background="@drawable/console_background"
+                android:padding="10dp">
+                <TextView
+                    android:id="@+id/tvOutput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="10sp"
+                    android:textColor="#94A3B8"
+                    android:text="" />
+            </ScrollView>
 
-    </LinearLayout>
-</ScrollView>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

@@ -281,23 +281,61 @@ Flask application at `cloud_api/careotter/api_server/` acting as HTTP-to-IGP bri
 
 ### Authentication
 
-`POST /api/auth/login` — sends device token via IGP 0x02. On success, returns a JWT (HS256, 8h expiry).
+The Cloud API uses **SQLite-backed username/password authentication** with role-based access control. Two login endpoints are provided: one for administrators and one for patients. Both return a JWT (HS256, 8h expiry) and set a session cookie (`careotter_token`) for web browser access.
+
+#### Admin Login
+
+`POST /api/auth/login`
+
+Requires `role=admin`. The default admin account is created automatically on first startup:
+
+| Username | Password | Role |
+|----------|----------|------|
+| `admin` | `CareOtter2026!` | `admin` |
 
 ```bash
 curl -X POST http://localhost:5002/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"token": "OtterMobile2026"}'
-# → {"token": "<JWT>", "expires_in": "8h", "type": "Bearer"}
+  -d '{"username": "admin", "password": "CareOtter2026!"}'
+# → {"token": "<JWT>", "expires_in": "8h", "type": "Bearer", "role": "admin"}
 ```
 
-Protected endpoints require `Authorization: Bearer <JWT>`.
+#### Patient Login
+
+`POST /api/auth/login/patient`
+
+Requires `role=patient`. A default patient account is also created on first startup:
+
+| Username | Password | Role |
+|----------|----------|------|
+| `patient` | `patient123` | `patient` |
+
+```bash
+curl -X POST http://localhost:5002/api/auth/login/patient \
+  -H "Content-Type: application/json" \
+  -d '{"username": "patient", "password": "patient123"}'
+# → {"token": "<JWT>", "expires_in": "8h", "type": "Bearer", "role": "patient"}
+```
+
+**Error codes (both endpoints):**
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| `400` | `MISSING_FIELD` | Username or password not provided |
+| `401` | `AUTH_FAIL` | Invalid username or password |
+| `403` | `FORBIDDEN` | Role does not match endpoint requirement |
+| `503` | `DB_ERROR` | SQLite database unavailable |
+
+Protected API endpoints require `Authorization: Bearer <JWT>`. Web UI routes require the `careotter_token` cookie (set automatically on successful login).
 
 ### API Endpoints
 
 | Method | Route | Auth | IGP Cmd | Description |
 |--------|-------|------|---------|-------------|
 | GET    | `/api/health`                 | No  | —     | API status, version, device address |
-| POST   | `/api/auth/login`             | No  | 0x02  | Authenticate with device token, get JWT |
+| POST   | `/api/auth/login`             | No  | —     | Admin login (username/password) → JWT |
+| POST   | `/api/auth/login/patient`     | No  | —     | Patient login (username/password) → JWT |
+| POST   | `/api/auth/logout`            | No  | —     | Clears session cookie |
 | GET    | `/api/device/info`            | No  | 0x01  | Kernel version and architecture |
 | GET    | `/api/device/status`          | No  | 0x05  | Subsystem diagnostic (`?module=CareOtter`) |
 | GET    | `/api/vitals`                 | No  | HTTP  | Current BPM and SpO2 from sensor |
@@ -313,16 +351,33 @@ Protected endpoints require `Authorization: Bearer <JWT>`.
 
 ### Web UI
 
-The admin panel is accessible at `http://localhost:5002/admin/login` after Docker startup.
+The Cloud API provides two separate web portals: an **Administration Panel** for technical personnel and a **Patient Portal** for end-user monitoring.
 
-| URL | Page |
-|-----|------|
-| `/admin/login` | Token login form |
-| `/admin/dashboard` | Live vitals + device info |
-| `/admin/network` | View/change WiFi configuration |
-| `/admin/config` | Clinical thresholds + TLV preferences |
-| `/admin/services` | Restart init.d services |
-| `/admin/logs` | Device log viewer + vitals history table |
+#### Administration Panel
+
+Accessible at `http://localhost:5002/admin/login`. Requires `role=admin`.
+
+| URL | Page | Access |
+|-----|------|--------|
+| `/admin/login` | Username/password login form | Public |
+| `/admin/dashboard` | Live vitals + device info | Admin only |
+| `/admin/network` | View/change WiFi configuration | Admin only |
+| `/admin/config` | Clinical thresholds + TLV preferences | Admin only |
+| `/admin/services` | Restart init.d services | Admin only |
+| `/admin/logs` | Device log viewer + vitals history table | Admin only |
+
+#### Patient Portal
+
+Accessible at `http://localhost:5002/patient/login`. Requires `role=patient` (or `admin`).
+
+| URL | Page | Access |
+|-----|------|--------|
+| `/patient/login` | Patient login form | Public |
+| `/patient/dashboard` | Personal vitals monitor | Patient/Admin |
+| `/` | Public vitals monitor (now requires login) | Patient/Admin |
+| `/history` | SQLite vitals history with stats | Patient/Admin |
+
+> **Security note:** All web UI routes (except the two login forms) now enforce session authentication via the `careotter_token` cookie. Unauthenticated requests are redirected to the appropriate login page.
 
 ### Docker Deployment
 
@@ -330,8 +385,9 @@ The admin panel is accessible at `http://localhost:5002/admin/login` after Docke
 cd cloud_api/careotter
 docker compose up careotter-api
 
-# API:    http://localhost:5002/api/health
-# Panel:  http://localhost:5002/admin/login
+# API:           http://localhost:5002/api/health
+# Admin Panel:   http://localhost:5002/admin/login
+# Patient Portal: http://localhost:5002/patient/login
 ```
 
 ---

@@ -32,6 +32,9 @@ public class AdminActivity extends AppCompatActivity {
     private TextView  tvOutput;
     private ScrollView scrollOutput;
 
+    private Button tabInfo, tabConfig, tabDiag, tabCritical;
+    private View panelInfo, panelConfig, panelDiag, panelCritical;
+
     private boolean isAuthenticated = false;
 
     @Override
@@ -70,6 +73,22 @@ public class AdminActivity extends AppCompatActivity {
         Button btnCmdInjection   = findViewById(R.id.btnCmdInjection);
         Button btnCheckStatus    = findViewById(R.id.btnCheckStatus);
         Button btnSetTheme       = findViewById(R.id.btnSetTheme);
+
+        tabInfo     = findViewById(R.id.tabInfo);
+        tabConfig   = findViewById(R.id.tabConfig);
+        tabDiag     = findViewById(R.id.tabDiag);
+        tabCritical = findViewById(R.id.tabCritical);
+
+        panelInfo     = findViewById(R.id.panelInfo);
+        panelConfig   = findViewById(R.id.panelConfig);
+        panelDiag     = findViewById(R.id.panelDiag);
+        panelCritical = findViewById(R.id.panelCritical);
+
+        tabInfo.setOnClickListener(v -> showPanel(0));
+        tabConfig.setOnClickListener(v -> showPanel(1));
+        tabDiag.setOnClickListener(v -> showPanel(2));
+        tabCritical.setOnClickListener(v -> showPanel(3));
+        showPanel(0);
 
         btnAdminLogout.setOnClickListener(v -> logout());
 
@@ -168,6 +187,27 @@ public class AdminActivity extends AppCompatActivity {
                 .edit().remove("jwt_token").remove("user_role").remove("username").apply();
         startActivity(new Intent(this, LoginActivity.class));
         finish();
+    }
+
+    private void showPanel(int index) {
+        panelInfo.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        panelConfig.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        panelDiag.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        panelCritical.setVisibility(index == 3 ? View.VISIBLE : View.GONE);
+
+        resetTab(tabInfo);
+        resetTab(tabConfig);
+        resetTab(tabDiag);
+        resetTab(tabCritical);
+
+        Button active = index == 0 ? tabInfo : index == 1 ? tabConfig : index == 2 ? tabDiag : tabCritical;
+        active.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2563EB));
+        active.setTextColor(0xFFFFFFFF);
+    }
+
+    private void resetTab(Button btn) {
+        btn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFFFFF));
+        btn.setTextColor(0xFF64748B);
     }
 
     @FunctionalInterface

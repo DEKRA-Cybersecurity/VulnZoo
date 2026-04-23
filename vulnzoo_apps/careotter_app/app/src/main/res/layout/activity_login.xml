@@ -1,106 +1,281 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp">
+    android:fillViewport="true"
+    android:background="#F4FBFF">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="CareOtter"
-        android:textSize="32sp"
-        android:textStyle="bold"
-        android:textColor="#E53935"
-        android:layout_marginBottom="4dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Medical Device System"
-        android:textSize="14sp"
-        android:textColor="#666666"
-        android:layout_marginBottom="40dp" />
-
-    <EditText
-        android:id="@+id/etUsername"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Username"
-        android:inputType="text"
-        android:textSize="14sp"
-        android:layout_marginBottom="12dp"
-        android:padding="12dp"
-        android:background="@android:drawable/edit_text" />
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="48dp"
+        android:paddingBottom="32dp">
 
-    <EditText
-        android:id="@+id/etPassword"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Password"
-        android:inputType="textPassword"
-        android:textSize="14sp"
-        android:layout_marginBottom="8dp"
-        android:padding="12dp"
-        android:background="@android:drawable/edit_text" />
+        <!-- Brand header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginBottom="32dp">
 
-    <!-- API URL — hidden from user, auto-discovered via BLE ManufacturerData.
-         VULNERABILITY: stored in plaintext SharedPreferences and travels over HTTP. -->
-    <EditText
-        android:id="@+id/etApiUrl"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="textUri"
-        android:textSize="11sp"
-        android:textColor="#888888"
-        android:padding="10dp"
-        android:background="@android:drawable/edit_text"
-        android:visibility="gone" />
+            <!-- Logo -->
+            <ImageView
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:src="@mipmap/ic_launcher_round"
+                android:layout_marginBottom="16dp" />
 
-    <Button
-        android:id="@+id/btnLogin"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="LOGIN"
-        android:backgroundTint="#E53935"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="CareOtter"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:textColor="#0F172A"
+                android:layout_marginBottom="4dp" />
 
-    <!-- BLE API discovery button -->
-    <Button
-        android:id="@+id/btnScanApi"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="SCAN FOR API ADDRESS"
-        android:backgroundTint="#37474F"
-        android:textColor="#FFFFFF"
-        android:textSize="12sp"
-        android:layout_marginBottom="16dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Medical Device System"
+                android:textSize="12sp"
+                android:textColor="#64748B" />
+        </LinearLayout>
 
-    <!-- Discovered API address — shown after successful BLE scan -->
-    <TextView
-        android:id="@+id/tvApiAddress"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="11sp"
-        android:textColor="#37474F"
-        android:fontFamily="monospace"
-        android:gravity="center"
-        android:padding="8dp"
-        android:background="#F0F4F8"
-        android:layout_marginBottom="8dp"
-        android:visibility="gone" />
+        <!-- Sign in card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="20dp"
+            android:layout_marginBottom="14dp"
+            android:elevation="2dp">
 
-    <TextView
-        android:id="@+id/tvLoginStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="12sp"
-        android:textColor="#E53935"
-        android:gravity="center" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SIGN IN"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.12"
+                android:textColor="#64748B"
+                android:layout_marginBottom="14dp" />
 
-</LinearLayout>
+            <!-- Username -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="USERNAME"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08"
+                android:textColor="#64748B"
+                android:layout_marginBottom="6dp" />
+
+            <EditText
+                android:id="@+id/etUsername"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:hint="e.g. nurse_01 or admin"
+                android:inputType="text"
+                android:textSize="14sp"
+                android:textColor="#0F172A"
+                android:textColorHint="#94A3B8"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:background="@drawable/input_background"
+                android:layout_marginBottom="10dp" />
+
+            <!-- Password -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PASSWORD"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08"
+                android:textColor="#64748B"
+                android:layout_marginBottom="6dp" />
+
+            <EditText
+                android:id="@+id/etPassword"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:hint="••••••••"
+                android:inputType="textPassword"
+                android:textSize="14sp"
+                android:textColor="#0F172A"
+                android:textColorHint="#94A3B8"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:background="@drawable/input_background"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Hidden API URL (auto-discovered via BLE) -->
+            <EditText
+                android:id="@+id/etApiUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri"
+                android:visibility="gone" />
+
+            <!-- Sign in button -->
+            <Button
+                android:id="@+id/btnLogin"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:text="Sign in"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#2563EB"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Status message -->
+            <TextView
+                android:id="@+id/tvLoginStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textColor="#E53935"
+                android:gravity="center"
+                android:padding="8dp" />
+        </LinearLayout>
+
+        <!-- Device discovery card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="16dp"
+            android:elevation="2dp">
+
+            <!-- Card header -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Device discovery"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="BLE broadcasts nearby"
+                        android:textSize="12sp"
+                        android:textColor="#64748B"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <!-- BLE icon badge -->
+                <LinearLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:gravity="center"
+                    android:background="@drawable/badge_blue">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="⬡"
+                        android:textSize="16sp"
+                        android:textColor="#2563EB" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Scan button -->
+            <Button
+                android:id="@+id/btnScanApi"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:text="Scan for API address"
+                android:textSize="13sp"
+                android:textColor="#0F172A"
+                android:backgroundTint="#F1F5F9"
+                android:layout_marginBottom="10dp" />
+
+            <!-- Discovered address display -->
+            <LinearLayout
+                android:id="@+id/layoutApiAddress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/address_background"
+                android:padding="10dp"
+                android:layout_marginBottom="10dp"
+                android:visibility="gone">
+
+                <View
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:background="@drawable/dot_green"
+                    android:layout_marginEnd="8dp" />
+
+                <TextView
+                    android:id="@+id/tvApiAddress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textSize="11sp"
+                    android:textColor="#166534"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <!-- Vulnerability note -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="top">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ⓘ "
+                    android:textSize="11sp"
+                    android:textColor="#64748B" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="API endpoint stored in SharedPreferences · travels over HTTP"
+                    android:textSize="10sp"
+                    android:textColor="#64748B" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="v2.4.1 · build 20260423"
+            android:textSize="11sp"
+            android:textColor="#94A3B8"
+            android:gravity="center"
+            android:layout_marginTop="24dp" />
+
+    </LinearLayout>
+</ScrollView>

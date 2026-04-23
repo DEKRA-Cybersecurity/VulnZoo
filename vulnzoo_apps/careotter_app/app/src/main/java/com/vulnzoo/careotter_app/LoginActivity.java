@@ -124,8 +124,11 @@ public class LoginActivity extends AppCompatActivity {
 
             uiHandler.post(() -> {
                 etApiUrl.setText(discoveredUrl);
+                tvStatus.setVisibility(android.view.View.VISIBLE);
                 tvStatus.setTextColor(0xFF4CAF50);
                 tvStatus.setText("API address discovered via BLE");
+                btnScanApi.setText("IP from API obtained");
+                btnScanApi.setBackgroundColor(0xFF4CAF50);
                 showApiAddress(discoveredUrl, devIp);
             });
         }
@@ -133,7 +136,10 @@ public class LoginActivity extends AppCompatActivity {
         @Override
         public void onScanFailed(int errorCode) {
             Log.w(TAG, "BLE scan failed: " + errorCode);
-            uiHandler.post(() -> tvStatus.setText("BLE scan failed — enter API URL manually."));
+            uiHandler.post(() -> {
+                tvStatus.setVisibility(android.view.View.VISIBLE);
+                tvStatus.setText("BLE scan failed — enter API URL manually.");
+            });
         }
     };
 
@@ -193,7 +199,10 @@ public class LoginActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode == REQ_PERMISSIONS) {
             if (hasBlePermissions()) startBleScan();
-            else tvStatus.setText("BLE permission denied — enter API URL manually.");
+            else {
+                tvStatus.setVisibility(android.view.View.VISIBLE);
+                tvStatus.setText("BLE permission denied — enter API URL manually.");
+            }
         }
     }
 
@@ -211,6 +220,7 @@ public class LoginActivity extends AppCompatActivity {
         if (bm == null) return;
         BluetoothAdapter adapter = bm.getAdapter();
         if (adapter == null || !adapter.isEnabled()) {
+            tvStatus.setVisibility(android.view.View.VISIBLE);
             tvStatus.setText("Bluetooth off — enter API URL manually.");
             return;
         }
@@ -221,6 +231,7 @@ public class LoginActivity extends AppCompatActivity {
                 != PackageManager.PERMISSION_GRANTED) return;
 
         scanning = true;
+        tvStatus.setVisibility(android.view.View.VISIBLE);
         tvStatus.setText("Scanning for CareOtter_HR…");
         bleScanner.startScan(scanCallback);
 
@@ -230,6 +241,7 @@ public class LoginActivity extends AppCompatActivity {
                 stopBleScan();
                 String current = etApiUrl.getText().toString().trim();
                 if (current.isEmpty() || current.equals(DEFAULT_API)) {
+                    tvStatus.setVisibility(android.view.View.VISIBLE);
                     tvStatus.setText("Device not found — using default or enter URL manually.");
                 }
             }
@@ -261,16 +273,21 @@ public class LoginActivity extends AppCompatActivity {
         if (apiUrl.isEmpty()) apiUrl = DEFAULT_API;
 
         if (username.isEmpty() || password.isEmpty()) {
+            tvStatus.setVisibility(android.view.View.VISIBLE);
+            tvStatus.setTextColor(0xFFE53935);
             tvStatus.setText("Username and password are required.");
             return;
         }
 
         stopBleScan();
         setUiEnabled(false);
+        tvStatus.setVisibility(android.view.View.VISIBLE);
+        tvStatus.setTextColor(0xFF9AA0A6);
         tvStatus.setText("Authenticating…");
 
         final String finalApiUrl = apiUrl;
         executor.execute(() -> {
+            String errorMsg = null;
             try {
                 String result = doLogin(finalApiUrl, username, password);
                 JSONObject json = new JSONObject(result);
@@ -289,18 +306,33 @@ public class LoginActivity extends AppCompatActivity {
                             .apply();
 
                     uiHandler.post(() -> routeByRole(role));
+                    return;
                 } else {
-                    String error = json.optString("error", "Login failed");
-                    uiHandler.post(() -> {
-                        tvStatus.setText(error);
-                        tvStatus.setTextColor(0xFFE53935);
-                        setUiEnabled(true);
-                    });
+                    errorMsg = json.optString("error", "Login failed — no token received.");
+                    Log.w(TAG, "Login rejected by API: " + errorMsg);
                 }
+            } catch (java.net.UnknownHostException e) {
+                errorMsg = "API address not found. Check the URL.";
+                Log.w(TAG, "UnknownHost", e);
+            } catch (java.net.ConnectException e) {
+                errorMsg = "Cannot connect to API. Verify the server is running.";
+                Log.w(TAG, "ConnectException", e);
+            } catch (java.net.SocketTimeoutException e) {
+                errorMsg = "Connection timeout. The server is not responding.";
+                Log.w(TAG, "SocketTimeout", e);
             } catch (Exception e) {
+                errorMsg = e.getMessage();
+                if (errorMsg == null || errorMsg.isEmpty()) {
+                    errorMsg = "Unexpected error during login.";
+                }
                 Log.e(TAG, "Login error", e);
+            }
+
+            if (errorMsg != null) {
+                final String msg = errorMsg;
                 uiHandler.post(() -> {
-                    tvStatus.setText("Connection error: " + e.getMessage());
+                    tvStatus.setVisibility(android.view.View.VISIBLE);
+                    tvStatus.setText(msg);
                     tvStatus.setTextColor(0xFFE53935);
                     setUiEnabled(true);
                 });
@@ -326,7 +358,36 @@ public class LoginActivity extends AppCompatActivity {
 
         int code = conn.getResponseCode();
         java.io.InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
-        return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        String response = new String(readAllBytesCompat(is), StandardCharsets.UTF_8);
+
+        if (code >= 400) {
+            String msg = "Server error (" + code + ")";
+            try {
+                JSONObject err = new JSONObject(response);
+                String serverError = err.optString("error", "");
+                String serverCode  = err.optString("code", "");
+                if (!serverError.isEmpty()) {
+                    msg = serverError;
+                    if ("AUTH_FAIL".equals(serverCode))      msg = "Invalid username or password";
+                    else if ("FORBIDDEN".equals(serverCode)) msg = "Access denied for this role";
+                    else if ("MISSING_FIELD".equals(serverCode)) msg = "Field required";
+                    else if ("DB_ERROR".equals(serverCode))  msg = "Database unavailable";
+                }
+            } catch (Exception ignored) {}
+            throw new Exception(msg);
+        }
+        return response;
+    }
+
+    /** Compatibility helper — InputStream.readAllBytes() requires API 33. */
+    private byte[] readAllBytesCompat(java.io.InputStream is) throws java.io.IOException {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        int n;
+        while ((n = is.read(buffer)) != -1) {
+            bos.write(buffer, 0, n);
+        }
+        return bos.toByteArray();
     }
 
     private void showApiAddress(String apiUrl, String deviceIp) {
