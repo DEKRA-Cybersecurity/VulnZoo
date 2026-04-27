@@ -1053,7 +1053,7 @@ There are various methods to attempt bypassing a restricted shell. This [resourc
 ## Demonstration
 
 ```zsh
-$ sshpass -p "incrackeable" ssh root@192.168.2.1                                                 
+$ sshpass -p "uncrackable" ssh root@192.168.2.1                                                 
 ** WARNING: connection is not using a post-quantum key exchange algorithm.
 ** This session may be vulnerable to "store now, decrypt later" attacks.
 ** The server may need to be upgraded. See https://openssh.com/pq.html
