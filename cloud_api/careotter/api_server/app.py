@@ -23,6 +23,7 @@ import socket
 import fcntl
 import struct
 import logging
+import requests as http_requests
 from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response
 from config import Config
 from core.igp_client import IGPError
@@ -42,10 +43,11 @@ logger = logging.getLogger(__name__)
 
 def _get_wifi_ip() -> str:
     """Return the IPv4 address of the first WiFi interface found (wlan0, wlan1, …).
-    Falls back to any non-loopback, non-Ethernet (192.168.2.x), non-Docker (172.x)
-    address so the result is always the WiFi-reachable IP.
+    Falls back to any non-loopback, non-Ethernet (192.168.2.x), non-Docker address
+    so the result is always the WiFi-reachable IP.
     Requires network_mode: host in docker-compose so host interfaces are visible.
     """
+    import ipaddress
     SIOCGIFADDR = 0x8915
     for iface in ("wlan0", "wlan1", "wlp2s0", "wlp3s0"):
         try:
@@ -56,14 +58,18 @@ def _get_wifi_ip() -> str:
             return socket.inet_ntoa(res[20:24])
         except OSError:
             pass
-    # Generic fallback: iterate all addresses, skip loopback/eth/docker
+    # Generic fallback: iterate all addresses, skip loopback/eth/docker bridges
     try:
+        # Docker default bridge networks: 172.17.0.0/16 .. 172.31.0.0/16
+        docker_nets = [ipaddress.ip_network(f"172.{i}.0.0/16") for i in range(17, 32)]
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             ip = info[4][0]
-            if not ip.startswith("127.") \
-               and not ip.startswith("192.168.2.") \
-               and not ip.startswith("172."):
-                return ip
+            if ip.startswith("127.") or ip.startswith("192.168.2."):
+                continue
+            ip_obj = ipaddress.ip_address(ip)
+            if any(ip_obj in net for net in docker_nets):
+                continue
+            return ip
     except Exception:
         pass
     return "0.0.0.0"
@@ -80,12 +86,59 @@ vitals = VitalsService()
 try:
     db = DatabaseService()
     logger.info(f"[App] Database initialized at: {Config.DB_PATH}")
-    # Asegurar usuario admin por defecto
-    if db and db.ensure_default_users():
-        logger.info("[App] Default admin user ensured")
+    # NO default users are created at startup — the device must register itself
+    # via POST /admin/device/register (or fallback /initialize_iot for attackers).
+    user_count = db.user_count() if db else 0
+    logger.info(f"[App] Users in database: {user_count} (0 = waiting for device registration)")
 except Exception as e:
     logger.error(f"[App] Failed to initialize database: {e}")
     db = None
+
+# ── Device MAC resolution ─────────────────────────────────────────────────────
+# Fetched once at startup from the medical sensor's /health endpoint over Ethernet
+# (192.168.2.1:8081). The Raspberry Pi is always at that address via direct cable.
+# Falls back to the env var DEFAULT_DEVICE_MAC so the API still works in dev/CI.
+
+DEVICE_MAC: str = os.getenv('DEFAULT_DEVICE_MAC', 'AA:BB:CC:DD:EE:FF')
+
+
+def _fetch_device_mac() -> None:
+    """Resolve the real eth0 MAC of the CareOtter device.
+    Runs in a background thread so startup isn't blocked if the Pi is offline.
+    On success, updates DEVICE_MAC. The device must later register itself
+    via POST /admin/device/register with its signature and WiFi IP.
+    """
+    global DEVICE_MAC
+    # If no device IP is known yet, skip — registration will happen later via WiFi
+    if not Config.DEVICE_IP:
+        logger.info("[Device] No DEVICE_IP configured yet — skipping MAC resolution. "
+                    "The device will register via /admin/device/register after provisioning.")
+        return
+    sensor_url = f"http://{Config.DEVICE_IP}:{Config.HTTP_PORT}/health"
+    for attempt in range(5):
+        try:
+            resp = http_requests.get(sensor_url, timeout=3)
+            resp.raise_for_status()
+            mac = resp.json().get('mac', '').upper()
+            if mac and mac != '00:00:00:00:00:00':
+                DEVICE_MAC = mac
+                logger.info(f"[Device] Resolved MAC from sensor: {DEVICE_MAC}")
+                return
+        except Exception as e:
+            logger.warning(f"[Device] MAC fetch attempt {attempt+1}/5 failed: {e}")
+        time.sleep(10)
+    logger.warning(f"[Device] Could not resolve MAC — using fallback {DEVICE_MAC}")
+
+
+# Start MAC resolution immediately but don't block Flask startup
+threading.Thread(target=_fetch_device_mac, daemon=True).start()
+
+# ── Shared vitals cache ───────────────────────────────────────────────────────
+# The collector thread writes here every 30s after a successful sensor fetch.
+# All HTTP clients (web, mobile app) read this same dict so every client always
+# sees identical values — not independent snapshots of a constantly-changing sensor.
+_latest_vitals: dict = {}
+_latest_vitals_lock = threading.Lock()
 
 
 # ── Global error handling ──────────────────────────────────────────────────────
@@ -338,32 +391,27 @@ def device_status():
 @app.route('/api/vitals')
 def get_vitals():
     """
-    Current BPM and SpO2 — direct query to sensor service on :8081.
-    Stores reading in local database for persistence.
+    Current BPM and SpO2 — returns the last value fetched by the background
+    collector (updated every 30s). All clients receive the same snapshot so
+    the mobile app and web portal always display identical readings.
     No authentication (monitoring data is public).
     """
-    result = vitals.get_current()
-    if not result['success']:
-        logger.warning(f"[API] Failed to get vitals: {result['error']}")
-        return jsonify({'error': result['error']}), 503
-    
-    data = result['data']
-    
-    # Almacenar en base de datos (fire-and-forget)
-    if db:
-        device_mac = request.args.get('device_mac') or data.get('device_mac',
-                     os.getenv('DEFAULT_DEVICE_MAC', 'AA:BB:CC:DD:EE:FF'))
-        # Always use server time — sensor clock may be wrong (Raspberry Pi NTP drift)
-        data['timestamp'] = time.time()
-        success = db.store_vitals(data, device_mac=device_mac)
-        if success:
-            logger.debug(f"[API] Stored vitals: BPM={data.get('bpm')}, SpO2={data.get('spo2')}")
-        else:
-            logger.error("[API] Failed to store vitals in database")
-    else:
-        logger.warning("[API] Database not available, skipping storage")
-    
-    return jsonify(data), 200
+    with _latest_vitals_lock:
+        cached = dict(_latest_vitals)
+
+    if not cached:
+        # Collector hasn't run yet (first 30s after startup) — fetch once directly
+        result = vitals.get_current()
+        if not result['success']:
+            logger.warning(f"[API] Sensor unavailable and no cached data: {result['error']}")
+            return jsonify({'error': result['error']}), 503
+        cached = result['data']
+        cached['timestamp'] = time.time()
+        cached['device_mac'] = DEVICE_MAC
+        with _latest_vitals_lock:
+            _latest_vitals.update(cached)
+
+    return jsonify(cached), 200
 
 
 @app.route('/api/vitals/history')
@@ -410,6 +458,27 @@ def get_vitals_db_stats():
     return jsonify(stats), 200
 
 
+# ── User device endpoint ──────────────────────────────────────────────────────
+
+@app.route('/api/user/devices')
+@token_required
+def user_devices():
+    """Return the devices associated with the authenticated user.
+
+    Reads the username from the JWT and queries the DB for their devices.
+    The frontend calls this first to learn which device_mac to filter by.
+    """
+    from core.decorators import _decode_and_validate
+    payload = _decode_and_validate()
+    if not payload:
+        return jsonify({'error': 'Invalid token'}), 401
+    username = payload.get('sub') or payload.get('username', '')
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+    devices = db.get_devices_for_patient(username)
+    return jsonify({'devices': devices, 'username': username}), 200
+
+
 # ── Devices ───────────────────────────────────────────────────────────────────
 
 @app.route('/api/devices', methods=['GET'])
@@ -453,6 +522,29 @@ def get_device(mac):
     device = db.get_device(mac)
     if not device:
         return jsonify({'error': 'Device not found'}), 404
+    return jsonify(device), 200
+
+
+@app.route('/api/devices/me', methods=['GET'])
+@token_required
+def get_my_device():
+    """
+    Returns the device registered to the currently authenticated patient.
+    Requires JWT. Returns 404 if no device is assigned.
+    """
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header.split(' ', 1)[1].strip()
+    result = JWTService.decode_token(token)
+    payload = result.get('payload', {})
+    username = payload.get('username')
+
+    if not username:
+        return jsonify({'error': 'Unable to identify user from token'}), 400
+
+    device = db.get_device_by_patient(username)
+    if not device:
+        return jsonify({'error': 'No device assigned to this patient'}), 404
+
     return jsonify(device), 200
 
 
@@ -638,26 +730,158 @@ def test_db_store():
     }), 200 if success else 500
 
 
+# ── Hint endpoint (intentionally unauthenticated — guides attackers to BLE) ───
+
+@app.route('/hint')
+def hint():
+    """Unauthenticated hint endpoint.
+
+    VULNERABILITY: exposed to any visitor who scans the Cloud API ports.
+    The message is intentionally vague — it tells the attacker that the device
+    needs provisioning, but does not mention the hidden BLE service directly.
+    Reversing the official CareOtter Medical Service configuration software
+    (or simply scanning BLE GATT services) reveals the Factory Provisioning
+    Channel (0xFF10) where WiFi and Cloud URL can be written.
+    """
+    return (
+        "CareOtter is in an initial state where it needs an administrator "
+        "to configure it before it can connect to the cloud API. "
+        "The use of CareOtter Medical Service configuration software is not authorized, "
+        "but you can analyze how this software initializes the device "
+        "and introduces it into a common network."
+    ), 200
+
+
+# ── Device registration (signature-based, WiFi-first) ─────────────────────────
+
+@app.route('/admin/device/register', methods=['POST'])
+def device_register():
+    """Receive device registration from the bedside monitor after BLE provisioning.
+
+    The Pi sends its factory signature, MAC, configured patient/admin accounts,
+    and its own WiFi IP. On success the Cloud API learns the device IP and
+    starts polling vitals over WiFi instead of Ethernet.
+
+    VULNERABILITY: signature is hardcoded and identical across all devices.
+    An attacker who intercepts this POST (e.g. by owning the cloud URL via
+    cloud_set) can replay the signature and register a rogue device or
+    overwrite the real device's admin credentials.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    signature = data.get('signature', '')
+    mac = data.get('mac', '').upper()
+    device_ip = data.get('device_ip', '')
+    patient = data.get('patient', {})
+    admin = data.get('admin', {})
+
+    if not signature or not mac or not device_ip:
+        return jsonify({'error': 'Missing signature, mac or device_ip'}), 400
+
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    ok = db.register_device_with_signature(
+        mac=mac,
+        signature=signature,
+        patient_username=patient.get('username', ''),
+        patient_password=patient.get('password', ''),
+        admin_username=admin.get('username', ''),
+        admin_password=admin.get('password', ''),
+        device_ip=device_ip,
+        device_name='CareOtter_HR'
+    )
+    if not ok:
+        return jsonify({'error': 'Registration failed — invalid signature or DB error'}), 403
+
+    # Update runtime config so the vitals collector immediately starts polling WiFi
+    Config.DEVICE_IP = device_ip
+    global DEVICE_MAC
+    DEVICE_MAC = mac
+    logger.info(f"[App] Device registered dynamically: {mac} @ {device_ip}")
+    return jsonify({
+        'status': 'registered',
+        'device_mac': mac,
+        'device_ip': device_ip
+    }), 200
+
+
+@app.route('/initialize_iot', methods=['POST'])
+def initialize_iot():
+    """Fallback endpoint for lab playability.
+
+    If the attacker never discovers the BLE provisioning flow, calling this
+    endpoint creates default admin + patient users and falls back to Ethernet
+    polling (192.168.2.1) so the lab remains functional.
+
+    Returns 409 if the system has already been initialized (users exist).
+    """
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    if db.user_count() > 0:
+        return jsonify({
+            'error': 'System already initialized. '
+                     'Use /admin/device/register for signature-based registration.'
+        }), 409
+
+    # Fallback: create default users and Ethernet device
+    db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
+    db.create_or_update_user('patient', 'patient123', 'patient')
+    db.register_device('AA:BB:CC:DD:EE:FF', 'patient', 'CareOtter_HR')
+    db._set_config('device_ip', '192.168.2.1')
+    Config.DEVICE_IP = '192.168.2.1'
+
+    logger.warning("[App] FALLBACK /initialize_iot called — default users created, Ethernet mode")
+    return jsonify({
+        'status': 'initialized',
+        'message': 'Default users created. '
+                   'For the real provisioning flow, discover the hidden BLE service (0xFF10).',
+        'admin': {'username': 'admin', 'password': 'CareOtter2026!'},
+        'patient': {'username': 'patient', 'password': 'patient123'},
+        'device_ip': '192.168.2.1'
+    }), 200
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 def _vitals_collector():
-    """Background thread: poll sensor every 30s and persist to DB.
+    """Background thread: poll sensor every 10s and persist to DB.
     Runs independently of HTTP clients — history is recorded even when no
     browser or mobile app is connected.
+    Uses the global DEVICE_MAC and Config.DEVICE_IP (updated dynamically
+    after the device registers via /admin/device/register).
     """
-    default_mac = os.getenv('DEFAULT_DEVICE_MAC', 'AA:BB:CC:DD:EE:FF')
-    logger.info("[Collector] Vitals collector started (interval=30s)")
+    global _latest_vitals
+    INTERVAL = 10  # seconds — matches sensor_service SNAPSHOT_INTERVAL
+    logger.info(f"[Collector] Vitals collector started (interval={INTERVAL}s)")
     while True:
         try:
+            if not Config.DEVICE_IP:
+                logger.info("[Collector] Waiting for device registration — DEVICE_IP is empty")
+                time.sleep(INTERVAL)
+                continue
+
             result = vitals.get_current()
-            if result['success'] and db:
+            if result['success']:
                 data = result['data']
                 data['timestamp'] = time.time()
-                db.store_vitals(data, device_mac=default_mac)
-                logger.debug(f"[Collector] Stored BPM={data.get('bpm')} SpO2={data.get('spo2')}")
+                data['device_mac'] = DEVICE_MAC
+                with _latest_vitals_lock:
+                    _latest_vitals = dict(data)
+                if db:
+                    db.store_vitals(data, device_mac=DEVICE_MAC)
+                    logger.debug(f"[Collector] BPM={data.get('bpm')} SpO2={data.get('spo2')} mac={DEVICE_MAC}")
+                # Sleep until sensor_timestamp + INTERVAL so next fetch aligns to the
+                # sensor's own snapshot boundary instead of drifting on a fixed timer
+                next_at = data['timestamp'] + INTERVAL
+                delay = max(0.0, next_at - time.time())
+                time.sleep(delay)
+                continue
+            else:
+                logger.warning(f"[Collector] Vitals fetch failed: {result.get('error')}")
         except Exception as e:
             logger.warning(f"[Collector] Error: {e}")
-        time.sleep(30)
+        time.sleep(INTERVAL)
 
 
 if __name__ == '__main__':

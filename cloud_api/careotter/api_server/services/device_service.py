@@ -3,9 +3,22 @@ device_service.py — Operaciones de administración del dispositivo CareOtter
 
 Capa de negocio sobre IGPClient. Traduce respuestas binarias/texto del
 protocolo IGP a estructuras Python y construye los payloads TLV necesarios.
+
+Patrón de autenticación IGP:
+    Cada operación protegida sigue el ciclo auth → cmd → deauth mediante
+    _exec_protected(), que serializa la secuencia completa con un Lock de clase.
+    Esto garantiza que ninguna otra petición de la Cloud API interleave sus
+    propias conexiones TCP entre las tres de este bloque.
+
+    LIMITACIÓN: el Lock solo serializa peticiones de la Cloud API. Un atacante
+    con acceso directo a :9999 puede insertar comandos en la ventana entre las
+    conexiones TCP independientes (auth/cmd/deauth). La causa raíz es el estado
+    global en careservice.c — la corrección completa requiere vincular
+    'authenticated' al descriptor de socket, no al proceso.
 """
 
 import struct
+import threading
 from core.igp_client import IGPClient, IGPError
 
 
@@ -14,16 +27,36 @@ class DeviceService:
     # Token de administrador IGP hardcodeado en el dispositivo (vulnerabilidad intencional)
     _ADMIN_TOKEN = "OtterMobile2026"
 
+    # Serializa los bloques auth→cmd→deauth de las peticiones de la Cloud API.
+    # Atributo de clase — compartido por todas las instancias.
+    _igp_lock = threading.Lock()
+
     def __init__(self):
         self._igp = IGPClient()
 
-    def _ensure_igp_auth(self) -> None:
+    def _exec_protected(self, cmd_fn, *args, **kwargs):
         """
-        Envía el comando IGP 0x02 AUTHENTICATE antes de comandos protegidos.
-        El careservice mantiene un flag 'authenticated' global que persiste
-        entre conexiones, por lo que esta llamada es idempotente.
+        Ejecuta cmd_fn dentro del ciclo IGP auth → cmd → deauth.
+
+        Adquiere _igp_lock para que ninguna otra petición de la Cloud API
+        interleave sus propias conexiones TCP entre las tres de este bloque.
+        La des-autenticación se ejecuta en el bloque finally para garantizar
+        que authenticated=0 incluso si cmd_fn lanza una excepción.
+
+        Flujo de conexiones TCP generadas:
+            1. IGP 0x02 AUTHENTICATE  → authenticated=1
+            2. cmd_fn()               → operación protegida
+            3. IGP 0x0D DEAUTHENTICATE → authenticated=0
         """
-        self._igp.authenticate(self._ADMIN_TOKEN)
+        with self._igp_lock:
+            self._igp.authenticate(self._ADMIN_TOKEN)
+            try:
+                return cmd_fn(*args, **kwargs)
+            finally:
+                try:
+                    self._igp.deauthenticate()
+                except IGPError:
+                    pass  # deauth best-effort — no propagar si el dispositivo no responde
 
     # ── Información del sistema ─────────────────────────────────────────────
 
@@ -34,16 +67,15 @@ class DeviceService:
         """
         raw  = self._igp.sys_info()
         text = raw.decode('utf-8', errors='replace').strip()
-        # Parsear formato delimitado por '|': "v:6.6.104|m:armv7l"
         parts = {}
         for segment in text.split('|'):
             if ':' in segment:
                 k, v = segment.split(':', 1)
                 parts[k] = v
         return {
-            'kernel':  parts.get('v', 'unknown'),
-            'arch':    parts.get('m', 'unknown'),
-            'raw':     text
+            'kernel': parts.get('v', 'unknown'),
+            'arch':   parts.get('m', 'unknown'),
+            'raw':    text
         }
 
     # ── Autenticación ───────────────────────────────────────────────────────
@@ -56,8 +88,8 @@ class DeviceService:
         raw  = self._igp.authenticate(token)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
-            'success':          text == 'AUTH_SUCCESS',
-            'device_response':  text
+            'success':         text == 'AUTH_SUCCESS',
+            'device_response': text
         }
 
     # ── Red ─────────────────────────────────────────────────────────────────
@@ -70,18 +102,16 @@ class DeviceService:
         /etc/config/wireless incluyendo la clave PSK en texto plano.
         El campo 'raw' de la respuesta expone estos datos directamente.
         """
-        self._ensure_igp_auth()
-        raw  = self._igp.get_network()
+        raw  = self._exec_protected(self._igp.get_network)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
             'config': text,
-            'raw':    text   # contiene PSK de la red WiFi
+            'raw':    text
         }
 
     def set_wifi(self, ssid: str, password: str) -> dict:
         """IGP 0x06 — Configura SSID y contraseña WiFi (requiere auth)."""
-        self._ensure_igp_auth()
-        raw  = self._igp.set_wifi(ssid, password)
+        raw  = self._exec_protected(self._igp.set_wifi, ssid, password)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
             'result':  text,
@@ -109,8 +139,7 @@ class DeviceService:
         IGP 0x04 — Preferencias de la app en formato TLV (requiere auth).
         Tipos: 0xAA=tema, 0xAB=idioma, 0xAC=modo pantalla.
         """
-        self._ensure_igp_auth()
-        raw  = self._igp.set_prefs(tlv_payload)
+        raw  = self._exec_protected(self._igp.set_prefs, tlv_payload)
         text = raw.decode('utf-8', errors='replace').strip()
         return {'status': text}
 
@@ -123,10 +152,9 @@ class DeviceService:
             [0xCC][0x01][spo2_min]
         Total: 9 bytes
         """
-        self._ensure_igp_auth()
         tlv  = struct.pack('>BBHH', 0xBB, 4, bpm_min, bpm_max)
         tlv += struct.pack('>BBB',  0xCC, 1, spo2_min)
-        raw  = self._igp.set_threshold(tlv)
+        raw  = self._exec_protected(self._igp.set_threshold, tlv)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
             'result': text,
@@ -144,8 +172,7 @@ class DeviceService:
         IGP 0x09 — Reinicia un servicio init.d del dispositivo (requiere auth).
         Nombres válidos: medical-sensor, careservice, ble-server, etc.
         """
-        self._ensure_igp_auth()
-        raw  = self._igp.reboot_service(service_name)
+        raw  = self._exec_protected(self._igp.reboot_service, service_name)
         text = raw.decode('utf-8', errors='replace').strip()
         return {
             'result':  text,
@@ -154,7 +181,6 @@ class DeviceService:
 
     def get_log(self) -> dict:
         """IGP 0x0A — Últimos 512 bytes del log del servicio (requiere auth)."""
-        self._ensure_igp_auth()
-        raw  = self._igp.get_log()
+        raw  = self._exec_protected(self._igp.get_log)
         text = raw.decode('utf-8', errors='replace')
         return {'log': text}

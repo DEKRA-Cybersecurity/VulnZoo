@@ -13,8 +13,15 @@ from config import Config
 class VitalsService:
 
     def __init__(self):
-        self._base = f"http://{Config.DEVICE_IP}:{Config.HTTP_PORT}"
         self._timeout = Config.HTTP_TIMEOUT
+
+    def _base(self) -> str:
+        """Return the current device base URL. Reads Config.DEVICE_IP dynamically
+        so the Cloud API can switch from unprovisioned → WiFi after registration."""
+        ip = Config.DEVICE_IP
+        if not ip:
+            return ''
+        return f"http://{ip}:{Config.HTTP_PORT}"
 
     def get_current(self) -> dict:
         """
@@ -24,8 +31,11 @@ class VitalsService:
             {"bpm": 72, "spo2": 98, "red_raw": 61085,
              "ir_raw": 61036, "timestamp": 1773738799.89, "source": "simulator"}
         """
+        base = self._base()
+        if not base:
+            return {'success': False, 'error': 'Device not registered — no IP configured'}
         try:
-            r = requests.get(f"{self._base}/vitals", timeout=self._timeout)
+            r = requests.get(f"{base}/vitals", timeout=self._timeout)
             r.raise_for_status()
             return {'success': True, 'data': r.json()}
         except requests.Timeout:
@@ -44,8 +54,11 @@ class VitalsService:
 
         Cada entrada contiene bpm_avg/min/max y spo2_avg/min para un intervalo.
         """
+        base = self._base()
+        if not base:
+            return {'success': False, 'error': 'Device not registered — no IP configured'}
         try:
-            r = requests.get(f"{self._base}/log", timeout=self._timeout)
+            r = requests.get(f"{base}/log", timeout=self._timeout)
             r.raise_for_status()
             return {'success': True, 'history': r.json()}
         except requests.Timeout:
@@ -57,8 +70,11 @@ class VitalsService:
 
     def get_health(self) -> dict:
         """Verifica que el servicio sensor está activo via GET /health."""
+        base = self._base()
+        if not base:
+            return {'success': False, 'error': 'Device not registered — no IP configured'}
         try:
-            r = requests.get(f"{self._base}/health", timeout=self._timeout)
+            r = requests.get(f"{base}/health", timeout=self._timeout)
             return {'success': r.status_code == 200, 'status': r.text.strip()}
         except Exception as e:
             return {'success': False, 'error': str(e)}
