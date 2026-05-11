@@ -156,6 +156,40 @@ body {
 
 .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
 
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+.btn-ghost:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+.device-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.device-badge svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--accent-primary);
+    fill: none;
+    stroke-width: 2;
+    flex-shrink: 0;
+}
+.device-mac {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
 .btn-icon {
     width: 36px;
     height: 36px;

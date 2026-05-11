@@ -9,11 +9,42 @@ import signal
 import sys
 import threading
 import os
+import socket
+import struct
+import fcntl
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from simulator import get_bus
 
+
+def _get_eth0_mac() -> str:
+    """Return the hardware MAC address of eth0 (or first available interface).
+    Used by /health so the cloud API can identify this device without auth.
+    """
+    SIOCGIFHWADDR = 0x8927
+    for iface in ("eth0", "eth1", "enp1s0", "enp2s0"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            res = fcntl.ioctl(s.fileno(), SIOCGIFHWADDR, iface.encode().ljust(40, b"\x00"))
+            s.close()
+            mac_bytes = res[18:24]
+            return ':'.join(f'{b:02X}' for b in mac_bytes)
+        except OSError:
+            pass
+    # Fallback: read from /sys/class/net
+    for iface in ("eth0", "eth1"):
+        try:
+            with open(f"/sys/class/net/{iface}/address") as f:
+                return f.read().strip().upper()
+        except OSError:
+            pass
+    return "00:00:00:00:00:00"
+
+
+_DEVICE_MAC = _get_eth0_mac()
+
 # ── Configuración ─────────────────────────────────────────
 CONFIG_FILE = "/opt/medical-sensor/config.json"
+THRESH_FILE = "/tmp/careotter.thresholds"
 
 def load_config():
     try:
@@ -45,9 +76,51 @@ lock = threading.Lock()
 log_lock = threading.Lock()
 log_buffer = []  # Buffer circular de logs
 
-# Alert thresholds — writable via POST /thresholds and BLE characteristic
+# Alert thresholds — writable via POST /thresholds, BLE characteristic, and IGP 0x08 (via file)
 alert_thresholds = {"bpm_min": 40, "bpm_max": 120, "spo2_min": 90}
 thresholds_lock = threading.Lock()
+
+
+def _load_thresholds_from_file():
+    """Load thresholds from THRESH_FILE written by careservice IGP 0x08 SET_THRESHOLD.
+    Fails silently if the file does not exist or is malformed."""
+    try:
+        data = {}
+        with open(THRESH_FILE) as fh:
+            for line in fh:
+                line = line.strip()
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    data[k.strip()] = int(v.strip())
+        with thresholds_lock:
+            for key in ("bpm_min", "bpm_max", "spo2_min"):
+                if key in data:
+                    alert_thresholds[key] = data[key]
+        return True
+    except (FileNotFoundError, ValueError, OSError):
+        return False
+
+
+def _threshold_watcher():
+    """Background thread: reload thresholds when careservice rewrites THRESH_FILE.
+    Uses mtime to avoid redundant reads."""
+    last_mtime = 0.0
+    while True:
+        try:
+            mtime = os.path.getmtime(THRESH_FILE)
+            if mtime != last_mtime:
+                if _load_thresholds_from_file():
+                    last_mtime = mtime
+        except (FileNotFoundError, OSError):
+            pass
+        time.sleep(5)
+
+# Stable snapshot served by /vitals — frozen every 30s by snapshot_loop().
+# All consumers (cloud API collector, BLE server) read the same value regardless
+# of when they poll, because latest changes every 100ms with random variation.
+SNAPSHOT_INTERVAL = 10
+vitals_snapshot: dict = {}
+snapshot_lock = threading.Lock()
 
 # ── Log rotación support ───────────────────────────────────
 class LogReopener:
@@ -109,6 +182,10 @@ def append_log(entry):
 def handle_sigusr1(signum, frame):
     """Manejador de SIGUSR1 para log rotation"""
     logger.reopen()
+
+def handle_sighup(signum, frame):
+    """Reload clinical thresholds from THRESH_FILE on SIGHUP."""
+    _load_thresholds_from_file()
 
 def handle_shutdown(signum, frame):
     """Manejador de SIGTERM/SIGINT"""
@@ -213,8 +290,8 @@ class VitalsHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/vitals":
-            with lock:
-                data = dict(latest)
+            with snapshot_lock:
+                data = dict(vitals_snapshot) if vitals_snapshot else dict(latest)
             body = json.dumps(data).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -223,9 +300,17 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
         elif self.path == "/health":
+            body = json.dumps({
+                "status": "ok",
+                "service": "careotter-sensor",
+                "mac": _DEVICE_MAC,
+                "uptime": int(time.time()),
+            }).encode()
             self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
             self.end_headers()
-            self.wfile.write(b"ok")
+            self.wfile.write(body)
 
         elif self.path == "/reload":
             """Endpoint para forzar reopen de logs (alternativa a SIGUSR1)"""
@@ -362,16 +447,42 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+def snapshot_loop():
+    """Freeze a copy of latest every SNAPSHOT_INTERVAL seconds into vitals_snapshot.
+    Uses the snapshot's own timestamp to schedule the next freeze:
+    sleeps until snapshot_timestamp + SNAPSHOT_INTERVAL, so callers that do the
+    same arithmetic always align to the same update boundary.
+    """
+    global vitals_snapshot
+    while True:
+        with lock:
+            new_snap = dict(latest)
+        with snapshot_lock:
+            vitals_snapshot = new_snap
+        sys.stdout.write(
+            f"[medical-sensor] Snapshot: BPM={new_snap.get('bpm')} SpO2={new_snap.get('spo2')}\n"
+        )
+        sys.stdout.flush()
+        # Sleep until snapshot_timestamp + SNAPSHOT_INTERVAL
+        next_at = new_snap.get("timestamp", time.time()) + SNAPSHOT_INTERVAL
+        delay = max(0.0, next_at - time.time())
+        time.sleep(delay)
+
+
 # ── Main ───────────────────────────────────────────────────
 def main():
     # Configurar manejadores de señales
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGUSR1, handle_sigusr1)  # Para logrotate
+    signal.signal(signal.SIGHUP,  handle_sighup)   # Reload thresholds from file
 
     # Hilo sensor en background
     t = threading.Thread(target=sensor_loop, daemon=True)
     t.start()
+
+    # Snapshot thread — freezes latest every 30s for /vitals
+    threading.Thread(target=snapshot_loop, daemon=True).start()
 
     # Servidor HTTP en primer plano
     server = HTTPServer(("0.0.0.0", HTTP_PORT), VitalsHandler)
@@ -380,6 +491,15 @@ def main():
     sys.stdout.write(f"[medical-sensor] Summary every: {SUMMARY_EVERY}s\n")
     sys.stdout.write(f"[medical-sensor] Buffer max: {LOG_BUFFER_MAX} entries\n")
     sys.stdout.write("[medical-sensor] Send SIGUSR1 to reopen logs (logrotate)\n")
+    sys.stdout.flush()
+
+    # Load thresholds from careservice file if it already exists
+    _load_thresholds_from_file()
+
+    # Background thread: auto-reload thresholds when careservice updates the file
+    threading.Thread(target=_threshold_watcher, daemon=True).start()
+
+    sys.stdout.write("[medical-sensor] Send SIGHUP to reload thresholds from careservice\n")
     sys.stdout.flush()
 
     try:

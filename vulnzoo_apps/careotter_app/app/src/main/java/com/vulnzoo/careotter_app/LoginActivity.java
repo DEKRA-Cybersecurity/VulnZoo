@@ -1,54 +1,48 @@
 package com.vulnzoo.careotter_app;
 
-import android.Manifest;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanRecord;
-import android.bluetooth.le.ScanResult;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.util.SparseArray;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 
 import org.json.JSONObject;
 
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * LoginActivity — CareOtter unified app entry point.
+ * LoginActivity — CareOtter app entry point.
  *
- * On start, performs a BLE scan to auto-discover the Cloud API URL from the
- * CareOtter_HR device's ManufacturerData advertising field (company ID 0x08D4).
- * Once found, pre-fills etApiUrl and stops the scan.
+ * Authenticates via HTTP POST to the Cloud API. The API server IP is composed
+ * from two fields:
+ *   etApiUrl    — network prefix (e.g. "192.168.1."), auto-detected from the
+ *                 phone's own WiFi IP. Editable in case the detected prefix
+ *                 is wrong.
+ *   etHostOctet — last octet of the API server IP (e.g. "2"). The user only
+ *                 needs to change this number.
  *
- * Authenticates via HTTP POST to the discovered URL (/api/auth/login).
- * Routes to PatientActivity (BLE monitoring) or AdminActivity (IGP v4)
- * based on the 'role' field returned in the JWT response.
+ * The full API URL is built as:  http://<etApiUrl><etHostOctet>:5002
+ *
+ * Routes to MainActivity (patient BLE) or AdminActivity (IGP v4) based on
+ * the role returned in the JWT response.
  *
  * VULNERABILITIES:
- * 1. Cloud API URL leaked via BLE advertising — passive scan reveals management
- *    endpoint without connecting or authenticating (info disclosure)
- * 2. Credentials sent over plain HTTP (no TLS enforcement)
- * 3. JWT stored in SharedPreferences without encryption
- * 4. No certificate pinning
+ * 1. Credentials sent over plain HTTP — no TLS enforcement
+ * 2. JWT stored in SharedPreferences without encryption
+ * 3. No certificate pinning
  */
 public class LoginActivity extends AppCompatActivity {
 
@@ -58,219 +52,175 @@ public class LoginActivity extends AppCompatActivity {
     private static final String KEY_ROLE         = "user_role";
     private static final String KEY_USERNAME     = "username";
     private static final String KEY_API_URL      = "api_url";
-    private static final String KEY_DEVICE_IP    = "device_ip";
-    private static final String DEFAULT_API      = "http://192.168.2.1:5002";
-    private static final String BLE_DEVICE_NAME  = "CareOtter_HR";
-    // Company ID used in ManufacturerData: 0x08D4 ("CareOtter Medical Devices")
-    private static final int    COMPANY_ID       = 0x08D4;
-    private static final long   SCAN_TIMEOUT_MS  = 8000;
-    private static final int    REQ_PERMISSIONS  = 2;
+    private static final String KEY_API_PREFIX   = "api_prefix";
+    private static final String KEY_API_HOST     = "api_host";
+    private static final String DEFAULT_PREFIX   = "192.168.2.";
+    private static final String DEFAULT_HOST     = "2";
+    private static final int    API_PORT         = 5002;
 
     private EditText  etUsername;
     private EditText  etPassword;
-    private EditText  etApiUrl;
+    private EditText  etApiUrl;      // network prefix, e.g. "192.168.1."
+    private EditText  etHostOctet;   // last octet, e.g. "2"
     private Button    btnLogin;
     private Button    btnScanApi;
+    private Button    btnPing;
     private TextView  tvStatus;
-    private TextView  tvApiAddress;
-
-    private BluetoothLeScanner bleScanner;
-    private boolean            scanning = false;
 
     private final Handler         uiHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor  = Executors.newSingleThreadExecutor();
-
-    // ── BLE scan callback ────────────────────────────────────────────────────
-
-    private final ScanCallback scanCallback = new ScanCallback() {
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            String name = result.getDevice().getName();
-            if (!BLE_DEVICE_NAME.equals(name)) return;
-
-            ScanRecord record = result.getScanRecord();
-            if (record == null) return;
-
-            // VULNERABILITY: ManufacturerData carries API IP+port and device WiFi IP
-            // in a 10-byte binary payload — visible to any passive BLE scanner.
-            SparseArray<byte[]> mfr = record.getManufacturerSpecificData();
-            if (mfr == null) return;
-
-            byte[] payload = mfr.get(COMPANY_ID);
-            if (payload == null || payload.length != 10) return;
-
-            // Binary layout (big-endian):
-            //   [0:4]  Cloud API IPv4
-            //   [4:6]  Cloud API port
-            //   [6:10] Device WiFi IPv4
-            ByteBuffer buf = ByteBuffer.wrap(payload);
-            byte[] apiIpBytes  = new byte[4]; buf.get(apiIpBytes);
-            int    apiPort     = buf.getShort() & 0xFFFF;
-            byte[] devIpBytes  = new byte[4]; buf.get(devIpBytes);
-
-            String apiIp  = (apiIpBytes[0] & 0xFF) + "." + (apiIpBytes[1] & 0xFF) + "."
-                          + (apiIpBytes[2] & 0xFF) + "." + (apiIpBytes[3] & 0xFF);
-            String devIp  = (devIpBytes[0] & 0xFF) + "." + (devIpBytes[1] & 0xFF) + "."
-                          + (devIpBytes[2] & 0xFF) + "." + (devIpBytes[3] & 0xFF);
-            String discoveredUrl = "http://" + apiIp + ":" + apiPort;
-
-            Log.d(TAG, "BLE ManufacturerData → api=" + discoveredUrl + " device=" + devIp);
-
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                    .putString(KEY_DEVICE_IP, devIp)
-                    .apply();
-
-            stopBleScan();
-
-            uiHandler.post(() -> {
-                etApiUrl.setText(discoveredUrl);
-                tvStatus.setVisibility(android.view.View.VISIBLE);
-                tvStatus.setTextColor(0xFF4CAF50);
-                tvStatus.setText("API address discovered via BLE");
-                btnScanApi.setText("IP from API obtained");
-                btnScanApi.setBackgroundColor(0xFF4CAF50);
-                showApiAddress(discoveredUrl, devIp);
-            });
-        }
-
-        @Override
-        public void onScanFailed(int errorCode) {
-            Log.w(TAG, "BLE scan failed: " + errorCode);
-            uiHandler.post(() -> {
-                tvStatus.setVisibility(android.view.View.VISIBLE);
-                tvStatus.setText("BLE scan failed — enter API URL manually.");
-            });
-        }
-    };
-
-    // ── Lifecycle ────────────────────────────────────────────────────────────
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        etUsername    = findViewById(R.id.etUsername);
-        etPassword    = findViewById(R.id.etPassword);
-        etApiUrl      = findViewById(R.id.etApiUrl);
-        btnLogin      = findViewById(R.id.btnLogin);
-        btnScanApi    = findViewById(R.id.btnScanApi);
-        tvStatus      = findViewById(R.id.tvLoginStatus);
-        tvApiAddress  = findViewById(R.id.tvApiAddress);
+        etUsername  = findViewById(R.id.etUsername);
+        etPassword  = findViewById(R.id.etPassword);
+        etApiUrl    = findViewById(R.id.etApiUrl);
+        etHostOctet = findViewById(R.id.etHostOctet);
+        btnLogin    = findViewById(R.id.btnLogin);
+        btnScanApi  = findViewById(R.id.btnScanApi);
+        btnPing     = findViewById(R.id.btnPing);
+        tvStatus    = findViewById(R.id.tvLoginStatus);
 
-        // Restore last-used API URL while scan runs
+        // Restore last-used prefix + host, or detect from current WiFi
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        String savedUrl = prefs.getString(KEY_API_URL, "");
-        if (!savedUrl.isEmpty()) {
-            etApiUrl.setText(savedUrl);
-            showApiAddress(savedUrl, prefs.getString(KEY_DEVICE_IP, ""));
+        String savedPrefix = prefs.getString(KEY_API_PREFIX, "");
+        String savedHost   = prefs.getString(KEY_API_HOST, "");
+
+        if (!savedPrefix.isEmpty()) {
+            etApiUrl.setText(savedPrefix);
+            etHostOctet.setText(savedHost.isEmpty() ? DEFAULT_HOST : savedHost);
+        } else {
+            // Auto-detect network prefix from phone's WiFi interface
+            String detectedPrefix = detectWifiNetworkPrefix();
+            etApiUrl.setText(detectedPrefix);
+            etHostOctet.setText(DEFAULT_HOST);
         }
+
+        tvStatus.setVisibility(android.view.View.VISIBLE);
+        tvStatus.setTextColor(0xFF9AA0A6);
+        tvStatus.setText("Edita solo el último número si la red es correcta");
 
         btnLogin.setOnClickListener(v -> attemptLogin());
 
+        // Reset to WiFi-detected prefix + default host
+        btnScanApi.setText("Detect WiFi Prefix");
         btnScanApi.setOnClickListener(v -> {
-            tvApiAddress.setVisibility(android.view.View.GONE);
-            if (hasBlePermissions()) {
-                stopBleScan();
-                startBleScan();
-            } else {
-                ActivityCompat.requestPermissions(this, new String[]{
-                        Manifest.permission.BLUETOOTH_SCAN,
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                }, REQ_PERMISSIONS);
-            }
+            String prefix = detectWifiNetworkPrefix();
+            etApiUrl.setText(prefix);
+            etHostOctet.setText(DEFAULT_HOST);
+            tvStatus.setVisibility(android.view.View.VISIBLE);
+            tvStatus.setTextColor(0xFF9AA0A6);
+            tvStatus.setText("Red detectada: " + prefix + DEFAULT_HOST);
         });
 
-        // Request BLE permissions then start discovery scan
-        if (hasBlePermissions()) {
-            startBleScan();
-        } else {
-            ActivityCompat.requestPermissions(this, new String[]{
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-            }, REQ_PERMISSIONS);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == REQ_PERMISSIONS) {
-            if (hasBlePermissions()) startBleScan();
-            else {
-                tvStatus.setVisibility(android.view.View.VISIBLE);
-                tvStatus.setText("BLE permission denied — enter API URL manually.");
-            }
-        }
+        // Ping the API server (ICMP reachability via InetAddress.isReachable)
+        btnPing.setOnClickListener(v -> pingApi());
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        stopBleScan();
         executor.shutdownNow();
     }
 
-    // ── BLE discovery ────────────────────────────────────────────────────────
+    // ── Ping / reachability check ────────────────────────────────────────────
 
-    private void startBleScan() {
-        BluetoothManager bm = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
-        if (bm == null) return;
-        BluetoothAdapter adapter = bm.getAdapter();
-        if (adapter == null || !adapter.isEnabled()) {
-            tvStatus.setVisibility(android.view.View.VISIBLE);
-            tvStatus.setText("Bluetooth off — enter API URL manually.");
-            return;
-        }
-        bleScanner = adapter.getBluetoothLeScanner();
-        if (bleScanner == null) return;
+    /**
+     * Tests ICMP reachability of the API server IP using InetAddress.isReachable().
+     * On Android, isReachable() sends an ICMP echo request if the process has
+     * sufficient privileges; otherwise it falls back to a TCP connect on port 7.
+     * Runs on the executor thread to avoid blocking the main thread.
+     */
+    private void pingApi() {
+        String prefix    = etApiUrl.getText().toString().trim();
+        String hostOctet = etHostOctet.getText().toString().trim();
+        if (prefix.isEmpty())    prefix    = DEFAULT_PREFIX;
+        if (hostOctet.isEmpty()) hostOctet = DEFAULT_HOST;
+        if (!prefix.endsWith(".")) prefix = prefix + ".";
 
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                != PackageManager.PERMISSION_GRANTED) return;
+        final String ip = prefix + hostOctet;
 
-        scanning = true;
+        btnPing.setEnabled(false);
         tvStatus.setVisibility(android.view.View.VISIBLE);
-        tvStatus.setText("Scanning for CareOtter_HR…");
-        bleScanner.startScan(scanCallback);
+        tvStatus.setTextColor(0xFF9AA0A6);
+        tvStatus.setText("Pinging " + ip + "…");
 
-        // Stop scan after timeout regardless
-        uiHandler.postDelayed(() -> {
-            if (scanning) {
-                stopBleScan();
-                String current = etApiUrl.getText().toString().trim();
-                if (current.isEmpty() || current.equals(DEFAULT_API)) {
-                    tvStatus.setVisibility(android.view.View.VISIBLE);
-                    tvStatus.setText("Device not found — using default or enter URL manually.");
-                }
+        executor.execute(() -> {
+            long start = System.currentTimeMillis();
+            boolean reachable = false;
+            String detail;
+            try {
+                java.net.InetAddress addr = java.net.InetAddress.getByName(ip);
+                reachable = addr.isReachable(3000);
+                long rtt = System.currentTimeMillis() - start;
+                detail = reachable
+                        ? ip + " reachable  (" + rtt + " ms)"
+                        : ip + " unreachable (timeout 3 s)";
+            } catch (Exception e) {
+                detail = ip + " error: " + e.getMessage();
             }
-        }, SCAN_TIMEOUT_MS);
+
+            final boolean ok  = reachable;
+            final String  msg = detail;
+            uiHandler.post(() -> {
+                btnPing.setEnabled(true);
+                tvStatus.setVisibility(android.view.View.VISIBLE);
+                tvStatus.setTextColor(ok ? 0xFF2E7D32 : 0xFFE53935);
+                tvStatus.setText(ok ? "✓ " + msg : "✗ " + msg);
+            });
+        });
     }
 
-    private void stopBleScan() {
-        if (!scanning || bleScanner == null) return;
-        scanning = false;
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                == PackageManager.PERMISSION_GRANTED) {
-            bleScanner.stopScan(scanCallback);
+    // ── WiFi prefix detection ────────────────────────────────────────────────
+
+    /**
+     * Reads the phone's current WiFi IP and returns the network prefix
+     * (first three octets + trailing dot), e.g. "192.168.1."
+     * Falls back to DEFAULT_PREFIX if WiFi is unavailable or the API
+     * is not accessible.
+     *
+     * Requires ACCESS_WIFI_STATE (normal permission, no runtime request).
+     */
+    private String detectWifiNetworkPrefix() {
+        try {
+            WifiManager wm = (WifiManager) getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            if (wm == null) return DEFAULT_PREFIX;
+
+            int ipInt = wm.getConnectionInfo().getIpAddress();
+            if (ipInt == 0) return DEFAULT_PREFIX;
+
+            // Android stores the IP as a little-endian int
+            int a = ipInt         & 0xFF;
+            int b = (ipInt >>  8) & 0xFF;
+            int c = (ipInt >> 16) & 0xFF;
+            return a + "." + b + "." + c + ".";
+        } catch (Exception e) {
+            Log.w(TAG, "WiFi IP detection failed: " + e.getMessage());
+            return DEFAULT_PREFIX;
         }
-    }
-
-    private boolean hasBlePermissions() {
-        return ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                == PackageManager.PERMISSION_GRANTED
-            && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
     }
 
     // ── Login ────────────────────────────────────────────────────────────────
 
     private void attemptLogin() {
-        String username = etUsername.getText().toString().trim();
-        String password = etPassword.getText().toString();
-        String apiUrl   = etApiUrl.getText().toString().trim();
-        if (apiUrl.isEmpty()) apiUrl = DEFAULT_API;
+        String username  = etUsername.getText().toString().trim();
+        String password  = etPassword.getText().toString();
+        String prefix    = etApiUrl.getText().toString().trim();
+        String hostOctet = etHostOctet.getText().toString().trim();
+
+        if (prefix.isEmpty())    prefix    = DEFAULT_PREFIX;
+        if (hostOctet.isEmpty()) hostOctet = DEFAULT_HOST;
+
+        // Ensure prefix ends with a dot
+        if (!prefix.endsWith(".")) prefix = prefix + ".";
+
+        // Build full URL — VULNERABILITY: plain HTTP, no TLS
+        final String apiIp  = prefix + hostOctet;
+        final String apiUrl = "http://" + apiIp + ":" + API_PORT;
 
         if (username.isEmpty() || password.isEmpty()) {
             tvStatus.setVisibility(android.view.View.VISIBLE);
@@ -279,17 +229,18 @@ public class LoginActivity extends AppCompatActivity {
             return;
         }
 
-        stopBleScan();
+        final String finalPrefix    = prefix;
+        final String finalHostOctet = hostOctet;
+
         setUiEnabled(false);
         tvStatus.setVisibility(android.view.View.VISIBLE);
         tvStatus.setTextColor(0xFF9AA0A6);
-        tvStatus.setText("Authenticating…");
+        tvStatus.setText("Connecting to " + apiIp + "…");
 
-        final String finalApiUrl = apiUrl;
         executor.execute(() -> {
             String errorMsg = null;
             try {
-                String result = doLogin(finalApiUrl, username, password);
+                String result = doLogin(apiUrl, username, password);
                 JSONObject json = new JSONObject(result);
 
                 if (json.has("token")) {
@@ -299,44 +250,42 @@ public class LoginActivity extends AppCompatActivity {
 
                     // VULNERABILITY: JWT stored unencrypted in SharedPreferences
                     getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                            .putString(KEY_TOKEN,    token)
-                            .putString(KEY_ROLE,     role)
-                            .putString(KEY_USERNAME, uname)
-                            .putString(KEY_API_URL,  finalApiUrl)
+                            .putString(KEY_TOKEN,      token)
+                            .putString(KEY_ROLE,       role)
+                            .putString(KEY_USERNAME,   uname)
+                            .putString(KEY_API_URL,    apiUrl)
+                            .putString(KEY_API_PREFIX, finalPrefix)
+                            .putString(KEY_API_HOST,   finalHostOctet)
                             .apply();
 
                     uiHandler.post(() -> routeByRole(role));
                     return;
                 } else {
                     errorMsg = json.optString("error", "Login failed — no token received.");
-                    Log.w(TAG, "Login rejected by API: " + errorMsg);
+                    Log.w(TAG, "Login rejected: " + errorMsg);
                 }
             } catch (java.net.UnknownHostException e) {
-                errorMsg = "API address not found. Check the URL.";
+                errorMsg = "API not found at " + apiIp + ". Check the IP.";
                 Log.w(TAG, "UnknownHost", e);
             } catch (java.net.ConnectException e) {
-                errorMsg = "Cannot connect to API. Verify the server is running.";
+                errorMsg = "Cannot connect to " + apiIp + ". Is Docker running?";
                 Log.w(TAG, "ConnectException", e);
             } catch (java.net.SocketTimeoutException e) {
-                errorMsg = "Connection timeout. The server is not responding.";
+                errorMsg = "Timeout connecting to " + apiIp + ".";
                 Log.w(TAG, "SocketTimeout", e);
             } catch (Exception e) {
                 errorMsg = e.getMessage();
-                if (errorMsg == null || errorMsg.isEmpty()) {
-                    errorMsg = "Unexpected error during login.";
-                }
+                if (errorMsg == null || errorMsg.isEmpty()) errorMsg = "Unexpected error.";
                 Log.e(TAG, "Login error", e);
             }
 
-            if (errorMsg != null) {
-                final String msg = errorMsg;
-                uiHandler.post(() -> {
-                    tvStatus.setVisibility(android.view.View.VISIBLE);
-                    tvStatus.setText(msg);
-                    tvStatus.setTextColor(0xFFE53935);
-                    setUiEnabled(true);
-                });
-            }
+            final String msg = errorMsg;
+            uiHandler.post(() -> {
+                tvStatus.setVisibility(android.view.View.VISIBLE);
+                tvStatus.setText(msg);
+                tvStatus.setTextColor(0xFFE53935);
+                setUiEnabled(true);
+            });
         });
     }
 
@@ -353,8 +302,9 @@ public class LoginActivity extends AppCompatActivity {
         JSONObject body = new JSONObject();
         body.put("username", username);
         body.put("password", password);
-        byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
-        try (OutputStream os = conn.getOutputStream()) { os.write(payload); }
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
 
         int code = conn.getResponseCode();
         java.io.InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
@@ -368,10 +318,10 @@ public class LoginActivity extends AppCompatActivity {
                 String serverCode  = err.optString("code", "");
                 if (!serverError.isEmpty()) {
                     msg = serverError;
-                    if ("AUTH_FAIL".equals(serverCode))      msg = "Invalid username or password";
-                    else if ("FORBIDDEN".equals(serverCode)) msg = "Access denied for this role";
+                    if ("AUTH_FAIL".equals(serverCode))          msg = "Invalid username or password";
+                    else if ("FORBIDDEN".equals(serverCode))     msg = "Access denied for this role";
                     else if ("MISSING_FIELD".equals(serverCode)) msg = "Field required";
-                    else if ("DB_ERROR".equals(serverCode))  msg = "Database unavailable";
+                    else if ("DB_ERROR".equals(serverCode))      msg = "Database unavailable";
                 }
             } catch (Exception ignored) {}
             throw new Exception(msg);
@@ -379,26 +329,12 @@ public class LoginActivity extends AppCompatActivity {
         return response;
     }
 
-    /** Compatibility helper — InputStream.readAllBytes() requires API 33. */
     private byte[] readAllBytesCompat(java.io.InputStream is) throws java.io.IOException {
         java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int n;
-        while ((n = is.read(buffer)) != -1) {
-            bos.write(buffer, 0, n);
-        }
+        while ((n = is.read(buffer)) != -1) bos.write(buffer, 0, n);
         return bos.toByteArray();
-    }
-
-    private void showApiAddress(String apiUrl, String deviceIp) {
-        if (tvApiAddress == null) return;
-        StringBuilder sb = new StringBuilder();
-        sb.append("API:    ").append(apiUrl);
-        if (deviceIp != null && !deviceIp.isEmpty() && !deviceIp.equals("0.0.0.0")) {
-            sb.append("\nDevice: ").append(deviceIp);
-        }
-        tvApiAddress.setText(sb.toString());
-        tvApiAddress.setVisibility(android.view.View.VISIBLE);
     }
 
     private void routeByRole(String role) {
@@ -409,8 +345,10 @@ public class LoginActivity extends AppCompatActivity {
 
     private void setUiEnabled(boolean enabled) {
         btnLogin.setEnabled(enabled);
+        btnPing.setEnabled(enabled);
         etUsername.setEnabled(enabled);
         etPassword.setEnabled(enabled);
         etApiUrl.setEnabled(enabled);
+        etHostOctet.setEnabled(enabled);
     }
 }

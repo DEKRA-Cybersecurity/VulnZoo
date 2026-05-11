@@ -7,8 +7,8 @@ puerto 9999. Este módulo implementa la capa de transporte del protocolo:
     Header (8 bytes, Big Endian):
     ┌─────────────────┬──────┬────────┬──────────┐
     │  Magic (4)      │ Cmd  │ Status │  Len (2) │
-    │  0x474F4154     │ (1)  │  (1)   │          │
-    │    "GOAT"       │      │ 0x00   │ payload  │
+    │  0x43415245     │ (1)  │  (1)   │          │
+    │    "CARE"       │      │ 0x00   │ payload  │
     └─────────────────┴──────┴────────┴──────────┘
 
 Cada comando abre y cierra una conexión TCP independiente. El servidor
@@ -25,8 +25,8 @@ import socket
 import struct
 from config import Config
 
-# Magic number del protocolo: "GOAT" en ASCII
-MAGIC            = 0x474F4154
+# Magic number del protocolo: "CARE" en ASCII
+MAGIC            = 0x43415245
 IGP_HEADER_FMT   = '>IBBH'   # big-endian: uint32 + uint8 + uint8 + uint16
 IGP_HEADER_SIZE  = 8
 
@@ -165,3 +165,17 @@ class IGPClient:
         0x0A GET_LOG — últimos 512 bytes del log del servicio (requiere auth).
         """
         return self.send_command(0x0A)
+
+    def deauthenticate(self) -> bytes:
+        """
+        0x0D DEAUTHENTICATE — resetea authenticated=0 en el proceso careservice.
+
+        Debe llamarse tras cada operación protegida para minimizar la ventana
+        en la que el estado global authenticated=1 es explotable por clientes
+        TCP externos que conecten directamente al puerto 9999.
+
+        LIMITACIÓN: no elimina completamente la ventana de riesgo — existe un
+        intervalo entre la conexión del comando protegido y esta conexión de
+        deauth durante el cual un atacante externo podría insertar comandos.
+        """
+        return self.send_command(0x0D)

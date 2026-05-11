@@ -16,8 +16,11 @@ import os
 
 class Config:
     # ── Dispositivo CareOtter ───────────────────────────────────────────────
-    # IP fija del dispositivo en la red de laboratorio
-    DEVICE_IP   = os.getenv('DEVICE_IP',   '192.168.2.1')
+    # IP del dispositivo: vacía por defecto. El dispositivo se registra
+    # dinámicamente vía POST /admin/device/register enviando su IP WiFi.
+    # El Cloud API aprende la IP en tiempo real en lugar de depender de
+    # una dirección Ethernet fija (192.168.2.1).
+    DEVICE_IP   = os.getenv('DEVICE_IP',   '')
     IGP_PORT    = int(os.getenv('IGP_PORT',  '9999'))
     HTTP_PORT   = int(os.getenv('HTTP_PORT', '8081'))
 

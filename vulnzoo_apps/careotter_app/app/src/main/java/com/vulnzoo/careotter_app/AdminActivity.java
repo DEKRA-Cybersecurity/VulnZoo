@@ -18,11 +18,20 @@ import androidx.appcompat.app.AppCompatActivity;
  * Connects via TCP to the CareOtter admin service on port 9999.
  * Exposes all IGP v4 commands plus intentional exploit helpers.
  *
+ * Auth flow for protected commands (auth → cmd → deauth):
+ *   Each protected action calls execProtected(), which:
+ *     1. Sends IGP 0x02 AUTHENTICATE (authenticated=1 on device)
+ *     2. Executes the selected command
+ *     3. Sends IGP 0x0D DEAUTHENTICATE (authenticated=0 on device)
+ *   The deauth runs in a finally block — it executes even if the command fails.
+ *
  * VULNERABILITIES (inherited from careotter_admin):
  * 1. StrictMode.ThreadPolicy permits main-thread network I/O
  * 2. Hardcoded XOR-obfuscated admin token in IgpClient
  * 3. No input sanitisation on module/message fields
  * 4. Plaintext TCP — credentials and responses travel unencrypted
+ * 5. Three separate TCP connections per protected operation — race window
+ *    between them is exploitable by direct TCP attackers on :9999
  */
 public class AdminActivity extends AppCompatActivity {
 
@@ -35,6 +44,9 @@ public class AdminActivity extends AppCompatActivity {
     private Button tabInfo, tabConfig, tabDiag, tabCritical;
     private View panelInfo, panelConfig, panelDiag, panelCritical;
 
+    // Tracks whether the last explicit AUTHENTICATE command succeeded.
+    // Used only for the manual AUTH button display — protected commands
+    // authenticate automatically via execProtected().
     private boolean isAuthenticated = false;
 
     @Override
@@ -92,19 +104,10 @@ public class AdminActivity extends AppCompatActivity {
 
         btnAdminLogout.setOnClickListener(v -> logout());
 
-        btnSysInfo.setOnClickListener(v -> runCommand(() ->
-                igp().sysInfo()));
+        // ── Public commands (no auth required) ─────────────────────────────
 
-        btnAuthenticate.setOnClickListener(v -> runCommand(() -> {
-            String resp = igp().authenticate();
-            if (resp.contains("AUTH_SUCCESS")) isAuthenticated = true;
-            return "Token: " + IgpClient.decodeToken() + "\nResponse: " + resp;
-        }));
-
-        btnWifiConfig.setOnClickListener(v -> {
-            if (!checkAuth()) return;
-            runCommand(() -> igp().getNetwork());
-        });
+        btnSysInfo.setOnClickListener(v ->
+                runCommand(() -> igp().sysInfo()));
 
         btnStatus.setOnClickListener(v -> {
             String module = etModuleName.getText().toString();
@@ -116,40 +119,51 @@ public class AdminActivity extends AppCompatActivity {
         btnFormatString.setOnClickListener(v ->
                 runCommand(() -> igp().exploitFormatString()));
 
-        btnUnderflow.setOnClickListener(v ->
-                runCommand(() -> igp().exploitUnderflow()));
+        // ── Manual AUTH button — demo / pentest only ────────────────────────
+        // Shows the decoded hardcoded token and records auth state.
+        // Protected commands use execProtected() automatically — this button
+        // is only needed to demonstrate the hardcoded-credential vulnerability.
+        btnAuthenticate.setOnClickListener(v -> runCommand(() -> {
+            String resp = igp().authenticate();
+            if (resp.contains("AUTH_SUCCESS")) isAuthenticated = true;
+            return "Token: " + IgpClient.decodeToken() + "\nResponse: " + resp;
+        }));
 
-        btnDefibrillate.setOnClickListener(v -> {
-            if (!checkAuth()) return;
-            runCommand(() -> igp().defibrillate());
-        });
+        // ── Protected commands (auth → cmd → deauth) ────────────────────────
+
+        btnWifiConfig.setOnClickListener(v ->
+                runCommand(() -> execProtected(() -> igp().getNetwork())));
+
+        btnUnderflow.setOnClickListener(v ->
+                runCommand(() -> execProtected(() -> igp().exploitUnderflow())));
+
+        btnDefibrillate.setOnClickListener(v ->
+                runCommand(() -> execProtected(() -> igp().defibrillate())));
 
         btnEmergencyAlert.setOnClickListener(v -> {
-            if (!checkAuth()) return;
             String msg = etModuleName.getText().toString();
             if (msg.isEmpty()) msg = "TEST_ALERT";
             final String m = msg;
-            runCommand(() -> igp().sendEmergencyAlert(m));
+            runCommand(() -> execProtected(() -> igp().sendEmergencyAlert(m)));
         });
 
-        btnCmdInjection.setOnClickListener(v -> {
-            if (!checkAuth()) return;
-            runCommand(() -> igp().exploitCommandInjection());
-        });
+        btnCmdInjection.setOnClickListener(v ->
+                runCommand(() -> execProtected(() -> igp().exploitCommandInjection())));
 
+        btnSetTheme.setOnClickListener(v ->
+                runCommand(() -> execProtected(() -> igp().setTheme())));
+
+        // ── Full diagnostic chain ───────────────────────────────────────────
+        // Demonstrates the complete IGP flow: public info, then a protected
+        // operation with automatic auth/deauth around GET_NETWORK.
         btnCheckStatus.setOnClickListener(v -> runCommand(() -> {
             String info = igp().sysInfo();
-            String auth = igp().authenticate();
-            if (auth.contains("AUTH_SUCCESS")) isAuthenticated = true;
-            String net  = igp().getNetwork();
-            return "SYS: " + info + "\nAUTH: " + auth + "\nNET: " + net;
+            String net  = execProtected(() -> igp().getNetwork());
+            return "SYS: " + info + "\nNET (via execProtected): " + net;
         }));
-
-        btnSetTheme.setOnClickListener(v -> {
-            if (!checkAuth()) return;
-            runCommand(() -> igp().setTheme());
-        });
     }
+
+    // ── IGP client factory ──────────────────────────────────────────────────
 
     private IgpClient igp() {
         String ip   = etIp.getText().toString().trim();
@@ -158,13 +172,39 @@ public class AdminActivity extends AppCompatActivity {
         return new IgpClient(ip.isEmpty() ? "192.168.2.1" : ip, port);
     }
 
-    private boolean checkAuth() {
-        if (!isAuthenticated) {
-            appendOutput("[ERROR] Not authenticated — tap AUTHENTICATE first");
-            return false;
+    // ── Auth → cmd → deauth ─────────────────────────────────────────────────
+
+    /**
+     * Executes a protected IGP command following the auth → cmd → deauth cycle:
+     *   1. IGP 0x02 AUTHENTICATE  → authenticated=1 on device
+     *   2. protectedCmd.run()     → executes the selected command
+     *   3. IGP 0x0D DEAUTHENTICATE → authenticated=0 on device (finally)
+     *
+     * The deauthenticate step runs even if the command throws an exception.
+     * Each step opens a new TCP connection — the global auth state in careservice
+     * makes the pattern work, but leaves a race window between connections.
+     */
+    private String execProtected(NetworkTask protectedCmd) throws Exception {
+        IgpClient client = igp();
+        String authResp = client.authenticate();
+        if (!authResp.contains("AUTH_SUCCESS")) {
+            throw new Exception("IGP auth failed: " + authResp);
         }
-        return true;
+        appendOutput("[AUTH] → AUTH_SUCCESS");
+        try {
+            String result = protectedCmd.run();
+            appendOutput("[DEAUTH] → sending 0x0D");
+            return result;
+        } finally {
+            try {
+                igp().deauthenticate();
+            } catch (Exception ignored) {
+                // deauth is best-effort — do not mask the original command result
+            }
+        }
     }
+
+    // ── UI helpers ──────────────────────────────────────────────────────────
 
     /** Run a network command on the main thread (StrictMode override — intentional vuln). */
     private void runCommand(NetworkTask task) {
