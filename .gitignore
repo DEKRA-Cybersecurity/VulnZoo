@@ -26,3 +26,7 @@ releases/
 vulnzoo_apps/**/.idea/
 vulnzoo_apps/**/.gradle/
 vulnzoo_apps/**/gradle/gradle-daemon-jvm.properties
+
+# Slideshows
+Slideshows_001.pptx
+VulnZoo_CareOtter.pptx

@@ -43,6 +43,11 @@ public class BleMonitorClient {
     public static final UUID ALERT_SERVICE     = UUID.fromString("0000ff00-0000-1000-8000-00805f9b34fb");
     public static final UUID ALERT_THRESHOLD   = UUID.fromString("0000ff01-0000-1000-8000-00805f9b34fb");
 
+    // Factory Provisioning Service (hidden — not advertised, discoverable via GATT enumeration)
+    public static final UUID PROV_SERVICE      = UUID.fromString("0000ff10-0000-1000-8000-00805f9b34fb");
+    public static final UUID PROV_CONFIG       = UUID.fromString("0000ff11-0000-1000-8000-00805f9b34fb");
+    public static final UUID PROV_AUTH         = UUID.fromString("0000ff12-0000-1000-8000-00805f9b34fb");
+
     // Standard CCC descriptor for enabling notifications
     private static final UUID CCC_DESCRIPTOR   = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
@@ -58,6 +63,7 @@ public class BleMonitorClient {
         void onManufacturerRead(String value);
         void onModelRead(String value);
         void onThresholdRead(String jsonValue);
+        void onProvisioningStateRead(String jsonValue);
         void onLog(String message);
     }
 
@@ -167,6 +173,20 @@ public class BleMonitorClient {
     }
 
     /**
+     * Read the Factory Provisioning Config characteristic (0xFF11).
+     * Returns JSON with wifi_ssid, wifi_psk, cloud_url, uptime_sec, provision_expired.
+     * VULNERABILITY P5: ReadValue returns WiFi PSK in plaintext.
+     */
+    public void readProvisioningConfig() {
+        if (gatt == null) { Log.w(TAG, "readProvisioningConfig: gatt is null"); return; }
+        BluetoothGattCharacteristic chr = findCharacteristic(PROV_SERVICE, PROV_CONFIG);
+        if (chr == null) { listener.onLog("PROV_CONFIG characteristic not found"); return; }
+        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
+        boolean ok = gatt.readCharacteristic(chr);
+        Log.d(TAG, "readProvisioningConfig enqueued=" + ok);
+    }
+
+    /**
      * VULNERABILITY #2: raw bytes written directly with no validation.
      * Whatever string is passed (including malformed/injected JSON) goes straight
      * to the characteristic.
@@ -242,6 +262,13 @@ public class BleMonitorClient {
             // Read device info
             readChrc(g, DEVINFO_SERVICE, MANUFACTURER_NAME);
             readChrc(g, DEVINFO_SERVICE, MODEL_NUMBER);
+
+            // Read provisioning config if the hidden service is present
+            BluetoothGattService provSvc = g.getService(PROV_SERVICE);
+            if (provSvc != null) {
+                listener.onLog("Hidden provisioning service (0xFF10) found — reading config…");
+                readChrc(g, PROV_SERVICE, PROV_CONFIG);
+            }
         }
 
         @Override
@@ -272,6 +299,7 @@ public class BleMonitorClient {
             if (uuid.equals(MANUFACTURER_NAME)) listener.onManufacturerRead(value);
             else if (uuid.equals(MODEL_NUMBER))  listener.onModelRead(value);
             else if (uuid.equals(ALERT_THRESHOLD)) listener.onThresholdRead(value);
+            else if (uuid.equals(PROV_CONFIG)) listener.onProvisioningStateRead(value);
         }
 
         @Override

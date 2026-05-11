@@ -1,33 +1,49 @@
-/* index.js — CareOtter Public Monitor Frontend (Simplified - No Charts) */
+/* index.js — CareOtter Patient Monitor Frontend */
 (function () {
     'use strict';
 
-    // ── Configuration ─────────────────────────────────────────────────────────
-    const CONFIG = {
-        refreshInterval: 3000,  // 3 seconds
-        deviceIp: '192.168.2.1'
-    };
+    const CONFIG = { refreshInterval: 3000 };
 
-    // ── State ─────────────────────────────────────────────────────────────────
     const state = {
-        lastUpdate: null
+        lastUpdate: null,
+        deviceMac: null,
+        deviceName: null,
+        token: localStorage.getItem('careotter_token') || ''
     };
 
     // ── Theme Toggle ──────────────────────────────────────────────────────────
     function initThemeToggle() {
         const btn = document.getElementById('theme-toggle');
         if (!btn) return;
-
-        const saved = localStorage.getItem('theme');
-        if (saved === 'dark') {
-            document.body.classList.add('dark-mode');
-        }
-
+        if (localStorage.getItem('theme') === 'dark') document.body.classList.add('dark-mode');
         btn.addEventListener('click', () => {
             const isDark = !document.body.classList.contains('dark-mode');
             document.body.classList.toggle('dark-mode', isDark);
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
         });
+    }
+
+    // ── Device Resolution ─────────────────────────────────────────────────────
+    async function resolveDevice() {
+        if (!state.token) return;
+        try {
+            const res = await fetch('/api/user/devices', {
+                headers: { 'Authorization': 'Bearer ' + state.token }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const devices = data.devices || [];
+            if (devices.length > 0) {
+                state.deviceMac  = devices[0].mac;
+                state.deviceName = devices[0].device_name || devices[0].mac;
+                const el = document.getElementById('device-name');
+                if (el) el.textContent = state.deviceName;
+                const macEl = document.getElementById('device-mac');
+                if (macEl) macEl.textContent = state.deviceMac;
+            }
+        } catch (err) {
+            console.error('Failed to resolve device:', err);
+        }
     }
 
     // ── Vitals Fetching ───────────────────────────────────────────────────────
@@ -44,78 +60,60 @@
 
     // ── UI Updates ────────────────────────────────────────────────────────────
     function updateVitalsDisplay(data) {
-        if (!data) {
-            updateStatus('offline');
-            return;
-        }
+        if (!data) { updateStatus('offline'); return; }
 
-        const bpm = data.bpm ?? null;
+        const bpm  = data.bpm  ?? null;
         const spo2 = data.spo2 ?? null;
-        const irRaw = data.ir_raw ?? null;
-        const redRaw = data.red_raw ?? null;
+        const irRaw   = data.ir_raw  ?? null;
+        const redRaw  = data.red_raw ?? null;
         const timestamp = data.timestamp ?? Date.now() / 1000;
 
-        // Update BPM
-        const bpmEl = document.getElementById('val-bpm');
-        const bpmCard = document.getElementById('card-bpm');
+        // BPM
+        const bpmEl     = document.getElementById('val-bpm');
+        const bpmCard   = document.getElementById('card-bpm');
         const bpmStatus = document.getElementById('status-bpm');
-        const bpmBar = document.getElementById('bar-bpm');
-
+        const bpmBar    = document.getElementById('bar-bpm');
         if (bpmEl) bpmEl.textContent = bpm !== null ? bpm : '—';
-
         if (bpmCard && bpm !== null) {
             bpmCard.classList.remove('ok', 'warn', 'crit');
-            if (bpm < 60 || bpm > 100) {
-                bpmCard.classList.add('warn');
-                if (bpmStatus) bpmStatus.innerHTML = '<span class="dot"></span><span>Warning</span>';
-                if (bpmStatus) bpmStatus.className = 'vital-status warn';
-            } else {
-                bpmCard.classList.add('ok');
-                if (bpmStatus) bpmStatus.innerHTML = '<span class="dot"></span><span>Normal</span>';
-                if (bpmStatus) bpmStatus.className = 'vital-status ok';
+            const abnormal = bpm < 60 || bpm > 100;
+            bpmCard.classList.add(abnormal ? 'warn' : 'ok');
+            if (bpmStatus) {
+                bpmStatus.innerHTML = `<span class="dot"></span><span>${abnormal ? 'Warning' : 'Normal'}</span>`;
+                bpmStatus.className = 'vital-status ' + (abnormal ? 'warn' : 'ok');
             }
             if (bpmBar) bpmBar.style.width = Math.min((bpm / 200) * 100, 100) + '%';
         }
 
-        // Update SpO2
-        const spo2El = document.getElementById('val-spo2');
-        const spo2Card = document.getElementById('card-spo2');
+        // SpO2
+        const spo2El     = document.getElementById('val-spo2');
+        const spo2Card   = document.getElementById('card-spo2');
         const spo2Status = document.getElementById('status-spo2');
-        const spo2Bar = document.getElementById('bar-spo2');
-
+        const spo2Bar    = document.getElementById('bar-spo2');
         if (spo2El) spo2El.textContent = spo2 !== null ? spo2 : '—';
-
         if (spo2Card && spo2 !== null) {
             spo2Card.classList.remove('ok', 'warn', 'crit');
-            if (spo2 < 90) {
-                spo2Card.classList.add('crit');
-                if (spo2Status) spo2Status.innerHTML = '<span class="dot"></span><span>Critical</span>';
-                if (spo2Status) spo2Status.className = 'vital-status crit';
-            } else if (spo2 < 95) {
-                spo2Card.classList.add('warn');
-                if (spo2Status) spo2Status.innerHTML = '<span class="dot"></span><span>Low</span>';
-                if (spo2Status) spo2Status.className = 'vital-status warn';
-            } else {
-                spo2Card.classList.add('ok');
-                if (spo2Status) spo2Status.innerHTML = '<span class="dot"></span><span>Normal</span>';
-                if (spo2Status) spo2Status.className = 'vital-status ok';
+            const cls  = spo2 < 90 ? 'crit' : spo2 < 95 ? 'warn' : 'ok';
+            const label = spo2 < 90 ? 'Critical' : spo2 < 95 ? 'Low' : 'Normal';
+            spo2Card.classList.add(cls);
+            if (spo2Status) {
+                spo2Status.innerHTML = `<span class="dot"></span><span>${label}</span>`;
+                spo2Status.className = 'vital-status ' + cls;
             }
             if (spo2Bar) spo2Bar.style.width = spo2 + '%';
         }
 
-        // Update Raw IR
-        const irEl = document.getElementById('val-ir');
+        // Raw signals
+        const irEl   = document.getElementById('val-ir');
         const metaIr = document.getElementById('meta-ir');
         if (irEl) irEl.textContent = irRaw !== null ? irRaw.toLocaleString() : '—';
         if (metaIr && irRaw !== null) metaIr.textContent = `Signal strength: ${(irRaw / 65535 * 100).toFixed(1)}%`;
 
-        // Update Raw Red
-        const redEl = document.getElementById('val-red');
+        const redEl   = document.getElementById('val-red');
         const metaRed = document.getElementById('meta-red');
         if (redEl) redEl.textContent = redRaw !== null ? redRaw.toLocaleString() : '—';
         if (metaRed && redRaw !== null) metaRed.textContent = `Signal strength: ${(redRaw / 65535 * 100).toFixed(1)}%`;
 
-        // Update timestamp
         state.lastUpdate = new Date(timestamp * 1000);
         updateLastUpdate();
         updateStatus('online');
@@ -124,46 +122,43 @@
     function updateStatus(status) {
         const el = document.getElementById('device-status');
         if (!el) return;
-
-        if (status === 'online') {
-            el.textContent = 'Connected';
-            el.className = 'status-value';
-            el.style.color = 'var(--success)';
-        } else {
-            el.textContent = 'Disconnected';
-            el.className = 'status-value';
-            el.style.color = 'var(--danger)';
-        }
+        el.textContent = status === 'online' ? 'Connected' : 'Disconnected';
+        el.style.color  = status === 'online' ? 'var(--success)' : 'var(--danger)';
     }
 
     function updateLastUpdate() {
         const el = document.getElementById('last-update');
-        if (!el || !state.lastUpdate) return;
-        el.textContent = state.lastUpdate.toLocaleTimeString();
+        if (el && state.lastUpdate) el.textContent = state.lastUpdate.toLocaleTimeString();
     }
 
-    // ── Refresh Functions ─────────────────────────────────────────────────────
+    // ── Logout ────────────────────────────────────────────────────────────────
+    function initLogout() {
+        const btn = document.getElementById('btn-logout');
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+            localStorage.removeItem('careotter_token');
+            window.location.href = '/patient/login';
+        });
+    }
+
+    // ── Refresh ───────────────────────────────────────────────────────────────
     async function refreshVitals() {
         const data = await fetchVitals();
         updateVitalsDisplay(data);
     }
-
-    // Make available globally
     window.refreshVitals = refreshVitals;
 
-    // ── Initialization ────────────────────────────────────────────────────────
-    function init() {
+    // ── Init ──────────────────────────────────────────────────────────────────
+    async function init() {
         initThemeToggle();
-        
-        // Initial load
+        initLogout();
+        await resolveDevice();
         refreshVitals();
-        
-        // Set up refresh interval
         setInterval(refreshVitals, CONFIG.refreshInterval);
         setInterval(updateLastUpdate, 1000);
     }
 
-    // Start when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

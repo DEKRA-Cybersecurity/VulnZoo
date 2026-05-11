@@ -35,23 +35,50 @@ DEVICE_NAME = "CareOtter_HR"
 #
 # VULNERABILITY: passive BLE scan (no pairing, no auth) reveals both the
 # cloud management endpoint and the device's WiFi address — information disclosure.
-CLOUD_API_URL = os.getenv("CLOUD_API_URL", "http://192.168.2.2:5002")
+# Default cloud URL is EMPTY — the device ships with no pre-configured backend.
+# A clinical technician must use the Factory Provisioning channel (0xFF10)
+# to set both WiFi credentials and the Cloud API endpoint during initial
+# bedside installation.  This mirrors real medical IoT onboarding workflows.
+CLOUD_API_URL = os.getenv("CLOUD_API_URL", "")
+
+# Hardcoded factory signature — identical across all CareOtter devices.
+# Sent to the Cloud API during registration so the backend can verify
+# the device is genuine. VULNERABILITY: any attacker who captures this
+# signature can register a rogue device or replay it to a fake cloud.
+DEVICE_SIGNATURE = "CareOtterFactorySig2026"
+
+# Persisted provisioning state file — survives BLE server restarts.
+_PROVISION_FILE = "/tmp/careotter-provision.json"
 
 
-def _fetch_api_wifi_ip(api_base_url: str) -> str:
+def _fetch_api_wifi_ip(api_base_url: str) -> tuple:
     """Query the Cloud API /api/health over Ethernet to get its WiFi IP.
-    Returns '0.0.0.0' if unreachable or not configured."""
-    try:
-        parsed = urlparse(api_base_url)
-        health_url = f"{parsed.scheme}://{parsed.netloc}/api/health"
-        with urllib.request.urlopen(health_url, timeout=3) as resp:
-            data = json.loads(resp.read().decode())
-            ip = data.get("wifi_ip", "0.0.0.0")
-            port = int(data.get("api_port", parsed.port or 5002))
-            return ip, port
-    except Exception as e:
-        print(f"[BLE] Could not fetch API wifi_ip: {e}")
-        return "0.0.0.0", parsed.port or 5002
+    Retries with backoff so the BLE server can start before Docker is ready.
+    Returns ('0.0.0.0', 0) if the URL is empty, malformed, or unreachable."""
+    if not api_base_url:
+        return "0.0.0.0", 0
+    parsed = urlparse(api_base_url)
+    if not parsed.scheme or not parsed.netloc:
+        return "0.0.0.0", 0
+    health_url = f"{parsed.scheme}://{parsed.netloc}/api/health"
+    max_retries = 10
+    delay = 2
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urllib.request.urlopen(health_url, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+                ip = data.get("wifi_ip", "0.0.0.0")
+                port = int(data.get("api_port", parsed.port or 5002))
+                if ip != "0.0.0.0":
+                    print(f"[BLE] API WiFi IP resolved: {ip}:{port} (attempt {attempt})")
+                    return ip, port
+                print(f"[BLE] API returned 0.0.0.0, retrying... ({attempt}/{max_retries})")
+        except Exception as e:
+            print(f"[BLE] API wifi_ip fetch failed (attempt {attempt}/{max_retries}): {e}")
+        if attempt < max_retries:
+            time.sleep(delay)
+    print(f"[BLE] Could not resolve API wifi_ip after {max_retries} attempts")
+    return "0.0.0.0", parsed.port or 5002
 
 
 def _get_wlan0_ip() -> str:
@@ -75,10 +102,13 @@ def _build_mfr_payload(api_url: str) -> bytes:
         [4:6]  Cloud API port
         [6:10] Device wlan0 IPv4
 
-    The API WiFi IP is queried at startup so the Android app (WiFi-only)
-    gets an address it can actually reach, not the Ethernet IP.
+    If api_url is empty (device not yet provisioned), returns all zeros
+    so the Android app knows no Cloud backend is configured yet.
     """
-    api_wifi_ip, api_port = _fetch_api_wifi_ip(api_url)
+    if api_url:
+        api_wifi_ip, api_port = _fetch_api_wifi_ip(api_url)
+    else:
+        api_wifi_ip, api_port = "0.0.0.0", 0
     dev_ip = _get_wlan0_ip()
     try:
         api_ip_bytes = socket.inet_aton(api_wifi_ip)
@@ -113,13 +143,26 @@ MODEL_NUMBER_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
 ALERT_SERVICE_UUID = "0000ff00-0000-1000-8000-00805f9b34fb"
 ALERT_THRESHOLD_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
 
+# ── Factory Provisioning Service (hidden — not advertised) ────────────────────
+# VULNERABILITY P1: UUIDs are discoverable via GATT service discovery but NOT
+# listed in the advertisement packet. Manufacturer claims this channel auto-
+# disables after 30 minutes; in reality it never does (P8).
+PROV_SERVICE_UUID     = "0000ff10-0000-1000-8000-00805f9b34fb"
+PROV_CONFIG_UUID      = "0000ff11-0000-1000-8000-00805f9b34fb"
+PROV_AUTH_UUID        = "0000ff12-0000-1000-8000-00805f9b34fb"
+PROV_PIN_FACTORY      = "1234"
+
 # Paths D-Bus
 BUS_NAME = "org.bluez"
 ADAPTER_PATH = "/org/bluez/hci0"
 APP_PATH = "/org/careotter/app"
 
 # Variables globales
+# Shared vitals cache — updated by _vitals_refresh_loop(), read by all characteristics.
+# All BLE notifications use this same snapshot so HR and SpO2 always match each other
+# and match what the HTTP /vitals endpoint (and the cloud API) return.
 latest_vitals = {"bpm": 72, "spo2": 98, "battery": 85}
+_vitals_refresh_interval = 10   # seconds — mirrors sensor_service SNAPSHOT_INTERVAL
 notifying_hr = False
 notifying_spo2 = False
 notifying_alert = False
@@ -128,8 +171,115 @@ connected_devices = {}  # MAC -> {name, connected_at}
 # Alert thresholds — writable by any BLE client without auth (vulnerability #3)
 alert_thresholds = {"bpm_min": 40, "bpm_max": 120, "spo2_min": 90}
 
+# VULNERABILITY: derived value updated on each BLE write — no range validation
+# If bpm_min >= bpm_max this becomes <= 0, triggering ZeroDivisionError in update_and_notify
+_alert_bpm_window: float = float(
+    alert_thresholds["bpm_max"] - alert_thresholds["bpm_min"]
+)  # initial: 80.0 (120-40)
+
 # Reference to the D-Bus message bus (set during main())
 _system_bus = None
+
+# ── Factory Provisioning state ────────────────────────────────────────────────
+# VULNERABILITY P8: initialized_at marks the 30-minute "provisioning window",
+# but the code never checks elapsed time — the channel stays open forever.
+
+
+def _load_provisioning_state():
+    """Load persisted provisioning state from disk, or return factory defaults."""
+    defaults = {
+        "authenticated": False,
+        "pin_attempts": 0,
+        "wifi_ssid": "",
+        "wifi_psk": "",
+        "cloud_url": CLOUD_API_URL,
+        "patient_username": "",
+        "patient_password": "",
+        "admin_username": "",
+        "admin_password": "",
+        "initialized_at": time.time(),
+    }
+    try:
+        with open(_PROVISION_FILE, "r") as f:
+            data = json.load(f)
+            defaults.update(data)
+            print(f"[BLE] Loaded persisted provisioning state from {_PROVISION_FILE}")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[BLE] Error loading provisioning state: {e}")
+    return defaults
+
+
+def _save_provisioning_state():
+    """Persist current provisioning state to disk so it survives restarts."""
+    try:
+        with open(_PROVISION_FILE, "w") as f:
+            json.dump(_provisioning_state, f)
+    except Exception as e:
+        print(f"[BLE] Error saving provisioning state: {e}")
+
+
+async def _send_registration_to_cloud():
+    """Send the device's factory signature and configured accounts to the Cloud API.
+
+    Triggered automatically after cloud_set, cloud_get, or any provisioning command
+    that changes the cloud_url. Retries with backoff so the Cloud API can start
+    after the Pi. VULNERABILITY: no TLS, no domain validation — any URL configured
+    via cloud_set receives the secret signature and admin credentials.
+    """
+    url = _provisioning_state.get("cloud_url", "")
+    if not url:
+        print("[BLE] Registration skipped: no cloud_url configured")
+        return
+
+    # Gather registration payload
+    payload = {
+        "signature": DEVICE_SIGNATURE,
+        "mac": _get_device_mac(),
+        "patient": {
+            "username": _provisioning_state.get("patient_username", ""),
+            "password": _provisioning_state.get("patient_password", ""),
+        },
+        "admin": {
+            "username": _provisioning_state.get("admin_username", ""),
+            "password": _provisioning_state.get("admin_password", ""),
+        },
+        "device_ip": _get_wlan0_ip(),
+    }
+
+    register_url = f"{url.rstrip('/')}/admin/device/register"
+    max_retries = 10
+    delay = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            req = urllib.request.Request(
+                register_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                response = json.loads(resp.read().decode())
+                print(f"[BLE] Cloud registration OK (attempt {attempt}): {response}")
+                return
+        except Exception as e:
+            print(f"[BLE] Cloud registration attempt {attempt}/{max_retries} failed: {e}")
+        if attempt < max_retries:
+            await asyncio.sleep(delay)
+    print(f"[BLE] Cloud registration failed after {max_retries} attempts")
+
+
+def _get_device_mac() -> str:
+    """Return the eth0 MAC address, or a fallback string."""
+    try:
+        with open("/sys/class/net/eth0/address", "r") as f:
+            return f.read().strip().upper()
+    except Exception:
+        return os.getenv("DEFAULT_DEVICE_MAC", "AA:BB:CC:DD:EE:FF")
+
+
+_provisioning_state = _load_provisioning_state()
 
 
 def _notify_characteristic(path: str, value_bytes: bytes):
@@ -153,18 +303,38 @@ def _notify_characteristic(path: str, value_bytes: bytes):
         print(f"[BLE] _notify_characteristic error: {e}")
 
 
-def fetch_vitals():
-    """Lee datos del sensor HTTP"""
+def _refresh_vitals_cache():
+    """Fetch one reading from the sensor and update latest_vitals.
+    Called once at startup and then by _vitals_refresh_loop every 30s.
+    """
     global latest_vitals
     try:
         with urllib.request.urlopen(SENSOR_URL, timeout=2) as resp:
             data = json.loads(resp.read().decode())
             latest_vitals.update({
-                "bpm": data.get("bpm", 72),
-                "spo2": data.get("spo2", 98),
+                "bpm":  data.get("bpm",  latest_vitals["bpm"]),
+                "spo2": data.get("spo2", latest_vitals["spo2"]),
             })
+            print(f"[BLE] Vitals cache updated: BPM={latest_vitals['bpm']} SpO2={latest_vitals['spo2']}")
     except Exception as e:
-        print(f"[BLE] Error leyendo sensor: {e}")
+        print(f"[BLE] Error refreshing vitals cache: {e}")
+
+
+async def _vitals_refresh_loop():
+    """Refresh vitals cache aligned to the sensor's own snapshot timestamp.
+    After each fetch, sleeps until response_timestamp + _vitals_refresh_interval
+    so the next fetch arrives exactly when the sensor has a new snapshot ready.
+    """
+    while True:
+        next_at = latest_vitals.get("timestamp", time.time()) + _vitals_refresh_interval
+        delay = max(0.0, next_at - time.time())
+        await asyncio.sleep(delay)
+        _refresh_vitals_cache()
+
+
+def fetch_vitals():
+    """Return latest cached vitals — does NOT fetch from sensor (use cache only)."""
+    pass   # cache is maintained by _vitals_refresh_loop; nothing to do here
 
 
 class HeartRateMeasurementChrc(ServiceInterface):
@@ -469,6 +639,20 @@ class AlertThresholdChrc(ServiceInterface):
     def Value(self) -> "ay":
         return self._pack_and_encrypt(alert_thresholds)
 
+    def _compute_alert_window(self) -> float:
+        """Compute normalised position of current BPM within the alert window.
+
+        VULNERABILITY: ZeroDivisionError when _alert_bpm_window == 0.
+        Triggered if an attacker writes a valid CSCP v1 packet with bpm_min >= bpm_max.
+        The key (CSCP_KEY) is hardcoded in firmware and APK — trivial to extract and forge.
+        No exception handling — unhandled exception in the asyncio task kills the event loop task,
+        stopping all BLE notifications permanently until the process is restarted manually.
+
+        OWASP IoT I3 — Insecure Ecosystem Interface (writable without auth)
+        OWASP IoT I7 — Insecure Data Transfer (no semantic validation of received data)
+        """
+        return (latest_vitals["bpm"] - alert_thresholds["bpm_min"]) / _alert_bpm_window
+
     # ── GATT operations ──────────────────────────────────────────────────────
 
     @method()
@@ -490,6 +674,14 @@ class AlertThresholdChrc(ServiceInterface):
         alert_thresholds["bpm_min"]  = thresholds["bpm_min"]
         alert_thresholds["bpm_max"]  = thresholds["bpm_max"]
         alert_thresholds["spo2_min"] = thresholds["spo2_min"]
+        # VULNERABILITY: _alert_bpm_window recomputed without validating bpm_max > bpm_min
+        # An attacker sending bpm_min >= bpm_max produces window <= 0
+        # Crash is DEFERRED — occurs in update_and_notify(), not here
+        # This makes triage harder: WriteValue returns success but the service dies 2s later
+        global _alert_bpm_window
+        _alert_bpm_window = float(
+            alert_thresholds["bpm_max"] - alert_thresholds["bpm_min"]
+        )
         print(f"[BLE] CSCP v1 thresholds updated: {alert_thresholds}")
         if notifying_alert:
             try:
@@ -515,12 +707,197 @@ class AlertThresholdChrc(ServiceInterface):
         return [interface, changed, invalidated]
 
     async def update_and_notify(self):
+        # VULNERABILITY: triggers ZeroDivisionError if _alert_bpm_window <= 0
+        # This runs every 2s via update_loop() — crash occurs on the first cycle after a
+        # malicious WriteValue, not immediately, giving the attacker plausible deniability
+        _pct = self._compute_alert_window()
         if notifying_alert:
             try:
                 _notify_characteristic(APP_PATH + "/service4/char0",
                                        self._pack_and_encrypt(alert_thresholds))
             except Exception as e:
                 print(f"[BLE] Error notificando AlertThreshold: {e}")
+
+
+class ProvisioningAuthChrc(ServiceInterface):
+    """Factory Provisioning — Auth/PIN (0xFF12)
+
+    VULNERABILITY P3: hardcoded 4-digit PIN ('1234'), never rotated across devices.
+    VULNERABILITY: no rate limiting — brute force of 10.000 combinations is trivial.
+    """
+
+    def __init__(self):
+        super().__init__("org.bluez.GattCharacteristic1")
+        self.uuid = PROV_AUTH_UUID
+        self.flags = ["read", "write"]
+
+    @dbus_property(access=PropertyAccess.READ)
+    def UUID(self) -> "s":
+        return self.uuid
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Service(self) -> "o":
+        return APP_PATH + "/service5"
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Flags(self) -> "as":
+        return self.flags
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Value(self) -> "ay":
+        remaining = max(0, 3 - (_provisioning_state["pin_attempts"] % 3))
+        locked = False
+        return json.dumps({"attempts_remaining": remaining, "locked": locked}).encode()
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        # VULNERABILITY: leaks attempt-counter state to any connected client
+        remaining = max(0, 3 - (_provisioning_state["pin_attempts"] % 3))
+        locked = False  # P3: never locks out permanently
+        return json.dumps({"attempts_remaining": remaining, "locked": locked}).encode()
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        pin = bytes(value).decode("utf-8", errors="ignore").strip()
+        if pin == PROV_PIN_FACTORY:
+            _provisioning_state["authenticated"] = True
+            _provisioning_state["pin_attempts"] = 0
+            print(f"[BLE] Provisioning AUTH success")
+        else:
+            _provisioning_state["pin_attempts"] += 1
+            print(f"[BLE] Provisioning AUTH failed (PIN={pin}, attempts={_provisioning_state['pin_attempts']})")
+
+
+class ProvisioningConfigChrc(ServiceInterface):
+    """Factory Provisioning — Config (0xFF11)
+
+    VULNERABILITY P4: shell injection via wifi_set — SSID/PSK interpolated into
+    a system() call without escaping metacharacters.
+    VULNERABILITY P5: ReadValue returns the current WiFi PSK in plaintext.
+    VULNERABILITY P6: cloud_set accepts any URL without validation → SSRF.
+    VULNERABILITY P7: factory_reset executes with a single write, no confirmation.
+    VULNERABILITY P8: channel never auto-closes (initialized_at is recorded but
+    never checked against current time).
+    """
+
+    def __init__(self):
+        super().__init__("org.bluez.GattCharacteristic1")
+        self.uuid = PROV_CONFIG_UUID
+        self.flags = ["read", "write", "notify"]
+
+    @dbus_property(access=PropertyAccess.READ)
+    def UUID(self) -> "s":
+        return self.uuid
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Service(self) -> "o":
+        return APP_PATH + "/service5"
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Flags(self) -> "as":
+        return self.flags
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Value(self) -> "ay":
+        # VULNERABILITY P5: plaintext WiFi PSK leak
+        data = {
+            "wifi_ssid": _provisioning_state["wifi_ssid"],
+            "wifi_psk": _provisioning_state["wifi_psk"],
+            "cloud_url": _provisioning_state["cloud_url"],
+            "uptime_sec": int(time.time() - _provisioning_state["initialized_at"]),
+            "provision_expired": False,  # P8: always False
+        }
+        return json.dumps(data).encode()
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        return self.Value
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        # VULNERABILITY: commands accepted even if PIN has never been verified
+        try:
+            cmd = json.loads(bytes(value).decode("utf-8", errors="ignore"))
+        except Exception:
+            print("[BLE] Provisioning: invalid JSON")
+            return
+
+        action = cmd.get("cmd")
+        print(f"[BLE] Provisioning command: {action}")
+
+        if action == "wifi_set":
+            ssid = str(cmd.get("ssid", ""))
+            psk  = str(cmd.get("psk", ""))
+            # VULNERABILITY P4: direct shell interpolation — no escaping
+            shell_cmd = (
+                f"uci set wireless.@wifi-iface[0].ssid='{ssid}' && "
+                f"uci set wireless.@wifi-iface[0].key='{psk}' && "
+                f"uci commit wireless && wifi reload"
+            )
+            os.system(shell_cmd)
+            _provisioning_state["wifi_ssid"] = ssid
+            _provisioning_state["wifi_psk"] = psk
+            _save_provisioning_state()
+            print(f"[BLE] Provisioning WiFi configured: {ssid}")
+
+        elif action == "wifi_get":
+            # Nothing to do — ReadValue already leaks everything
+            pass
+
+        elif action == "cloud_set":
+            url = str(cmd.get("url", ""))
+            # VULNERABILITY P6: no URL validation → SSRF potential
+            _provisioning_state["cloud_url"] = url
+            _save_provisioning_state()
+            print(f"[BLE] Provisioning Cloud URL configured: {url}")
+            # Trigger async registration so the cloud learns our WiFi IP and accounts
+            asyncio.create_task(_send_registration_to_cloud())
+
+        elif action == "cloud_get":
+            pass
+
+        elif action == "patient_set":
+            _provisioning_state["patient_username"] = str(cmd.get("username", ""))
+            _provisioning_state["patient_password"] = str(cmd.get("password", ""))
+            _save_provisioning_state()
+            print(f"[BLE] Provisioning patient account configured: {_provisioning_state['patient_username']}")
+
+        elif action == "admin_set":
+            _provisioning_state["admin_username"] = str(cmd.get("username", ""))
+            _provisioning_state["admin_password"] = str(cmd.get("password", ""))
+            _save_provisioning_state()
+            print(f"[BLE] Provisioning admin account configured: {_provisioning_state['admin_username']}")
+
+        elif action == "factory_reset":
+            # VULNERABILITY P7: no confirmation, no auth escalation
+            os.system("rm -f /etc/config/wireless && cp /rom/etc/config/wireless /etc/config/wireless 2>/dev/null; uci commit wireless; wifi reload")
+            _provisioning_state["wifi_ssid"] = ""
+            _provisioning_state["wifi_psk"] = ""
+            _provisioning_state["cloud_url"] = ""
+            _provisioning_state["patient_username"] = ""
+            _provisioning_state["patient_password"] = ""
+            _provisioning_state["admin_username"] = ""
+            _provisioning_state["admin_password"] = ""
+            _save_provisioning_state()
+            print("[BLE] Provisioning FACTORY RESET executed")
+
+        elif action == "reboot":
+            os.system("reboot")
+
+        else:
+            print(f"[BLE] Provisioning: unknown command '{action}'")
+
+    @method()
+    def StartNotify(self):
+        print("[BLE] ProvisioningConfig notifications started")
+
+    @method()
+    def StopNotify(self):
+        print("[BLE] ProvisioningConfig notifications stopped")
+
+    @signal()
+    def PropertiesChanged(self, interface: "s", changed: "a{sv}", invalidated: "as") -> "sa{sv}as":
+        return [interface, changed, invalidated]
 
 
 class GattService(ServiceInterface):
@@ -722,11 +1099,12 @@ async def main():
         sys.exit(1)
     
     # Crear servicios
-    hr_service   = GattService(HR_SERVICE_UUID)
-    plx_service  = GattService(PLX_SERVICE_UUID)
-    batt_service = GattService(BATTERY_SERVICE_UUID)
-    dev_service  = GattService(DEVINFO_SERVICE_UUID)
+    hr_service    = GattService(HR_SERVICE_UUID)
+    plx_service   = GattService(PLX_SERVICE_UUID)
+    batt_service  = GattService(BATTERY_SERVICE_UUID)
+    dev_service   = GattService(DEVINFO_SERVICE_UUID)
     alert_service = GattService(ALERT_SERVICE_UUID)
+    prov_service  = GattService(PROV_SERVICE_UUID, primary=False)  # hidden secondary
 
     # Crear características
     hr_chrc     = HeartRateMeasurementChrc()
@@ -735,6 +1113,8 @@ async def main():
     mfr_chrc    = ManufacturerNameChrc()
     model_chrc  = ModelNumberChrc()
     alert_chrc  = AlertThresholdChrc()
+    prov_cfg_chrc = ProvisioningConfigChrc()
+    prov_auth_chrc = ProvisioningAuthChrc()
 
     # Crear ObjectManager
     obj_manager = ObjectManager()
@@ -746,12 +1126,15 @@ async def main():
     bus.export(APP_PATH + "/service2", batt_service)
     bus.export(APP_PATH + "/service3", dev_service)
     bus.export(APP_PATH + "/service4", alert_service)
+    bus.export(APP_PATH + "/service5", prov_service)
     bus.export(APP_PATH + "/service0/char0", hr_chrc)
     bus.export(APP_PATH + "/service1/char0", plx_chrc)
     bus.export(APP_PATH + "/service2/char0", batt_chrc)
     bus.export(APP_PATH + "/service3/char0", mfr_chrc)
     bus.export(APP_PATH + "/service3/char1", model_chrc)
     bus.export(APP_PATH + "/service4/char0", alert_chrc)
+    bus.export(APP_PATH + "/service5/char0", prov_cfg_chrc)
+    bus.export(APP_PATH + "/service5/char1", prov_auth_chrc)
 
     # Asociar características a servicios
     hr_service.add_characteristic(APP_PATH + "/service0/char0")
@@ -760,6 +1143,47 @@ async def main():
     dev_service.add_characteristic(APP_PATH + "/service3/char0")
     dev_service.add_characteristic(APP_PATH + "/service3/char1")
     alert_service.add_characteristic(APP_PATH + "/service4/char0")
+    prov_service.add_characteristic(APP_PATH + "/service5/char0")
+    prov_service.add_characteristic(APP_PATH + "/service5/char1")
+
+    # ── Register ALL exported objects in ObjectManager so BlueZ discovers them ──
+    # BlueZ GattManager1.RegisterApplication() calls GetManagedObjects on APP_PATH
+    # to build the local attribute database. If we return {}, services are invisible.
+    def _add_svc(path: str, svc: GattService):
+        obj_manager.add_object(path, {
+            "org.bluez.GattService1": {
+                "UUID": Variant("s", svc.uuid),
+                "Primary": Variant("b", svc.primary),
+                "Characteristics": Variant("ao", svc.chrcs),
+            }
+        })
+
+    def _add_chrc(path: str, chrc: ServiceInterface):
+        # Each characteristic class exposes UUID, Service, Flags, Value via D-Bus props
+        obj_manager.add_object(path, {
+            "org.bluez.GattCharacteristic1": {
+                "UUID": Variant("s", chrc.uuid),
+                "Service": Variant("o", chrc.Service),
+                "Flags": Variant("as", chrc.flags),
+                "Value": Variant("ay", chrc.Value),
+            }
+        })
+
+    _add_svc(APP_PATH + "/service0", hr_service)
+    _add_svc(APP_PATH + "/service1", plx_service)
+    _add_svc(APP_PATH + "/service2", batt_service)
+    _add_svc(APP_PATH + "/service3", dev_service)
+    _add_svc(APP_PATH + "/service4", alert_service)
+    _add_svc(APP_PATH + "/service5", prov_service)
+
+    _add_chrc(APP_PATH + "/service0/char0", hr_chrc)
+    _add_chrc(APP_PATH + "/service1/char0", plx_chrc)
+    _add_chrc(APP_PATH + "/service2/char0", batt_chrc)
+    _add_chrc(APP_PATH + "/service3/char0", mfr_chrc)
+    _add_chrc(APP_PATH + "/service3/char1", model_chrc)
+    _add_chrc(APP_PATH + "/service4/char0", alert_chrc)
+    _add_chrc(APP_PATH + "/service5/char0", prov_cfg_chrc)
+    _add_chrc(APP_PATH + "/service5/char1", prov_auth_chrc)
 
     # Crear y exportar advertising
     ad = Advertisement()
@@ -782,12 +1206,19 @@ async def main():
     print(f"       - Battery (0x180F):              {BATTERY_LEVEL_UUID}")
     print(f"       - Device Information (0x180A):   {DEVINFO_SERVICE_UUID}")
     print(f"       - Alert Threshold (custom):      {ALERT_THRESHOLD_UUID}")
+    print(f"       - Factory Provisioning (hidden): {PROV_SERVICE_UUID}  <-- NOT advertised")
     print("[BLE] Esperando conexiones...")
 
     # Iniciar monitor de conexiones
     await monitor_connections(bus)
     
-    # Iniciar loop de actualización (2s)
+    # Fetch initial vitals so BLE characteristics have real values before first notify
+    _refresh_vitals_cache()
+
+    # Periodic vitals cache refresh (30s) — keeps BLE and HTTP /vitals in sync
+    asyncio.create_task(_vitals_refresh_loop())
+
+    # Loop de actualización de notificaciones GATT (2s)
     asyncio.create_task(update_loop(hr_chrc, plx_chrc, alert_chrc))
     
     # Mantener corriendo

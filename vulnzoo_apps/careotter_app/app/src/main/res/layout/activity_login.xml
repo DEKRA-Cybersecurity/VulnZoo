@@ -22,7 +22,6 @@
             android:gravity="center"
             android:layout_marginBottom="32dp">
 
-            <!-- Logo -->
             <ImageView
                 android:layout_width="56dp"
                 android:layout_height="56dp"
@@ -116,14 +115,6 @@
                 android:background="@drawable/input_background"
                 android:layout_marginBottom="16dp" />
 
-            <!-- Hidden API URL (auto-discovered via BLE) -->
-            <EditText
-                android:id="@+id/etApiUrl"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textUri"
-                android:visibility="gone" />
-
             <!-- Sign in button -->
             <Button
                 android:id="@+id/btnLogin"
@@ -148,7 +139,7 @@
                 android:padding="8dp" />
         </LinearLayout>
 
-        <!-- Device discovery card -->
+        <!-- API Server card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -163,7 +154,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="10dp">
+                android:layout_marginBottom="12dp">
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -174,7 +165,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Device discovery"
+                        android:text="API Server"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="#0F172A" />
@@ -182,64 +173,119 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="BLE broadcasts nearby"
-                        android:textSize="12sp"
+                        android:layout_marginTop="2dp"
+                        android:text="Docker's WiFi IP"
                         android:textColor="#64748B"
-                        android:layout_marginTop="2dp" />
+                        android:textSize="12sp" />
                 </LinearLayout>
 
-                <!-- BLE icon badge -->
+                <!-- Network icon badge -->
                 <LinearLayout
                     android:layout_width="36dp"
                     android:layout_height="36dp"
-                    android:gravity="center"
-                    android:background="@drawable/badge_blue">
+                    android:background="@drawable/badge_blue"
+                    android:gravity="center">
+
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="⬡"
-                        android:textSize="16sp"
-                        android:textColor="#2563EB" />
+                        android:text="⊕"
+                        android:textColor="#2563EB"
+                        android:textSize="16sp" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Scan button -->
-            <Button
-                android:id="@+id/btnScanApi"
-                android:layout_width="match_parent"
-                android:layout_height="42dp"
-                android:text="Scan for API address"
-                android:textSize="13sp"
-                android:textColor="#0F172A"
-                android:backgroundTint="#F1F5F9"
-                android:layout_marginBottom="10dp" />
+            <!-- API IP label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:letterSpacing="0.08"
+                android:text="SERVER IP"
+                android:textColor="#64748B"
+                android:textSize="10sp"
+                android:textStyle="bold" />
 
-            <!-- Discovered address display -->
+            <!-- IP split row: [network prefix editable] . [host octet] -->
             <LinearLayout
-                android:id="@+id/layoutApiAddress"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/input_background"
+                android:layout_marginBottom="6dp">
+
+                <!-- Network prefix: auto-filled from phone WiFi, editable -->
+                <EditText
+                    android:id="@+id/etApiUrl"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:hint="192.168.1."
+                    android:inputType="textUri"
+                    android:textSize="14sp"
+                    android:textColor="#0F172A"
+                    android:textColorHint="#94A3B8"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="2dp"
+                    android:background="@null"
+                    android:fontFamily="monospace"
+                    android:imeOptions="actionNext"
+                    android:singleLine="true" />
+
+                <!-- Host octet: user types just the last number -->
+                <EditText
+                    android:id="@+id/etHostOctet"
+                    android:layout_width="60dp"
+                    android:layout_height="match_parent"
+                    android:hint="1"
+                    android:inputType="number"
+                    android:textSize="14sp"
+                    android:textColor="#0F172A"
+                    android:textColorHint="#94A3B8"
+                    android:paddingEnd="14dp"
+                    android:background="@null"
+                    android:fontFamily="monospace"
+                    android:maxLength="3"
+                    android:singleLine="true" />
+            </LinearLayout>
+
+            <!-- Hint label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="Mobile's WiFi Host prefix detected"
+                android:textColor="#94A3B8"
+                android:textSize="10sp" />
+
+            <!-- Button row: detect prefix + ping API -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:background="@drawable/address_background"
-                android:padding="10dp"
-                android:layout_marginBottom="10dp"
-                android:visibility="gone">
+                android:layout_marginBottom="10dp">
 
-                <View
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:background="@drawable/dot_green"
-                    android:layout_marginEnd="8dp" />
+                <Button
+                    android:id="@+id/btnScanApi"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:backgroundTint="#F1F5F9"
+                    android:text="Detect WiFi Prefix"
+                    android:textColor="#0F172A"
+                    android:textSize="12sp" />
 
-                <TextView
-                    android:id="@+id/tvApiAddress"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text=""
-                    android:textSize="11sp"
-                    android:textColor="#166534"
-                    android:fontFamily="monospace" />
+                <Button
+                    android:id="@+id/btnPing"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:backgroundTint="#F1F5F9"
+                    android:text="Ping API"
+                    android:textColor="#0F172A"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <!-- Vulnerability note -->
@@ -247,23 +293,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="top">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="ⓘ "
-                    android:textSize="11sp"
-                    android:textColor="#64748B" />
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="API endpoint stored in SharedPreferences · travels over HTTP"
-                    android:textSize="10sp"
-                    android:textColor="#64748B" />
-            </LinearLayout>
+                android:gravity="top"/>
         </LinearLayout>
 
         <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />

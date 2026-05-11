@@ -5,6 +5,8 @@
     <!-- INTERNET required for login to Cloud API -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- ACCESS_WIFI_STATE: read phone WiFi IP to auto-detect network prefix -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- BLE permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />

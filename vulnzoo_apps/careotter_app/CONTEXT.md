@@ -69,7 +69,7 @@ The CareOtter Admin app allows security researchers and students to interact wit
 **Protocol**: IGP v4 (IoT Gateway Protocol)
 ```
 Header: [Magic(4) | Cmd(1) | Status(1) | Len(2)]
-Magic: 0x474F4154 ("GOAT")
+Magic: 0x43415245 ("CARE")
 Payload: variable length
 ```
 

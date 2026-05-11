@@ -29,14 +29,14 @@
 
 The source code explicitly documents six vulnerabilities. **VULN #6 is intentionally hidden** — it is not visible in the normal UI and must be discovered through pentesting.
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 1 | **Missing BLE pairing / bonding** | `BleMonitorClient.startScan()` | Connects to any peripheral advertising the name `CareOtter_HR` without MAC whitelist, pairing, or authentication. |
-| 2 | **Unvalidated GATT writes** | `BleMonitorClient.writeThreshold()` | Raw JSON string is written directly to the `ALERT_THRESHOLD` characteristic without schema or length validation. |
-| 3 | **Plaintext external storage logging** | `VitalsLogger` | All BPM/SpO₂ readings are appended to `/sdcard/careotter_vitals.log` in cleartext. |
-| 4 | **Hardcoded thresholds** | `MainActivity.DEFAULT_THRESHOLDS` | Default clinical thresholds (`bpm_min=40`, `bpm_max=120`, `spo2_min=90`) are visible via static analysis / APK decompilation. |
-| 5 | **Unencrypted BLE channel** | `BleMonitorClient` | No LE Secure Connections, no encryption, no MITM protection. Data travels in plaintext over 2.4 GHz. |
-| 6 | **Hidden diagnostic panel** | `MainActivity` (hidden) | A secret threshold write panel is locked behind a gesture. Not visible in normal app use — must be discovered via static analysis or BLE enumeration. |
+| # | Type | Location | Description | OWASP Mobile Top 10 2024 | CWE |
+|---|------|----------|-------------|--------------------------|-----|
+| 1 | **Missing BLE pairing / bonding** | `BleMonitorClient.startScan()` | Connects to any peripheral advertising the name `CareOtter_HR` without MAC whitelist, pairing, or authentication. | M3: Insecure Authentication/Authorization | CWE-306 |
+| 2 | **Unvalidated GATT writes** | `BleMonitorClient.writeThreshold()` | Raw JSON string is written directly to the `ALERT_THRESHOLD` characteristic without schema or length validation. | M4: Insufficient Input/Output Validation | CWE-20 |
+| 3 | **Plaintext external storage logging** | `VitalsLogger` | All BPM/SpO₂ readings are appended to `/sdcard/careotter_vitals.log` in cleartext. | M9: Insecure Data Storage | CWE-312 |
+| 4 | **Hardcoded thresholds** | `MainActivity.DEFAULT_THRESHOLDS` | Default clinical thresholds (`bpm_min=40`, `bpm_max=120`, `spo2_min=90`) are visible via static analysis / APK decompilation. | M1: Improper Credential Usage | CWE-798 |
+| 5 | **Unencrypted BLE channel** | `BleMonitorClient` | No LE Secure Connections, no encryption, no MITM protection. Data travels in plaintext over 2.4 GHz. | M5: Insecure Communication | CWE-319 |
+| 6 | **Hidden diagnostic panel** | `MainActivity` (hidden) | A secret threshold write panel is locked behind a gesture. Not visible in normal app use — must be discovered via static analysis or BLE enumeration. | M8: Security Misconfiguration | CWE-912 |
 
 ---
 
@@ -345,6 +345,8 @@ Remediation requires: (1) BLE LE Secure Connections with authenticated pairing b
 
 ## M4: Insufficient Input/Output Validation
 
+> **OWASP Mobile Top 10 2024 — M4: Insufficient Input/Output Validation**
+
 ### Description
 The mobile app does not allow manual selection of the target device. It implements a *“Scan and Connect”* button that automatically selects the first BLE peripheral whose advertising name matches `CareOtter_HR`. 
 
@@ -425,3 +427,87 @@ Without the M4 flaw, the attacker would need physical compromise of the device o
 The attacker does not need to set up a full rogue server. They simply broadcast CareOtter_HR with a stronger signal than the legitimate Raspberry Pi. The technician’s app will connect to the attacker rather than the actual device. If the attacker does not respond, the app freezes and the patient monitor fails to report vital signs.
 #### B. Downgrade Attack
 The rogue device broadcasts CareOtter_HR but with an older firmware version in the Manufacturer Specific Data. If the app has downgrade logic (CareOtter does not, but this is a common pattern in IoMT), it could force the installation of vulnerable firmware.
+
+---
+
+## Authentication State Race Condition — IGP Admin Panel
+
+> **Primary entry:** `docs/CareOtter/IoT/CareOtter_IoT.md` — IoT:I7.2 (CWE-362)  
+> **Scope:** `AdminActivity.java` — `execProtected()` method
+
+### Description
+
+`AdminActivity` implements the **auth → cmd → deauth** mitigation cycle via `execProtected()`. Each call to this method generates three independent TCP connections to careservice at `:9999`. Between connection 1 (auth) and connection 3 (deauth), the device's global `authenticated` flag is `1` and any host on `192.168.2.0/24` can execute privileged IGP commands without credentials.
+
+This vulnerability is a consequence of the device design (CWE-362 + CWE-613 in `careservice.c`), but `AdminActivity.java` is the component that **opens the window** on every protected admin action.
+
+### Problematic Code — `AdminActivity.java`
+
+```java
+// AdminActivity.java — execProtected()
+private String execProtected(NetworkTask protectedCmd) throws Exception {
+    IgpClient client = igp();
+    String authResp = client.authenticate();   // TCP conn 1 → authenticated=1
+    //                                           ↑ WINDOW OPENS — any TCP client can now
+    //                                             execute privileged IGP commands
+    if (!authResp.contains("AUTH_SUCCESS")) {
+        throw new Exception("IGP auth failed: " + authResp);
+    }
+    try {
+        String result = protectedCmd.run();    // TCP conn 2 → selected command
+        //                                       ↑ WINDOW STILL OPEN
+        return result;
+    } finally {
+        try {
+            igp().deauthenticate();            // TCP conn 3 → authenticated=0
+            //                                   ↑ WINDOW CLOSES
+        } catch (Exception ignored) { }
+    }
+}
+```
+
+Each `igp()` call instantiates a new `IgpClient` that opens and closes a TCP socket.
+The three sockets are **sequential but independent** — there is no mechanism that
+prevents an external TCP client from inserting between them.
+
+### Trigger Events
+
+Every tap on a protected button in `AdminActivity` opens the window:
+
+| Button              | IGP command triggered                    | Window duration |
+| ------------------- | ---------------------------------------- | --------------- |
+| `btnWifiConfig`     | `0x02 → 0x03 GET_NETWORK → 0x0D`         | ~2–50 ms        |
+| `btnDefibrillate`   | `0x02 → 0x0B DEFIBRILLATE → 0x0D`        | ~2–50 ms        |
+| `btnEmergencyAlert` | `0x02 → 0x0C EMERGENCY_ALERT → 0x0D`     | ~2–50 ms        |
+| `btnCmdInjection`   | `0x02 → 0x0C (injection payload) → 0x0D` | ~2–50 ms        |
+| `btnCheckStatus`    | `0x02 → 0x03 GET_NETWORK → 0x0D`         | ~2–50 ms        |
+
+### Attack Scenario
+
+1. Attacker is on the same `192.168.2.0/24` network as the Raspberry Pi.
+2. Attacker polls `:9999` continuously sending `IGP 0x06 SET_WIFI` with a shell injection payload.
+3. Admin opens `AdminActivity` and taps any protected button.
+4. `execProtected()` fires: conn 1 sets `authenticated=1`.
+5. Attacker's polling connection arrives during the window — careservice executes the privileged command.
+6. Conn 3 fires: `authenticated=0` — window closed, but RCE already executed.
+
+### Difference from Needing the Token
+
+An attacker exploiting this race condition does **not need** the IGP token
+(`OtterMobile2026`). They need only:
+- Network access to `:9999`
+- Awareness that the admin is using the app (observable via BLE advertising or network traffic)
+- The IGP packet format (documented in source; trivially extracted from the APK with `jadx`)
+
+### No Mitigation Available at App Level
+
+Moving `execProtected()` to use a single TCP connection with multiple IGP frames
+would require careservice to accept multiple commands per connection — a
+server-side architectural change. The app-side lock pattern cannot close this
+race window because the vulnerability is in the **careservice process design**,
+not in the client sequencing.
+
+The correct fix is in `careservice.c`: scoping `authenticated` to the connection
+descriptor (local variable in `handle_request()`) rather than the process.
+
+**References:** CWE-362 · CWE-613 · OWASP IoT Top 10 — I7 · `docs/CareOtter/IoT/CareOtter_IoT.md` §IoT:I7.2

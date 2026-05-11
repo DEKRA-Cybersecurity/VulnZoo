@@ -19,6 +19,12 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.json.JSONObject;
+
 /**
  * MainActivity — CareOtter Patient Monitoring App
  *
@@ -62,7 +68,8 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     private TextView     tvDeviceName;
     private TextView     tvBpm;
     private TextView     tvSpo2;
-    private TextView     tvAlertBanner;
+    private LinearLayout tvAlertBanner;
+    private TextView     tvAlertText;
     private TextView     tvManufacturer;
     private TextView     tvModel;
     private LinearLayout diagnosticPanel;
@@ -77,6 +84,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
 
     private BleMonitorClient bleClient;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,6 +96,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         tvBpm            = findViewById(R.id.tvBpm);
         tvSpo2           = findViewById(R.id.tvSpo2);
         tvAlertBanner    = findViewById(R.id.tvAlertBanner);
+        tvAlertText      = findViewById(R.id.tvAlertText);
         tvManufacturer   = findViewById(R.id.tvManufacturer);
         tvModel          = findViewById(R.id.tvModel);
         diagnosticPanel  = findViewById(R.id.diagnosticPanel);
@@ -161,6 +170,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         });
 
         requestPermissions();
+        fetchAssignedDevice();
     }
 
     // ── BleMonitorClient.Listener ─────────────────────────────────────────────
@@ -248,6 +258,37 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     }
 
     @Override
+    public void onProvisioningStateRead(String jsonValue) {
+        uiHandler.post(() -> {
+            try {
+                appendLog("[PROV] Config: " + jsonValue);
+                // Check if device has not been provisioned yet
+                if (jsonValue.contains("\"cloud_url\"")) {
+                    int start = jsonValue.indexOf("\"cloud_url\"") + 12;
+                    int colon = jsonValue.indexOf(':', start);
+                    if (colon > 0) {
+                        int q1 = jsonValue.indexOf('"', colon);
+                        int q2 = jsonValue.indexOf('"', q1 + 1);
+                        if (q1 > 0 && q2 > q1) {
+                            String url = jsonValue.substring(q1 + 1, q2);
+                            if ("not_configured".equals(url) || url.isEmpty()) {
+                                Toast.makeText(this,
+                                    "Device not provisioned — no Cloud API configured. " +
+                                    "Use CareOtter Medical Service software to set WiFi and Cloud URL.",
+                                    Toast.LENGTH_LONG).show();
+                                tvDeviceName.setText("CareOtter_HR [NOT PROVISIONED]");
+                                tvDeviceName.setTextColor(0xFFFF6B6B);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("MainActivity", "UI crash provisioning read", e);
+            }
+        });
+    }
+
+    @Override
     public void onLog(String message) {
         appendLog(message);
     }
@@ -263,7 +304,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
             if (lastBpm < alertBpmMin) msg += "BPM LOW (" + lastBpm + ") ";
             if (lastBpm > alertBpmMax) msg += "BPM HIGH (" + lastBpm + ") ";
             if (lastSpo2 < alertSpo2Min) msg += "SpO2 LOW (" + lastSpo2 + "%)";
-            tvAlertBanner.setText("⚠ ALERT: " + msg.trim());
+            tvAlertText.setText("⚠ ALERT: " + msg.trim());
         }
     }
 
@@ -315,5 +356,67 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     protected void onDestroy() {
         super.onDestroy();
         bleClient.close();
+        executor.shutdownNow();
+    }
+
+    // ── Assigned device fetch ────────────────────────────────────────────────
+
+    private void fetchAssignedDevice() {
+        SharedPreferences prefs = getSharedPreferences("careotter_prefs", MODE_PRIVATE);
+        String token = prefs.getString("jwt_token", null);
+        String apiUrl = prefs.getString("api_url", null);
+        if (token == null || apiUrl == null) {
+            Log.w("MainActivity", "No token or API URL — cannot fetch assigned device");
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                String result = doFetchDevice(apiUrl, token);
+                JSONObject json = new JSONObject(result);
+                if (json.has("mac")) {
+                    final String mac = json.getString("mac");
+                    final String name = json.optString("device_name", "CareOtter_HR");
+                    uiHandler.post(() -> {
+                        tvModel.setText(name + " [" + mac + "]");
+                        tvDeviceName.setText(name);
+                        appendLog("[DEVICE] Assigned: " + name + " " + mac);
+                    });
+                } else if (json.has("error")) {
+                    final String err = json.getString("error");
+                    uiHandler.post(() -> appendLog("[DEVICE] " + err));
+                }
+            } catch (Exception e) {
+                Log.e("MainActivity", "fetchAssignedDevice error", e);
+                uiHandler.post(() -> appendLog("[DEVICE] Failed to load assignment: " + e.getMessage()));
+            }
+        });
+    }
+
+    private String doFetchDevice(String baseUrl, String token) throws Exception {
+        URL url = new URL(baseUrl + "/api/devices/me");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "Bearer " + token);
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(5000);
+
+        int code = conn.getResponseCode();
+        java.io.InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
+        String response = new String(readAllBytesCompat(is), java.nio.charset.StandardCharsets.UTF_8);
+        if (code >= 400) {
+            throw new Exception("Server error (" + code + "): " + response);
+        }
+        return response;
+    }
+
+    private byte[] readAllBytesCompat(java.io.InputStream is) throws java.io.IOException {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        int n;
+        while ((n = is.read(buffer)) != -1) {
+            bos.write(buffer, 0, n);
+        }
+        return bos.toByteArray();
     }
 }

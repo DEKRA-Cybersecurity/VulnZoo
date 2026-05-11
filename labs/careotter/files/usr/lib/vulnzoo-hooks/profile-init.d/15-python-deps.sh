@@ -20,21 +20,23 @@ else
 fi
 
 # Check required packages
-REQUIRED_PACKAGES="bleak pyyaml aiohttp smbus2"
+# dbus_fast: used by ble_server.py for BlueZ D-Bus GATT server
+REQUIRED_PACKAGES="dbus_fast"
 MISSING_COUNT=0
 
 for package in $REQUIRED_PACKAGES; do
     if python3 -c "import $package" 2>/dev/null; then
         log_message "Package OK: $package"
     else
-        log_message "Missing package: $package"
-        MISSING_COUNT=$((MISSING_COUNT + 1))
+        log_message "Missing package: $package — installing..."
+        pip3 install "$package" >> "$LOG_FILE" 2>&1 \
+            && log_message "Installed: $package" \
+            || { log_message "ERROR: failed to install $package"; MISSING_COUNT=$((MISSING_COUNT + 1)); }
     fi
 done
 
 if [ $MISSING_COUNT -gt 0 ]; then
-    log_message "WARNING: $MISSING_COUNT packages missing. Run: pip3 install -r /root/careotter/requirements.txt"
-    # Non-critical - don't fail
+    log_message "WARNING: $MISSING_COUNT packages could not be installed"
 fi
 
 log_message "Python dependencies check complete"

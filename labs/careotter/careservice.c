@@ -14,7 +14,7 @@
 #include <fcntl.h>
 
 #define PORT          9999
-#define MAGIC         0x474F4154   /* "GOAT" — IoT Gateway Protocol v4 */
+#define MAGIC         0x43415245   /* "CARE" — IoT Gateway Protocol v4 */
 #define ADMIN_TOKEN   "OtterMobile2026"
 #define LOG_FILE      "/tmp/careservice.log"
 #define EVENTS_FILE   "/tmp/careotter_events.log"
@@ -470,6 +470,18 @@ void handle_request(int c_fd) {
             snprintf(resp, sizeof(resp), "ALERT_SENT:%s", (char*)payload);
             send(c_fd, resp, strlen(resp), 0);
             log_event("EMERGENCY_ALERT: alert dispatched");
+            break;
+        }
+
+        /* ── 0x0D DEAUTHENTICATE — cierra la sesión de administrador ──────── */
+        /* Resetea el flag global authenticated=0. Llamar tras cada comando   */
+        /* protegido para minimizar la ventana de exposición del estado.       */
+        /* NOTA: no elimina la ventana de riesgo entre conexiones TCP          */
+        /* independientes — solo reduce su duración.                           */
+        case 0x0D: {
+            authenticated = 0;
+            send(c_fd, "DEAUTH_OK", 9, 0);
+            log_event("DEAUTHENTICATE: session closed");
             break;
         }
 

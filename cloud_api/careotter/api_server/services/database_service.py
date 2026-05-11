@@ -180,6 +180,24 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error creating user: {e}")
             return False
+
+    def create_or_update_user(self, username: str, password: str, role: str = 'user') -> bool:
+        """Create user or update password if already exists. Used by device registration."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute('''
+                    INSERT INTO users (username, password_hash, role)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(username) DO UPDATE SET
+                        password_hash = excluded.password_hash,
+                        role = excluded.role
+                ''', (username, self._hash_password(password), role))
+                conn.commit()
+                logger.info(f"[DB] User upserted: {username} (role={role})")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error upserting user: {e}")
+            return False
     
     def get_user_by_username(self, username: str) -> Optional[Dict]:
         """
@@ -264,6 +282,39 @@ class DatabaseService:
             logger.error(f"[DB] Error fetching device: {e}")
             return None
 
+    def get_device_by_patient(self, username: str) -> Optional[Dict]:
+        """Return the device assigned to a given patient username."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    'SELECT * FROM devices WHERE patient_username = ?', (username,)
+                ).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching device by patient: {e}")
+            return None
+
+    def get_devices_for_patient(self, username: str) -> List[Dict]:
+        """Return devices for a patient (their own) or all devices for admin."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                user = self.get_user_by_username(username)
+                if user and user.get('role') == 'admin':
+                    rows = conn.execute(
+                        'SELECT * FROM devices ORDER BY registered_at DESC'
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        'SELECT * FROM devices WHERE patient_username = ? ORDER BY registered_at DESC',
+                        (username,)
+                    ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] Error fetching devices for {username}: {e}")
+            return []
+
     def list_devices(self) -> List[Dict]:
         """Return all registered devices with their patient owner."""
         try:
@@ -277,44 +328,81 @@ class DatabaseService:
             logger.error(f"[DB] Error listing devices: {e}")
             return []
 
-    def ensure_default_devices(self) -> bool:
-        """Seed the default CareOtter device linked to the default patient user."""
+    # ── Signature-based device registration (WiFi-first provisioning) ────────
+
+    EXPECTED_DEVICE_SIGNATURE = "CareOtterFactorySig2026"
+
+    def register_device_with_signature(
+        self, mac: str, signature: str,
+        patient_username: str, patient_password: str,
+        admin_username: str, admin_password: str,
+        device_ip: str, device_name: str = "CareOtter_HR"
+    ) -> bool:
+        """Register a device using its factory signature.
+
+        The bedside monitor sends this payload after being provisioned via BLE.
+        VULNERABILITY: signature is hardcoded and identical across all devices,
+        so any attacker who captures it can register a rogue device.
+        """
+        if signature != self.EXPECTED_DEVICE_SIGNATURE:
+            logger.warning(f"[DB] Device registration rejected: invalid signature from {mac}")
+            return False
         try:
-            default_mac = "AA:BB:CC:DD:EE:FF"
-            if not self.get_device(default_mac):
-                self.register_device(default_mac, "patient", "CareOtter_HR")
-                logger.info(f"[DB] Default device seeded: {default_mac}")
+            # Create patient and admin users (idempotent — overwrite passwords)
+            self.create_or_update_user(patient_username, patient_password, 'patient')
+            self.create_or_update_user(admin_username, admin_password, 'admin')
+
+            # Register / update device association
+            self.register_device(mac, patient_username, device_name)
+
+            # Store the device's WiFi IP for vitals polling
+            self._set_config('device_ip', device_ip)
+            self._set_config('device_mac', mac.upper())
+
+            logger.info(f"[DB] Device registered via signature: {mac} → patient={patient_username} admin={admin_username} ip={device_ip}")
             return True
         except Exception as e:
-            logger.error(f"[DB] Error seeding default device: {e}")
+            logger.error(f"[DB] Error in signature-based registration: {e}")
             return False
 
-    def ensure_default_users(self) -> bool:
-        """
-        Asegura que existan usuarios por defecto en la base de datos.
-        Crea un usuario 'admin' si no existe.
-        
-        Returns:
-            True si el usuario admin existe o fue creado correctamente
-        """
+    def _set_config(self, key: str, value: str) -> bool:
+        """Store a key-value setting in device_config."""
         try:
-            defaults = [
-                ('admin',    'CareOtter2026!', 'admin'),
-                ('admin123', 'admin123',        'admin'),
-                ('patient',  'patient123',      'patient'),
-            ]
-            for uname, pwd, role in defaults:
-                if not self.get_user_by_username(uname):
-                    if self.create_user(uname, pwd, role):
-                        logger.info(f"[DB] Default user created: {uname} ({role})")
-                    else:
-                        logger.warning(f"[DB] Failed to create default user: {uname}")
-
-            self.ensure_default_devices()
-            return True
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute('''
+                    INSERT INTO device_config (key, value, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (key, value))
+                conn.commit()
+                return True
         except Exception as e:
-            logger.error(f"[DB] Error ensuring default users: {e}")
+            logger.error(f"[DB] Error setting config {key}: {e}")
             return False
+
+    def get_device_ip(self) -> str:
+        """Return the dynamically-registered device WiFi IP, or empty string."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute(
+                    'SELECT value FROM device_config WHERE key = ?', ('device_ip',)
+                ).fetchone()
+                return row[0] if row else ''
+        except Exception as e:
+            logger.error(f"[DB] Error fetching device_ip: {e}")
+            return ''
+
+    def user_count(self) -> int:
+        """Return total number of registered users."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute('SELECT COUNT(*) FROM users').fetchone()
+                return row[0] if row else 0
+        except Exception as e:
+            logger.error(f"[DB] Error counting users: {e}")
+            return 0
     
     def list_users(self) -> List[Dict]:
         """

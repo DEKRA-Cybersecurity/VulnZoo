@@ -11,7 +11,7 @@ import java.nio.ByteOrder;
  * IgpClient — IGP v4 (IoT Gateway Protocol) binary TCP client.
  *
  * Protocol header (8 bytes, big-endian):
- *   [Magic(4)=0x474F4154 "GOAT"] [Cmd(1)] [Status(1)=0x00] [Len(2)]
+ *   [Magic(4)=0x43415245 "CARE"] [Cmd(1)] [Status(1)=0x00] [Len(2)]
  * Payload immediately follows. Server closes connection after response.
  *
  * VULNERABILITIES:
@@ -22,7 +22,7 @@ import java.nio.ByteOrder;
  */
 public class IgpClient {
 
-    private static final int    IGP_MAGIC      = 0x474F4154; // "GOAT"
+    private static final int    IGP_MAGIC      = 0x43415245; // "CARE"
     private static final int    DEFAULT_TIMEOUT = 5000;
 
     // VULNERABILITY: admin token XOR-obfuscated with key 0x5A — trivially reversible
@@ -44,6 +44,7 @@ public class IgpClient {
     public static final byte CMD_GET_LOG         = 0x0A;
     public static final byte CMD_DEFIBRILLATE    = 0x0B;
     public static final byte CMD_EMERGENCY_ALERT = 0x0C;
+    public static final byte CMD_DEAUTHENTICATE  = 0x0D;
 
     private final String host;
     private final int    port;
@@ -94,6 +95,14 @@ public class IgpClient {
     public String getVitals()      throws IOException { return send(CMD_GET_VITALS, null); }
     public String getLog()         throws IOException { return send(CMD_GET_LOG, null); }
     public String defibrillate()   throws IOException { return send(CMD_DEFIBRILLATE, "TRIGGER".getBytes()); }
+
+    /**
+     * 0x0D DEAUTHENTICATE — resetea authenticated=0 en el proceso careservice.
+     * Llamar tras cada operación protegida para cerrar la sesión de administrador
+     * y minimizar la ventana en la que el estado global authenticated=1 es
+     * explotable por otros clientes TCP directos al puerto 9999.
+     */
+    public String deauthenticate() throws IOException { return send(CMD_DEAUTHENTICATE, null); }
 
     public String verifyStatus(String module) throws IOException {
         return send(CMD_VERIFY_STATUS, module.getBytes());

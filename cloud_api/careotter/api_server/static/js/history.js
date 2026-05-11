@@ -18,7 +18,10 @@
         totalCount: 0,
         isLoading: false,
         chartBpm: null,
-        chartSpo2: null
+        chartSpo2: null,
+        deviceMac: null,
+        deviceName: null,
+        token: localStorage.getItem('careotter_token') || ''
     };
 
     // ── Theme Toggle ──────────────────────────────────────────────────────────
@@ -41,10 +44,35 @@
         });
     }
 
+    // ── Device Resolution ─────────────────────────────────────────────────────
+    async function resolveDevice() {
+        if (!state.token) return;
+        try {
+            const res = await fetch('/api/user/devices', {
+                headers: { 'Authorization': 'Bearer ' + state.token }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const devices = data.devices || [];
+            if (devices.length > 0) {
+                state.deviceMac  = devices[0].mac;
+                state.deviceName = devices[0].device_name || devices[0].mac;
+                const nameEl = document.getElementById('device-name');
+                if (nameEl) nameEl.textContent = state.deviceName;
+                const macEl = document.getElementById('device-mac');
+                if (macEl) macEl.textContent = state.deviceMac;
+            }
+        } catch (err) {
+            console.error('Failed to resolve device:', err);
+        }
+    }
+
     // ── API Functions ─────────────────────────────────────────────────────────
     async function fetchHistory(hours = CONFIG.defaultHours) {
         try {
-            const res = await fetch(`/api/vitals/db/history?hours=${hours}&limit=10000`);
+            let url = `/api/vitals/db/history?hours=${hours}&limit=10000`;
+            if (state.deviceMac) url += `&device_mac=${encodeURIComponent(state.deviceMac)}`;
+            const res = await fetch(url);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return await res.json();
         } catch (err) {
@@ -55,7 +83,9 @@
 
     async function fetchStats(hours = CONFIG.defaultHours) {
         try {
-            const res = await fetch(`/api/vitals/db/stats?hours=${hours}`);
+            let url = `/api/vitals/db/stats?hours=${hours}`;
+            if (state.deviceMac) url += `&device_mac=${encodeURIComponent(state.deviceMac)}`;
+            const res = await fetch(url);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return await res.json();
         } catch (err) {
@@ -456,9 +486,22 @@
         window.URL.revokeObjectURL(url);
     }
 
+    // ── Logout ────────────────────────────────────────────────────────────────
+    function initLogout() {
+        const btn = document.getElementById('btn-logout');
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+            localStorage.removeItem('careotter_token');
+            window.location.href = '/patient/login';
+        });
+    }
+
     // ── Initialization ────────────────────────────────────────────────────────
-    function init() {
+    async function init() {
         initThemeToggle();
+        initLogout();
+        await resolveDevice();
         initEventHandlers();
         loadData();
     }
