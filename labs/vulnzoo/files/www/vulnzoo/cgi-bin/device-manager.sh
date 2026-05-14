@@ -27,14 +27,23 @@ get_loaded_timestamp() {
 save_device_state() {
     local device="$1"
     local timestamp="$(date +%s)"
-    
+
     # Update UCI configuration (OpenWrt native way)
     uci -q delete vulnzoo.state 2>/dev/null || true
     uci set vulnzoo.state=section
     uci set vulnzoo.state.current_device="$device"
     uci set vulnzoo.state.loaded_timestamp="$timestamp"
     uci commit vulnzoo
-    
+
+    # CRITICAL: force the UCI commit to flush to flash. OpenWRT on RPi uses
+    # buffered writes (ext4/JFFS2) and we have observed cases where a reboot
+    # within seconds of the commit rolls back current_device=careotter to
+    # "none", losing all knowledge that a lab is loaded — the tarball stays
+    # extracted in the overlay but the cold-boot path in rc.local takes the
+    # "no device" branch and the lab never resumes. `sync` blocks until the
+    # write hits the storage device.
+    sync
+
     log_message "Device state saved in UCI: $device (timestamp: $timestamp)"
 }
 
@@ -87,6 +96,11 @@ load_device() {
     # Extract device configuration with root privileges
     log_message "Extracting device profile: $device_tar"
     if tar -xzf "$device_tar" -C "$EXTRACTION_TARGET" -o 2>/dev/null; then
+        # Flush so the on-disk overlay actually contains the new init.d/, rc.d/,
+        # /opt/ files before the hooks try to start the services. Avoids races
+        # where a quick reboot leaves a partial overlay (e.g. binary present
+        # but its rc.d symlink missing).
+        sync
         log_message "Device profile extracted successfully."
     else
         log_message "ERROR: Failed to extract device profile"

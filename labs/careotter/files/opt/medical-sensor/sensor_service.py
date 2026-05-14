@@ -40,6 +40,91 @@ def _get_eth0_mac() -> str:
     return "00:00:00:00:00:00"
 
 
+def _get_iface_ip(iface: str) -> str:
+    """Return the IPv4 address bound to ``iface`` or '0.0.0.0' if missing/down.
+    Same SIOCGIFADDR ioctl pattern that BLE server's ``_get_wlan0_ip`` uses.
+    Consumed by /health so the cloud API can switch Config.DEVICE_IP from
+    Ethernet to the freshly provisioned WiFi after a successful IGP 0x06."""
+    SIOCGIFADDR = 0x8915
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        res = fcntl.ioctl(s.fileno(), SIOCGIFADDR, iface.encode().ljust(40, b"\x00"))
+        s.close()
+        return socket.inet_ntoa(res[20:24])
+    except OSError:
+        return "0.0.0.0"
+
+
+def _list_wifi_candidates() -> list:
+    """Return every netdev the kernel marks as wireless, in detection order.
+
+    Three independent probes — OpenWRT 24.x with mac80211 only populates the
+    third one, so all three are required for portability across distros:
+
+      1. ``/proc/net/wireless`` (WEXT legacy) — present on most desktop distros
+         when CONFIG_CFG80211_WEXT is enabled, but **absent** on OpenWRT 24.x
+         which ships pure cfg80211/nl80211.
+      2. ``/sys/class/net/<iface>/wireless/`` (WEXT sysfs view) — same backing
+         as #1; absent on the same systems.
+      3. ``/sys/class/net/<iface>/phy80211`` symlink (cfg80211/nl80211) — the
+         canonical marker for any modern wireless netdev. Always present when
+         a wireless interface is registered through ``mac80211`` (OpenWRT,
+         recent kernels). Points to the underlying ``ieee80211/phyN``.
+    """
+    candidates: list = []
+    seen = set()
+
+    def add(name: str) -> None:
+        if name and name not in seen:
+            seen.add(name)
+            candidates.append(name)
+
+    try:
+        with open("/proc/net/wireless") as f:
+            for line in f.readlines()[2:]:
+                add(line.split(":", 1)[0].strip())
+    except OSError:
+        pass
+    try:
+        for entry in sorted(os.listdir("/sys/class/net")):
+            if os.path.isdir(f"/sys/class/net/{entry}/wireless"):
+                add(entry)
+    except OSError:
+        pass
+    try:
+        for entry in sorted(os.listdir("/sys/class/net")):
+            if os.path.islink(f"/sys/class/net/{entry}/phy80211"):
+                add(entry)
+    except OSError:
+        pass
+    return candidates
+
+
+def _get_wifi_iface() -> str:
+    """Auto-detect the WiFi station netdev regardless of driver naming.
+
+    Returns the first wireless netdev reported by the kernel (any of the three
+    probes in ``_list_wifi_candidates``). Empty string if no wireless iface is
+    registered (e.g. dev box without a radio).
+    """
+    cand = _list_wifi_candidates()
+    return cand[0] if cand else ""
+
+
+def _get_wifi_ip() -> tuple:
+    """Return ``(iface_name, ipv4)`` for the active WiFi station, or ``("","0.0.0.0")``.
+    Iterates every wireless netdev exposed by the kernel and returns the first
+    one that has a non-zero IPv4 bound — handles multi-radio Pis where the
+    primary station might not be the first kernel entry.
+    """
+    candidates = _list_wifi_candidates()
+    for name in candidates:
+        ip = _get_iface_ip(name)
+        if ip and ip != "0.0.0.0":
+            return name, ip
+    return (candidates[0] if candidates else ""), "0.0.0.0"
+
+
 _DEVICE_MAC = _get_eth0_mac()
 
 # ── Configuration ─────────────────────────────────────────
@@ -75,7 +160,7 @@ latest = {
 }
 lock = threading.Lock()
 log_lock = threading.Lock()
-log_buffer = []  # Buffer circular de logs
+log_buffer = []  # Circular log buffer
 
 # Alert thresholds — writable via POST /thresholds, BLE characteristic, and IGP 0x08 (via file)
 alert_thresholds = {"bpm_min": 40, "bpm_max": 120, "spo2_min": 90}
@@ -315,10 +400,17 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
         elif self.path == "/health":
+            wifi_iface, wifi_ip = _get_wifi_ip()
             body = json.dumps({
                 "status": "ok",
                 "service": "careotter-sensor",
                 "mac": _DEVICE_MAC,
+                "eth0_ip": _get_iface_ip("eth0"),
+                # New canonical fields — driver-agnostic (wlan0, phy0-sta0, wlp*, …)
+                "wifi_iface": wifi_iface,
+                "wifi_ip": wifi_ip,
+                # Back-compat alias — old cloud builds still look for wlan0_ip
+                "wlan0_ip": wifi_ip,
                 "uptime": int(time.time()),
             }).encode()
             self.send_response(200)

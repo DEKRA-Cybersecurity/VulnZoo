@@ -96,6 +96,24 @@ fi
 log_message "Enabling careservice..."
 /etc/init.d/careservice enable
 
+# Defensive: verify the rc.d symlink was actually created. `enable` is supposed
+# to create /etc/rc.d/S70careservice, but on some procd builds it can fail
+# silently if the procd cache is stale or if a prior watchdog reboot left
+# the overlay in an inconsistent state. Without this symlink the service
+# does NOT come back automatically after a Pi reboot.
+RC_SYMLINK="/etc/rc.d/S70careservice"
+if [ ! -L "$RC_SYMLINK" ]; then
+    log_message "WARNING: $RC_SYMLINK missing after enable — creating manually"
+    mkdir -p /etc/rc.d
+    ln -sf ../init.d/careservice "$RC_SYMLINK"
+    sync
+fi
+if [ -L "$RC_SYMLINK" ]; then
+    log_message "Confirmed boot-time auto-start: $RC_SYMLINK -> $(readlink "$RC_SYMLINK")"
+else
+    log_message "ERROR: could not create $RC_SYMLINK — service will NOT auto-start after reboot"
+fi
+
 # Start the service via procd
 log_message "Starting careservice on port $CARESERVICE_PORT via init script..."
 logger -t careotter-admin "Starting admin service (IGP protocol, port $CARESERVICE_PORT)"

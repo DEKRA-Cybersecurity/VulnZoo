@@ -1,0 +1,8 @@
+# CareOtter cron table
+
+# Hourly logrotate of medical-sensor logs (pre-existing)
+0 * * * * /usr/sbin/logrotate /etc/logrotate.d/medical-sensor
+
+# L3 BLE keepalive — every minute, hard-recover if the L1 watchdog
+# heartbeat is stale or the ble-server process is missing.
+* * * * * /usr/local/sbin/careotter-ble-keepalive.sh >/dev/null 2>&1

@@ -206,6 +206,26 @@ print(igp(0x08, tlv))                    # SET_THRESHOLD
 
 Python service (`/opt/medical-sensor/ble_server.py`) using `dbus_fast` over BlueZ D-Bus. Advertises as `CareOtter_HR`.
 
+> **Linux scanning tip — BlueZ discovery filter.** `bluetoothctl scan on` uses a
+> default `DiscoveryFilter` that drops adv reports below ≈−80 dBm and collapses
+> duplicates. The Pi BCM4345C0 PCB antenna typically arrives weaker than that, so
+> the device appears in `sudo btmon` (HCI layer) but **not** in `bluetoothctl`.
+> Set a permissive filter once per session before scanning:
+>
+> ```text
+> bluetoothctl
+> [bluetooth]# menu scan
+> [bluetooth]# transport le
+> [bluetooth]# rssi -100
+> [bluetooth]# duplicate-data on
+> [bluetooth]# pattern CareOtter
+> [bluetooth]# back
+> [bluetooth]# scan on
+> ```
+>
+> The exposed LE address (e.g. `43:45:C0:00:1F:AC`) is what subsequent `connect`
+> and `bleak` calls must target — not the BR/EDR address shown by `hciconfig`.
+
 | GATT Service                      | UUID             | Characteristic            | UUID             | Properties              |
 | --------------------------------- | ---------------- | ------------------------- | ---------------- | ----------------------- |
 | Heart Rate                        | `0000180d-…`     | HR Measurement            | `00002a37-…`     | notify, read            |

@@ -8,6 +8,7 @@ instance/
 .env.*
 .vscode/
 .claude/
+tools/
 docs/.obsidian/
 vulnzoo_app/.idea/
 vulnzoo_interface/

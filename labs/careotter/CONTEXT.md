@@ -83,6 +83,95 @@ Magic: 0x43415245 ("CARE")
 Payload: variable
 ```
 
+## BLE Auto-recovery (3-layer self-healing)
+
+The Cypress BCM43430 firmware shipped with the Raspberry Pi 3B+ periodically stops
+emitting LE advertising packets without notifying BlueZ. To keep the lab usable in an
+unattended training scenario (no operator restarting `ble_server.py` between sessions),
+three independent recovery layers cooperate so that any single failure mode converges
+back to a discoverable device within ~1 minute.
+
+| Layer | What | Where | Cadence | Recovers from |
+|---|---|---|---|---|
+| **L1** | `_advertising_watchdog()` asyncio task that re-registers the LE advertisement and stamps a heartbeat file | `ble_server.py` (`/opt/medical-sensor/`) | every 60 s + on process start | BlueZ silently stopped advertising |
+| **L2** | `procd_set_param respawn` (preexistente) | `/etc/init.d/ble-server` | on process death | `ble_server.py` crash / OOM kill |
+| **L3** | `careotter-ble-keepalive.sh` cron job that hard-resets the HCI stack when L1 heartbeat is stale | `/usr/local/sbin/careotter-ble-keepalive.sh` + cron entry in `/etc/crontabs/root` | every 60 s | Cypress controller wedged · `bluetoothd` hung · stack deadlocked at HCI level |
+
+### L1 — internal asyncio watchdog
+
+`ble_server.py` spawns `_advertising_watchdog()` from `main()`. The task:
+
+1. Writes `/tmp/ble_advertising_heartbeat` **immediately at startup** (avoids race with L3 during the first 60 s warm-up).
+2. Every `BLE_WATCHDOG_INTERVAL` seconds (default 60, override via env var) calls `_ensure_advertisement_registered()` (idempotent unregister + register) and refreshes the heartbeat.
+
+Inspect:
+```bash
+cat /tmp/ble_advertising_heartbeat                  # epoch seconds; refreshed every 60 s
+logread | grep "advertising watchdog armed"         # confirm task spawned this lifetime
+logread | grep "Advertising registrado/renovado"    # see successful re-registers
+```
+
+### L2 — procd respawn (preexisting)
+
+`/etc/init.d/ble-server` already declares `procd_set_param respawn`. No changes
+required for this layer; procd restarts `ble_server.py` ~5 s after any process death.
+
+### L3 — external keepalive (cron + hard HCI reset)
+
+`/usr/local/sbin/careotter-ble-keepalive.sh` runs every minute via cron. It:
+
+1. Checks the `ble_server.py` process is alive (start it if not).
+2. Computes process uptime from `/proc/<pid>/stat` and `/proc/uptime` (busybox-safe, no `stat` binary needed).
+3. Reads `/tmp/ble_advertising_heartbeat` and compares against `STALE_MAX` (default 180 s).
+4. If the heartbeat is stale **and** the process has been alive longer than `STALE_MAX`, performs a hard reset:
+   ```
+   /etc/init.d/ble-server stop
+   hciconfig hci0 down → up
+   /etc/init.d/bluetoothd restart
+   /etc/init.d/ble-server start
+   ```
+
+Inspect:
+```bash
+logread | grep careotter-ble-keepalive | tail
+grep keepalive /etc/crontabs/root                   # cron entry should be active
+```
+
+### Failure modes covered
+
+| Failure mode | Cured by | Recovery time |
+|---|---|---|
+| `ble_server.py` crashes / OOM | L2 procd respawn | ~5 s |
+| BlueZ stops advertising silently | L1 watchdog | ≤60 s |
+| Cypress HCI controller wedged | L3 `hciconfig down/up` | ≤60 s + ~5 s reset |
+| `bluetoothd` hung | L3 `bluetoothd restart` | ≤60 s + ~5 s reset |
+| All of the above simultaneously | L3 full chain (stop → HCI reset → daemon restart → start) | ≤60 s + ~5 s reset |
+
+### Regression test
+
+```bash
+# Force the L1 watchdog to be unable to refresh the heartbeat by SIGSTOPing
+# the python process. After STALE_MAX seconds, L3 should hard-reset.
+ssh root@192.168.2.1 '
+  rm -f /tmp/ble_advertising_heartbeat
+  kill -STOP $(pgrep -f ble_server.py)
+'
+
+# Wait at least STALE_MAX + 1 cron tick (default ~3 min total)
+sleep 200
+
+# Verify the keepalive triggered and the stack recovered
+ssh root@192.168.2.1 '
+  logread | grep "hard reset complete" | tail -1
+  cat /tmp/ble_advertising_heartbeat
+  pgrep -af ble_server.py
+'
+# Pi must be visible again from the Kali host
+bluetoothctl --timeout 8 scan le | grep CareOtter_HR
+```
+
+---
+
 ## Inputs
 
 | Layer | Source Path | Role/Description |
@@ -91,6 +180,8 @@ Payload: variable
 | **Layer 4** | `files/opt/medical-sensor/` | Sensor + BLE services |
 | **Layer 4** | `files/opt/careotter/` | Admin service (careservice) |
 | **Layer 4** | `files/etc/init.d/` | OpenWRT init scripts |
+| **Layer 4** | `files/etc/crontabs/root` | Cron entries (includes L3 BLE keepalive) |
+| **Layer 4** | `files/usr/local/sbin/careotter-ble-keepalive.sh` | L3 external watchdog |
 | **Layer 4** | `files/usr/lib/vulnzoo-hooks/` | Initialization hooks |
 | **Layer 4** | `CareOtterClient.java` | Android client reference |
 
@@ -198,6 +289,9 @@ The Android app connects to both services:
 - [ ] AUTH (0x02) accepts "OtterMobile2026"
 - [ ] Format string exploit leaks stack data
 - [ ] WiFi config readable after auth
+- [ ] `/tmp/ble_advertising_heartbeat` exists and is younger than 60 s (L1)
+- [ ] `crontab -l` lists `careotter-ble-keepalive.sh` running every minute (L3)
+- [ ] Regression test (`SIGSTOP` watchdog + wait 200 s) recovers automatically
 
 ## References
 

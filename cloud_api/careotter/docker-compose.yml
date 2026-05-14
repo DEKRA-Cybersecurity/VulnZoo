@@ -29,13 +29,25 @@ services:
       # If omitted, the Pi remains on Ethernet only.
       - WIFI_SSID=${WIFI_SSID:-}
       - WIFI_PSK=${WIFI_PSK:-}
+      # Host's WiFi-reachable IPv4 used by /api/health to advertise the cloud
+      # address back to the device. Required in bridge networking mode — the
+      # container cannot read host interfaces (wlan0, phy0-sta0, …) directly.
+      # Set it once before `docker compose up`:
+      #
+      #   export HOST_WIFI_IP=$(ip -4 -o addr show | \
+      #     awk '/wl|phy.*sta/{split($4,a,"/"); print a[1]; exit}')
+      #
+      # If unset and network_mode is bridge, /api/health returns wifi_ip=0.0.0.0.
+      - HOST_WIFI_IP=${HOST_WIFI_IP:-}
     volumes:
-      # Volumen persistente para la base de datos SQLite
+      # Persistent volume for the SQLite database
       - careotter_data:/app/data
     # Host networking: container shares the host network stack so requests to
     # the CareOtter Pi follow the host's normal routing table — typically the
     # default-gateway interface (e.g. wlan0 → 192.168.1.0/24 via the home
     # router) — without any hardcoded assumption about eth0 / 192.168.2.0/24.
+    # `ports:` is intentionally omitted — it is incompatible with host mode and
+    # the API is reachable directly on the host's PORT (5002) on every iface.
     ports:
       - "0.0.0.0:5002:5002"
     restart: unless-stopped

@@ -473,11 +473,11 @@ void handle_request(int c_fd) {
             break;
         }
 
-        /* ── 0x0D DEAUTHENTICATE — cierra la sesión de administrador ──────── */
-        /* Resetea el flag global authenticated=0. Llamar tras cada comando   */
-        /* protegido para minimizar la ventana de exposición del estado.       */
-        /* NOTA: no elimina la ventana de riesgo entre conexiones TCP          */
-        /* independientes — solo reduce su duración.                           */
+        /* ── 0x0D DEAUTHENTICATE — closes the administrator session ───────── */
+        /* Resets the global authenticated=0 flag. Call after each command    */
+        /* to minimize the exposure window of the state.                      */
+        /* NOTE: it does not eliminate the risk window between TCP connections */
+        /* — it only reduces its duration.                                    */
         case 0x0D: {
             authenticated = 0;
             send(c_fd, "DEAUTH_OK", 9, 0);

