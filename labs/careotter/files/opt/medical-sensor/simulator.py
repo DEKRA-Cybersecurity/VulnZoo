@@ -44,9 +44,9 @@ class MAX30102Simulator:
 
 def get_bus(real=False, bus_number=1, **kwargs):
     """
-    Punto de entrada único.
-    real=False  → simulador (sin hardware)
-    real=True   → smbus2 real (chip físico)
+    Single entry point.
+    real=False  → simulator (no hardware)
+    real=True   → real smbus2 (physical chip)
     """
     if real:
         import smbus2

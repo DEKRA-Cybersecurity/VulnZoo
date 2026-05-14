@@ -329,7 +329,7 @@ body {
 .alert-inline.success{ background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; }
 .alert-inline.info   { background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; }
 
-/* ── Badge de estado ───────────────────────────────────────────────────────── */
+/* ── Status badge ─────────────────────────────────────────────────────────── */
 .badge {
     display: inline-flex;
     align-items: center;
@@ -353,7 +353,7 @@ body {
     flex-shrink: 0;
 }
 
-/* ── Tabla de datos ────────────────────────────────────────────────────────── */
+/* ── Data table ───────────────────────────────────────────────────────────── */
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .data-table th {
     text-align: left;
@@ -373,7 +373,7 @@ body {
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: #f8fafc; }
 
-/* ── Bloque de código / pre ────────────────────────────────────────────────── */
+/* ── Code block / pre ─────────────────────────────────────────────────────── */
 .code-block {
     background: #0f172a;
     color: #e2e8f0;

@@ -1,8 +1,16 @@
 #!/bin/sh /etc/rc.common
 #
 # CareOtter Admin Service - CareService
-# Servicio de administración del dispositivo (puerto 9999)
+# Device administration service (port 9999)
 # Vulnerable a: Format String, Integer Underflow, Hardcoded Token
+#
+# Auto-start contract:
+#   * START=70 determines the boot-time order via /etc/rc.d/S70careservice.
+#   * That symlink is created by `/etc/init.d/careservice enable`, normally
+#     invoked from the 70-careotter-admin hook during the first lab load.
+#   * As a safety net the boot() function below ALSO calls `enable` on every
+#     boot — so if the hook ever fails mid-way during a load, the next reboot
+#     still wires the service up correctly without manual intervention.
 #
 
 START=70
@@ -12,28 +20,51 @@ USE_PROCD=1
 PROG=/opt/careotter/careservice
 PIDFILE=/var/run/careservice.pid
 
+boot() {
+    # Self-bootstrap on every cold boot:
+    #   1. `enable` is idempotent — it (re)creates /etc/rc.d/S70careservice if
+    #      missing. If the load hook crashed before reaching its own `enable`
+    #      call (e.g. watchdog reboot mid-hook), this is the only thing that
+    #      can recover the symlink so procd starts the service.
+    #   2. Then delegate to start(), which procd uses to (re-)spawn the binary.
+    enable
+    start "$@"
+}
+
 start_service() {
-    # Verificar que el binario existe
+    # Verify that the binary exists
     if [ ! -f "$PROG" ]; then
         logger -t careservice "ERROR: Binary not found at $PROG"
         return 1
     fi
 
-    # Verificar que no está ya corriendo
-    if [ -f "$PIDFILE" ]; then
-        old_pid=$(cat "$PIDFILE" 2>/dev/null)
-        if kill -0 "$old_pid" 2>/dev/null; then
-            logger -t careservice "Service already running (PID: $old_pid)"
-            return 0
-        fi
-        rm -f "$PIDFILE"
+    # Idempotency check: use `pidof` against the actual binary path instead
+    # of trusting $PIDFILE. procd does not always write the pidfile when
+    # supervising USE_PROCD=1 services, and a stale PID stored there can be
+    # recycled by an unrelated process — `kill -0 $stale_pid` then succeeds
+    # and the init script thinks careservice is alive when it isn't. We
+    # have observed this pattern in vulnzoo.log producing the misleading
+    # message "Service already running (PID: NNNN)" right before start
+    # returns 0 with no real careservice process.
+    existing_pid=$(pidof "$PROG" 2>/dev/null)
+    if [ -n "$existing_pid" ]; then
+        logger -t careservice "Service already running (PID: $existing_pid)"
+        return 0
     fi
+    rm -f "$PIDFILE"
 
     logger -t careservice "Starting CareOtter Admin Service on port 9999"
-    
+
     procd_open_instance
     procd_set_param command "$PROG"
-    procd_set_param respawn
+    # respawn <threshold> <timeout> <retry>
+    #   threshold = 3600s — long crash-counting window
+    #   timeout   = 5s    — wait before respawn
+    #   retry     = 0     — NEVER give up; otherwise procd marks the
+    #                       service disabled after a handful of fast
+    #                       crashes and start succeeds silently with
+    #                       no instance, which is the second bug we hit.
+    procd_set_param respawn 3600 5 0
     procd_set_param stdout 1
     procd_set_param stderr 1
     procd_set_param pidfile "$PIDFILE"
@@ -42,15 +73,36 @@ start_service() {
 
 stop_service() {
     logger -t careservice "Stopping CareOtter Admin Service"
+    # PIDFILE-driven kill (procd path).
     if [ -f "$PIDFILE" ]; then
         pid=$(cat "$PIDFILE" 2>/dev/null)
         kill "$pid" 2>/dev/null
         rm -f "$PIDFILE"
     fi
+    # Belt-and-suspenders: hunt any lingering instance by binary path that
+    # procd may have lost track of (otherwise start_service's idempotency
+    # check fires and reports "already running" forever).
+    pidof "$PROG" 2>/dev/null | xargs -r kill 2>/dev/null
+    sleep 1
+    pidof "$PROG" 2>/dev/null | xargs -r kill -9 2>/dev/null
 }
 
 reload_service() {
     logger -t careservice "Reloading CareOtter Admin Service"
     stop
+    start
+}
+
+restart() {
+    # Override /etc/rc.common's default restart, which under USE_PROCD=1
+    # routes through procd_kill. We have observed procd_kill returning
+    # "Command failed: Not found" when its instance table for careservice
+    # is empty ({}) — typically after a watchdog reboot mid-load or after
+    # procd has hit the respawn cap and discarded the instance. The
+    # stop() implementation above is binary-aware and recovers cleanly
+    # from that state, so a plain stop+start is more reliable here than
+    # delegating to procd's restart path.
+    stop
+    sleep 1
     start
 }

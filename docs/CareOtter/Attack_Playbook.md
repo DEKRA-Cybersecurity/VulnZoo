@@ -22,6 +22,27 @@
 
 ## Ground State
 
+> **BlueZ discovery filter (Linux attacker host).** Every chain that scans with
+> `bluetoothctl` assumes a permissive `DiscoveryFilter` is set first. The Pi
+> BCM4345C0 PCB antenna typically arrives at −85 dBm, below BlueZ's default
+> −80 dBm cutoff, so `scan on` shows nothing even when `sudo btmon` sees
+> `Name (complete): CareOtter_HR` at the HCI layer. Run this once per session
+> before any BLE chain (B, E, F):
+>
+> ```text
+> bluetoothctl
+> [bluetooth]# menu scan
+> [bluetooth]# transport le         # LE-only events
+> [bluetooth]# rssi -100             # accept weak signal
+> [bluetooth]# duplicate-data on     # do not collapse repeats
+> [bluetooth]# pattern CareOtter     # name/UUID/MAC match
+> [bluetooth]# back
+> [bluetooth]# scan on
+> ```
+>
+> Diagnostic: if `sudo btmon | grep -i careotter` shows adv but `bluetoothctl`
+> still does not list the device, the filter is the cause — not the radio.
+
 Before any attack chain begins, the system is in the following state:
 
 | Component | State |

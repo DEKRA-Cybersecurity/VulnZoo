@@ -900,6 +900,28 @@ The following walk-through uses **`bluetoothctl`**, the standard BlueZ interacti
 
 **Step 1 — Connect and enumerate GATT services (P1)**
 
+> **Prerequisite — lower the BlueZ discovery filter before `scan on`.**
+>
+> BlueZ default `DiscoveryFilter` rejects adv reports below ≈−80 dBm and collapses
+> duplicate packets. The Pi BCM4345C0 with PCB antenna typically arrives at −85 dBm
+> in the lab, so `bluetoothctl` shows nothing even when `sudo btmon` already sees
+> `Name (complete): CareOtter_HR` at the HCI layer. Set a permissive filter once
+> per session before scanning:
+>
+> ```text
+> bluetoothctl
+> [bluetooth]# menu scan
+> [bluetooth]# transport le
+> [bluetooth]# rssi -100
+> [bluetooth]# duplicate-data on
+> [bluetooth]# pattern CareOtter
+> [bluetooth]# back
+> [bluetooth]# scan on
+> ```
+>
+> After `[NEW] Device 43:45:C0:00:1F:AC CareOtter_HR` appears, `scan off` and
+> continue with `connect`.
+
 ```bash
 $ bluetoothctl
 [bluetooth]# connect 43:45:C0:00:1F:AC
@@ -1500,14 +1522,14 @@ print("[*] Waiting for admin to trigger any protected action on the device...")
 ##### Root Cause in `careservice.c`
 
 ```c
-/* careservice.c:35 — causa raíz: estado de auth global, no por conexión */
+/* careservice.c:35 — root cause: global auth state, not per connection */
 int authenticated = 0;
 
-/* main() loop — cada conexión hereda el estado global del proceso */
+/* main() loop — each connection inherits the process-global state */
 while (1) {
-    int c_fd = accept(s_fd, NULL, NULL);  /* nueva conexión TCP */
+    int c_fd = accept(s_fd, NULL, NULL);  /* new TCP connection */
     handle_request(c_fd);                 /* lee UN comando, responde */
-    close(c_fd);                          /* cierra socket — authenticated NO se resetea */
+    close(c_fd);                          /* close socket — authenticated is NOT reset */
 }
 ```
 

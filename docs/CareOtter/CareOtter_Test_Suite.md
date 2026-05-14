@@ -737,16 +737,16 @@ If an attacker forges a JWT with `sub='admin'` (possible because of API-01 Weak 
 
 #### Affected Endpoints
 
-| Method | Endpoint | Admin Function | Impact When Accessed by Patient |
-|--------|----------|----------------|--------------------------------|
-| `GET` | `/api/network` | Read WiFi configuration | **CWE-200** — PSK leaked in plaintext (`raw` field) |
-| `POST` | `/api/network/wifi` | Change WiFi via IGP 0x06 | **CWE-78** — Shell injection payload via SSID field → RCE on Pi |
-| `POST` | `/api/config/preferences` | Write TLV preferences | **CWE-681** — Integer underflow in TLV parsing → potential stack BOF |
-| `POST` | `/api/config/thresholds` | Set clinical alert thresholds | **Patient safety** — BPM/spO2 alarms silenced (bpm_min=0, spo2_min=0) |
-| `POST` | `/api/services/restart` | Restart init.d services | **DoS** — Medical sensor or BLE server stopped |
-| `GET` | `/api/logs` | Read device admin log | **CWE-200** — Internal firmware events and paths exposed |
-| `GET` | `/api/devices` | List all registered devices | **Privacy** — Other patients' MAC addresses and associations exposed |
-| `POST` | `/api/devices` | Register new device | **Integrity** — Rogue device MACs linked to arbitrary patients |
+| Method | Endpoint                  | Admin Function                | Impact When Accessed by Patient                                       |
+| ------ | ------------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| `GET`  | `/api/network`            | Read WiFi configuration       | **CWE-200** — PSK leaked in plaintext (`raw` field)                   |
+| `POST` | `/api/network/wifi`       | Change WiFi via IGP 0x06      | **CWE-78** — Shell injection payload via SSID field → RCE on Pi       |
+| `POST` | `/api/config/preferences` | Write TLV preferences         | **CWE-681** — Integer underflow in TLV parsing → potential stack BOF  |
+| `POST` | `/api/config/thresholds`  | Set clinical alert thresholds | **Patient safety** — BPM/spO2 alarms silenced (bpm_min=0, spo2_min=0) |
+| `POST` | `/api/services/restart`   | Restart init.d services       | **DoS** — Medical sensor or BLE server stopped                        |
+| `GET`  | `/api/logs`               | Read device admin log         | **CWE-200** — Internal firmware events and paths exposed              |
+| `GET`  | `/api/devices`            | List all registered devices   | **Privacy** — Other patients' MAC addresses and associations exposed  |
+| `POST` | `/api/devices`            | Register new device           | **Integrity** — Rogue device MACs linked to arbitrary patients        |
 
 #### Steps to Reproduce
 
@@ -1077,9 +1077,33 @@ The attacker begins by scanning the 2.4 GHz spectrum for nearby BLE peripherals.
 | Tool | Command / Action |
 |------|------------------|
 | nRF Connect (Android/iOS) | Scan → filter by name CareOtter_HR |
-| bluetoothctl (Linux) | scan on → info <MAC> |
+| bluetoothctl (Linux) | see "BlueZ discovery filter" box below |
 | hcitool | hcitool lescan |
 | Bleak (Python) | BleakScanner.discover() |
+
+> **BlueZ discovery filter — required when `scan on` does not list `CareOtter_HR`**
+>
+> The Raspberry Pi BCM4345C0 PCB antenna typically reports between −80 and −90 dBm
+> at lab distance. BlueZ default `DiscoveryFilter` drops everything below ≈−80 dBm
+> and collapses duplicate adv reports, so `bluetoothctl` shows nothing even though
+> `sudo btmon` is receiving `LE Advertising Report` packets at the HCI layer.
+> Lower the filter before starting the scan:
+>
+> ```text
+> bluetoothctl
+> [bluetooth]# menu scan
+> [bluetooth]# transport le         # only LE events (drop BR/EDR)
+> [bluetooth]# rssi -100             # accept weak signal (default ~-80)
+> [bluetooth]# duplicate-data on     # do not collapse repeated adv
+> [bluetooth]# pattern CareOtter     # match by name / UUID / MAC
+> [bluetooth]# back
+> [bluetooth]# scan on
+> ```
+>
+> If the device still does not appear, confirm at the HCI layer with
+> `sudo btmon | grep -i careotter` — if `btmon` sees `Name (complete): CareOtter_HR`
+> but `bluetoothctl` does not, the issue is purely the discovery filter (not the Pi
+> radio).
 
 What they would see in the advertisement:
 

@@ -15,9 +15,9 @@ uci set wireless.radio0.country='ES'
 uci set wireless.default_radio0.device='radio0'
 uci set wireless.default_radio0.mode='sta'
 uci set wireless.default_radio0.network='wwan'
-uci set wireless.default_radio0.ssid='TuRedWiFi'
+uci set wireless.default_radio0.ssid='YourSSID'
 uci set wireless.default_radio0.encryption='psk2'
-uci set wireless.default_radio0.key='TuPasswordSegura'
+uci set wireless.default_radio0.key='YourPassword'
 
 # Create network interface for WiFi client (no ifname: netifd assigns it)
 uci set network.wwan=interface

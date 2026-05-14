@@ -201,7 +201,7 @@ All listen on `0.0.0.0` (all interfaces), so they are reachable over both Ethern
 
 **Role:** Generates BPM/SpO2 readings and exposes them over HTTP.
 
-**Arquitectura interna:**
+**Internal architecture:**
 - **`sensor_loop` thread**: reads from the I2C bus (real or simulated) every 100ms. In simulated mode it generates random values around 72 BPM / 98% SpO2.
 - **`snapshot_loop` thread**: freezes a copy of `latest` every 10s in `vitals_snapshot`. All consumers (HTTP, BLE) read this snapshot, not the real-time value.
 - **Circular log buffer**: `log_buffer` keeps up to 1440 entries (~24h). Entries are summaries every 60s with averages, minimums, and maximums.

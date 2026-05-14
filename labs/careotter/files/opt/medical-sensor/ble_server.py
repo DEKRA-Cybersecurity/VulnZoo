@@ -24,7 +24,7 @@ from dbus_fast import Variant, BusType, Message, MessageType
 from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method, signal, dbus_property, PropertyAccess
 
-# URLs y configuración
+# URLs and configuration
 SENSOR_CONFIG_PATH = "/opt/medical-sensor/config.json"
 SENSOR_URL = "http://127.0.0.1:8081/vitals"
 DEVICE_NAME = "CareOtter_HR"
@@ -149,7 +149,7 @@ def _build_mfr_payload(api_url: str) -> bytes:
 # Any BLE scanner (nRF Connect, btmon, bleak) can read this without pairing.
 CAREOTTER_COMPANY_ID = 0x08D4
 
-# UUIDs estándar Bluetooth SIG
+# Standard Bluetooth SIG UUIDs
 HR_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
 HR_MEASUREMENT_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
 
@@ -212,35 +212,117 @@ _system_bus = None
 _ad_bus = None
 _ad_path = None
 _ad_reregister_lock: Optional[asyncio.Lock] = None
+# True when BlueZ currently holds a successful registration for our ad path.
+# Cleared by Release() (BlueZ tore it down) and by any failed register call.
+# Set by the next successful RegisterAdvertisement.
+_ad_is_registered: bool = False
 
 
 async def _ensure_advertisement_registered():
-    """Idempotently (re-)register the LE advertisement against BlueZ.
+    """Register the LE advertisement against BlueZ — truly idempotent.
 
-    BlueZ stops advertising under several conditions (peripheral connected on
-    chipsets with single-link limits, adapter power cycle, explicit Release()).
-    We unregister first to clear any stale registration, then re-register.
-    Both errors are silenced because the goal is simply to converge on the
-    "advertising" state, not to track exact BlueZ bookkeeping.
+    Skips all D-Bus work if ``_ad_is_registered`` is already True. This keeps
+    the periodic watchdog (every ``BLE_WATCHDOG_INTERVAL`` seconds) from
+    bouncing a healthy advertisement, which on BCM4345C0 introduces a brief
+    off-air window AND can rotate the LE Random Address — both of which
+    cause scanners (bluetoothctl, Android, iOS) to lose sight of the
+    peripheral or treat each rotation as a new device.
+
+    BlueZ drops registrations under several conditions (peripheral connected
+    on single-link chipsets, adapter power cycle, explicit Release()).
+    Whenever any of those happen, ``_ad_is_registered`` is reset to False so
+    that the next watchdog tick — or the explicit Release()/disconnect
+    callbacks — performs an actual recovery.
     """
+    global _ad_reregister_lock, _ad_is_registered
     if _ad_bus is None or _ad_path is None:
         return
-    global _ad_reregister_lock
     if _ad_reregister_lock is None:
         _ad_reregister_lock = asyncio.Lock()
     async with _ad_reregister_lock:
+        if _ad_is_registered:
+            return  # healthy — do not bounce the radio
         try:
             introspection = await _ad_bus.introspect(BUS_NAME, ADAPTER_PATH)
             manager_obj = _ad_bus.get_proxy_object(BUS_NAME, ADAPTER_PATH, introspection)
             ad_manager = manager_obj.get_interface("org.bluez.LEAdvertisingManager1")
             try:
-                await ad_manager.call_unregister_advertisement(_ad_path)
-            except Exception:
-                pass  # not registered yet — fine
-            await ad_manager.call_register_advertisement(_ad_path, {})
-            print("[BLE] Advertising registrado/renovado")
+                await ad_manager.call_register_advertisement(_ad_path, {})
+                _ad_is_registered = True
+                print("[BLE] Advertising registered")
+                return
+            except Exception as e:
+                # AlreadyExists means BlueZ still has our registration from a
+                # previous run — treat as success and stop touching the radio.
+                if "AlreadyExists" in str(e) or "Already Exists" in str(e):
+                    _ad_is_registered = True
+                    print("[BLE] Advertising already registered in BlueZ (reused)")
+                    return
+                # Real failure — try a clean cycle (unregister + register) once.
+                try:
+                    await ad_manager.call_unregister_advertisement(_ad_path)
+                except Exception:
+                    pass
+                await ad_manager.call_register_advertisement(_ad_path, {})
+                _ad_is_registered = True
+                print("[BLE] Advertising registered after cleanup")
         except Exception as e:
+            _ad_is_registered = False
             print(f"[BLE] _ensure_advertisement_registered error: {e}")
+
+
+# L1 watchdog — periodic self-healing of the LE advertisement.
+#
+# BlueZ only invokes Release() on the advertisement when *it* tears the
+# registration down (client disconnect on single-link chipsets, adapter power
+# cycle, explicit UnregisterAdvertisement). The Cypress BCM43430 firmware on
+# the Pi 3B/4 occasionally stops emitting adverts on its own without notifying
+# BlueZ — the controller stays UP, the bluetoothd process is happy, the
+# ble_server.py process is happy, but no LE Advertising Report ever reaches a
+# scanner. procd respawn cannot detect this (the process did not crash).
+#
+# This watchdog runs as a background asyncio task and re-registers the
+# advertisement every BLE_WATCHDOG_INTERVAL seconds.  The re-registration is
+# idempotent (unregister + register) and does not tear down any GATT
+# connections that may already be established. A heartbeat file is written
+# on every successful tick so the L3 external keepalive (cron) can detect
+# total stack lock-ups that even D-Bus cannot recover from.
+BLE_WATCHDOG_INTERVAL = int(os.getenv("BLE_WATCHDOG_INTERVAL", "60"))
+BLE_HEARTBEAT_FILE   = os.getenv("BLE_HEARTBEAT_FILE", "/tmp/ble_advertising_heartbeat")
+
+
+def _write_heartbeat():
+    """Stamp the L1 heartbeat file with the current epoch second.
+
+    The external L3 keepalive (cron) treats a missing or stale file as a
+    signal to hard-reset the stack. We write the file from the very first
+    moment the watchdog runs to prevent a race between the L1 warm-up
+    window (BLE_WATCHDOG_INTERVAL) and the L3 cron tick (1 min)."""
+    try:
+        with open(BLE_HEARTBEAT_FILE, "w") as f:
+            f.write(f"{int(time.time())}\n")
+    except Exception as e:
+        print(f"[BLE] heartbeat write failed: {e}")
+
+
+async def _advertising_watchdog():
+    """Re-register the LE advertisement on a fixed cadence and emit a
+    heartbeat file. Survives transient D-Bus errors and adapter glitches."""
+    print(f"[BLE] advertising watchdog armed (every {BLE_WATCHDOG_INTERVAL}s)")
+    # Stamp the heartbeat right away so the L3 keepalive does not flap us
+    # during the first BLE_WATCHDOG_INTERVAL seconds after process start.
+    _write_heartbeat()
+    while True:
+        try:
+            await asyncio.sleep(BLE_WATCHDOG_INTERVAL)
+            await _ensure_advertisement_registered()
+            _write_heartbeat()
+        except asyncio.CancelledError:
+            print("[BLE] advertising watchdog cancelled")
+            raise
+        except Exception as e:
+            # Never let an exception kill the watchdog — log and continue.
+            print(f"[BLE] advertising watchdog error: {e}")
 
 
 def _schedule_advertisement_reregister():
@@ -409,7 +491,7 @@ def fetch_vitals():
 
 
 class HeartRateMeasurementChrc(ServiceInterface):
-    """Característica de Medición de Frecuencia Cardíaca (0x2A37)"""
+    """Heart Rate Measurement Characteristic (0x2A37)"""
     
     def __init__(self):
         super().__init__("org.bluez.GattCharacteristic1")
@@ -444,20 +526,20 @@ class HeartRateMeasurementChrc(ServiceInterface):
     def StartNotify(self):
         global notifying_hr
         notifying_hr = True
-        print(f"[BLE] Notificaciones HR activadas")
+        print(f"[BLE] HR notifications enabled")
     
     @method()
     def StopNotify(self):
         global notifying_hr
         notifying_hr = False
-        print(f"[BLE] Notificaciones HR detenidas")
+        print(f"[BLE] HR notifications stopped")
     
     @signal()
     def PropertiesChanged(self, interface: "s", changed: "a{sv}", invalidated: "as") -> "sa{sv}as":
         return [interface, changed, invalidated]
     
     async def update_and_notify(self):
-        """Actualiza valor y envía notificación si hay suscriptores"""
+        """Update the value and send a notification if there are subscribers."""
         fetch_vitals()
         bpm = int(latest_vitals["bpm"])
         self.value = [0x06, bpm]
@@ -465,13 +547,13 @@ class HeartRateMeasurementChrc(ServiceInterface):
         if notifying_hr:
             try:
                 _notify_characteristic(APP_PATH + "/service0/char0", bytes(self.value))
-                print(f"[BLE] Notificación HR: {bpm} BPM")
+                print(f"[BLE] HR notification: {bpm} BPM")
             except Exception as e:
                 print(f"[BLE] Error notificando HR: {e}")
 
 
 class PulseOximeterChrc(ServiceInterface):
-    """Característica de Oxímetro de Pulso (0x2A5F)"""
+    """Pulse Oximeter Characteristic (0x2A5F)"""
     
     def __init__(self):
         super().__init__("org.bluez.GattCharacteristic1")
@@ -507,20 +589,20 @@ class PulseOximeterChrc(ServiceInterface):
     def StartNotify(self):
         global notifying_spo2
         notifying_spo2 = True
-        print(f"[BLE] Notificaciones SpO2 activadas")
+        print(f"[BLE] SpO2 notifications enabled")
     
     @method()
     def StopNotify(self):
         global notifying_spo2
         notifying_spo2 = False
-        print(f"[BLE] Notificaciones SpO2 detenidas")
+        print(f"[BLE] SpO2 notifications stopped")
     
     @signal()
     def PropertiesChanged(self, interface: "s", changed: "a{sv}", invalidated: "as") -> "sa{sv}as":
         return [interface, changed, invalidated]
     
     async def update_and_notify(self):
-        """Actualiza valor y envía notificación si hay suscriptores"""
+        """Update the value and send a notification if there are subscribers."""
         fetch_vitals()
         spo2 = int(latest_vitals["spo2"])
         bpm = int(latest_vitals["bpm"])
@@ -529,19 +611,19 @@ class PulseOximeterChrc(ServiceInterface):
         if notifying_spo2:
             try:
                 _notify_characteristic(APP_PATH + "/service1/char0", bytes(self.value))
-                print(f"[BLE] Notificación SpO2: {spo2}%")
+                print(f"[BLE] SpO2 notification: {spo2}%")
             except Exception as e:
                 print(f"[BLE] Error notificando SpO2: {e}")
 
 
 class BatteryLevelChrc(ServiceInterface):
-    """Característica de Nivel de Batería (0x2A19)"""
+    """Battery Level Characteristic (0x2A19)"""
     
     def __init__(self):
         super().__init__("org.bluez.GattCharacteristic1")
         self.uuid = BATTERY_LEVEL_UUID
         self.flags = ["read"]
-        self.value = [85]  # 85% batería
+        self.value = [85]  # 85% battery
         
     @dbus_property(access=PropertyAccess.READ)
     def UUID(self) -> "s":
@@ -765,13 +847,13 @@ class AlertThresholdChrc(ServiceInterface):
     def StartNotify(self):
         global notifying_alert
         notifying_alert = True
-        print("[BLE] Notificaciones AlertThreshold activadas")
+        print("[BLE] AlertThreshold notifications enabled")
 
     @method()
     def StopNotify(self):
         global notifying_alert
         notifying_alert = False
-        print("[BLE] Notificaciones AlertThreshold detenidas")
+        print("[BLE] AlertThreshold notifications stopped")
 
     @signal()
     def PropertiesChanged(self, interface: "s", changed: "a{sv}", invalidated: "as") -> "sa{sv}as":
@@ -989,7 +1071,7 @@ class ProvisioningConfigChrc(ServiceInterface):
 
 
 class GattService(ServiceInterface):
-    """Servicio GATT"""
+    """GATT service"""
     
     def __init__(self, uuid: str, primary: bool = True):
         super().__init__("org.bluez.GattService1")
@@ -1083,9 +1165,13 @@ class Advertisement(ServiceInterface):
     def Release(self):
         # BlueZ calls Release() when it stops advertising on our behalf
         # (peripheral connection on single-link chipsets, adapter power cycle,
-        # explicit UnregisterAdvertisement, …). Re-arm advertising so the
+        # explicit UnregisterAdvertisement, …). Clear the cached "is
+        # registered" flag so the idempotent helper actually performs the
+        # re-registration on the next tick, then re-arm advertising so the
         # device stays discoverable to subsequent clients.
-        print("[BLE] Advertising liberado por BlueZ — reprogramando RegisterAdvertisement")
+        global _ad_is_registered
+        _ad_is_registered = False
+        print("[BLE] Advertising released by BlueZ — reprogramming RegisterAdvertisement")
         _schedule_advertisement_reregister()
 
 
@@ -1133,12 +1219,12 @@ def _force_random_static_address() -> None:
 
 
 async def setup_adapter(bus: MessageBus):
-    """Configura el adaptador Bluetooth"""
+    """Configure the Bluetooth adapter."""
     introspection = await bus.introspect(BUS_NAME, ADAPTER_PATH)
     adapter_obj = bus.get_proxy_object(BUS_NAME, ADAPTER_PATH, introspection)
     adapter = adapter_obj.get_interface("org.bluez.Adapter1")
 
-    # Usar set_ methods para propiedades
+    # Use set_ methods for properties
     await adapter.set_alias(DEVICE_NAME)
     await adapter.set_powered(True)
     await adapter.set_discoverable(True)
@@ -1148,32 +1234,32 @@ async def setup_adapter(bus: MessageBus):
     # AA:AA:AA:AA:AA:AA sentinel. Done AFTER the adapter is powered.
     _force_random_static_address()
 
-    print(f"[BLE] Adaptador configurado: {DEVICE_NAME}")
+    print(f"[BLE] Adapter configured: {DEVICE_NAME}")
 
 
 async def register_app(bus: MessageBus):
-    """Registra la aplicación GATT"""
+    """Register the GATT application."""
     introspection = await bus.introspect(BUS_NAME, ADAPTER_PATH)
     manager_obj = bus.get_proxy_object(BUS_NAME, ADAPTER_PATH, introspection)
     gatt_manager = manager_obj.get_interface("org.bluez.GattManager1")
     
     await gatt_manager.call_register_application(APP_PATH, {})
-    print("[BLE] Aplicación GATT registrada")
+    print("[BLE] GATT application registered")
 
 
 async def register_advertisement(bus: MessageBus, ad_path: str):
-    """Registra el advertising"""
+    """Register advertising."""
     introspection = await bus.introspect(BUS_NAME, ADAPTER_PATH)
     manager_obj = bus.get_proxy_object(BUS_NAME, ADAPTER_PATH, introspection)
     ad_manager = manager_obj.get_interface("org.bluez.LEAdvertisingManager1")
     
     await ad_manager.call_register_advertisement(ad_path, {})
-    print("[BLE] Advertising registrado")
+    print("[BLE] Advertising registered")
 
 
 async def update_loop(hr_chrc: HeartRateMeasurementChrc, plx_chrc: PulseOximeterChrc,
                       alert_chrc: AlertThresholdChrc):
-    """Loop de actualización de valores y notificaciones — 2s interval"""
+    """Value and notification update loop — 2s interval"""
     while True:
         await asyncio.sleep(2)
         await hr_chrc.update_and_notify()
@@ -1182,7 +1268,7 @@ async def update_loop(hr_chrc: HeartRateMeasurementChrc, plx_chrc: PulseOximeter
 
 
 def log_connection_event(event_type, name, mac):
-    """Escribe eventos de conexión BLE a log y archivo."""
+    """Write BLE connection events to the log and file."""
     ts = time.strftime('%Y-%m-%d %H:%M:%S')
     msg = f"[BLE] {event_type}: {name} ({mac})"
     print(msg)
@@ -1194,7 +1280,7 @@ def log_connection_event(event_type, name, mac):
 
 
 async def monitor_connections(bus: MessageBus):
-    """Monitorea PropertiesChanged de BlueZ para detectar conexiones/disconexiones."""
+    """Monitor BlueZ PropertiesChanged to detect connections and disconnections."""
     def on_message(msg):
         if msg.interface != "org.freedesktop.DBus.Properties" or msg.member != "PropertiesChanged":
             return
@@ -1206,10 +1292,10 @@ async def monitor_connections(bus: MessageBus):
             return
         
         connected = changed["Connected"].value
-        # Extraer MAC de la ruta D-Bus: /org/bluez/hci0/dev_XX_XX_XX_XX_XX_XX
+        # Extract the MAC from the D-Bus path: /org/bluez/hci0/dev_XX_XX_XX_XX_XX_XX
         mac = msg.path.split("/")[-1].replace("dev_", "").replace("_", ":")
         
-        # Intentar obtener nombre del dispositivo del diccionario changed
+        # Try to obtain the device name from the changed dictionary
         name = changed.get("Name", Variant("s", "Unknown")).value if isinstance(changed.get("Name"), Variant) else "Unknown"
         
         if connected is True:
@@ -1228,24 +1314,24 @@ async def monitor_connections(bus: MessageBus):
 
 
 async def main():
-    print("[BLE] Iniciando CareOtter BLE GATT Server")
-    print("[BLE] Usando dbus-fast para OpenWRT")
+    print("[BLE] Starting CareOtter BLE GATT Server")
+    print("[BLE] Using dbus-fast for OpenWRT")
     
-    # Configurar entorno D-Bus
+    # Configure the D-Bus environment
     if "DBUS_SYSTEM_BUS_ADDRESS" not in os.environ:
         os.environ["DBUS_SYSTEM_BUS_ADDRESS"] = "unix:path=/run/dbus/system_bus_socket"
     
-    # Conectar a D-Bus system
+    # Connect to the system D-Bus
     try:
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         global _system_bus
         _system_bus = bus
-        print(f"[BLE] Conectado a D-Bus: {bus.unique_name}")
+        print(f"[BLE] Connected to D-Bus: {bus.unique_name}")
     except Exception as e:
-        print(f"[BLE] Error conectando a D-Bus: {e}")
+        print(f"[BLE] Error connecting to D-Bus: {e}")
         sys.exit(1)
     
-    # Crear servicios
+    # Create services
     hr_service    = GattService(HR_SERVICE_UUID)
     plx_service   = GattService(PLX_SERVICE_UUID)
     batt_service  = GattService(BATTERY_SERVICE_UUID)
@@ -1253,7 +1339,7 @@ async def main():
     alert_service = GattService(ALERT_SERVICE_UUID)
     prov_service  = GattService(PROV_SERVICE_UUID, primary=False)  # hidden secondary
 
-    # Crear características
+    # Create characteristics
     hr_chrc     = HeartRateMeasurementChrc()
     plx_chrc    = PulseOximeterChrc()
     batt_chrc   = BatteryLevelChrc()
@@ -1263,10 +1349,10 @@ async def main():
     prov_cfg_chrc = ProvisioningConfigChrc()
     prov_auth_chrc = ProvisioningAuthChrc()
 
-    # Crear ObjectManager
+    # Create ObjectManager
     obj_manager = ObjectManager()
 
-    # Exportar objetos al bus
+    # Export objects to the bus
     bus.export(APP_PATH, obj_manager)
     bus.export(APP_PATH + "/service0", hr_service)
     bus.export(APP_PATH + "/service1", plx_service)
@@ -1283,7 +1369,7 @@ async def main():
     bus.export(APP_PATH + "/service5/char0", prov_cfg_chrc)
     bus.export(APP_PATH + "/service5/char1", prov_auth_chrc)
 
-    # Asociar características a servicios
+    # Associate characteristics with services
     hr_service.add_characteristic(APP_PATH + "/service0/char0")
     plx_service.add_characteristic(APP_PATH + "/service1/char0")
     batt_service.add_characteristic(APP_PATH + "/service2/char0")
@@ -1332,7 +1418,7 @@ async def main():
     _add_chrc(APP_PATH + "/service5/char0", prov_cfg_chrc)
     _add_chrc(APP_PATH + "/service5/char1", prov_auth_chrc)
 
-    # Crear y exportar advertising
+    # Create and export advertising
     ad = Advertisement()
     ad_path = "/org/careotter/advertisement0"
     bus.export(ad_path, ad)
@@ -1343,26 +1429,26 @@ async def main():
     _ad_bus = bus
     _ad_path = ad_path
 
-    # Configurar adaptador
+    # Configure adapter
     await setup_adapter(bus)
 
-    # Registrar aplicación GATT
+    # Register GATT application
     await register_app(bus)
 
-    # Registrar advertising
+    # Register advertising
     await register_advertisement(bus, ad_path)
 
-    print("[BLE] Servidor iniciado correctamente")
-    print("[BLE] Servicios:")
+    print("[BLE] Server started successfully")
+    print("[BLE] Services:")
     print(f"       - Heart Rate (0x180D):          {HR_MEASUREMENT_UUID}")
     print(f"       - Pulse Oximeter (0x1822):       {PLX_CONTINUOUS_UUID}")
     print(f"       - Battery (0x180F):              {BATTERY_LEVEL_UUID}")
     print(f"       - Device Information (0x180A):   {DEVINFO_SERVICE_UUID}")
     print(f"       - Alert Threshold (custom):      {ALERT_THRESHOLD_UUID}")
     print(f"       - Factory Provisioning (hidden): {PROV_SERVICE_UUID}  <-- NOT advertised")
-    print("[BLE] Esperando conexiones...")
+    print("[BLE] Waiting for connections...")
 
-    # Iniciar monitor de conexiones
+    # Start connection monitor
     await monitor_connections(bus)
     
     # Fetch initial vitals so BLE characteristics have real values before first notify
@@ -1371,10 +1457,15 @@ async def main():
     # Periodic vitals cache refresh (30s) — keeps BLE and HTTP /vitals in sync
     asyncio.create_task(_vitals_refresh_loop())
 
-    # Loop de actualización de notificaciones GATT (2s)
+    # GATT notification update loop (2s)
     asyncio.create_task(update_loop(hr_chrc, plx_chrc, alert_chrc))
-    
-    # Mantener corriendo
+
+    # L1 self-healing — periodic LE advertisement refresh + heartbeat.
+    # Fixes the "process alive but advertising stopped" Cypress quirk that
+    # procd respawn cannot detect.
+    asyncio.create_task(_advertising_watchdog())
+
+    # Keep running
     while True:
         await asyncio.sleep(1)
 
