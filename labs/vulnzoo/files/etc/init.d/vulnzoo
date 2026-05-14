@@ -28,20 +28,34 @@ start() {
     # Restore device state if there was one loaded
     if [ "$current_device" != "none" ] && [ -n "$current_device" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Restoring device state: $current_device" >> "$LOG_FILE"
-        
+
         # Find and extract device
         local device_file="$DEVICES_DIR/$current_device.tar.gz"
         if [ -f "$device_file" ]; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Re-extracting device: $current_device" >> "$LOG_FILE"
-            cd /
-            tar -xzf "$device_file" 2>/dev/null
-            
+            # Idempotency guard: skip re-extraction if device-manager.sh just
+            # loaded this profile (UCI loaded_timestamp within the last 60 s).
+            # Otherwise a live load triggers a destructive tar over running
+            # services and a second hook pass that hangs the BLE/D-Bus stack
+            # → watchdog reboot. See note in device-manager.sh load_device().
+            local last_load
+            last_load=$(uci -q get vulnzoo.state.loaded_timestamp 2>/dev/null)
+            local now
+            now=$(date +%s)
+            if [ -n "$last_load" ] && [ "$last_load" -gt 0 ] 2>/dev/null \
+                && [ $((now - last_load)) -lt 60 ]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Skipping re-extraction (loaded $((now - last_load))s ago — live load, not cold boot)" >> "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Re-extracting device: $current_device" >> "$LOG_FILE"
+                cd /
+                tar -xzf "$device_file" 2>/dev/null
+            fi
+
             # Start device services if init script exists
             if [ -f "/etc/init.d/${current_device}" ]; then
                 echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Starting device service: $current_device" >> "$LOG_FILE"
                 /etc/init.d/"${current_device}" start
             fi
-            
+
             echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] Device state restored successfully: $current_device" >> "$LOG_FILE"
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] WARNING: Device file not found for restoration: $device_file" >> "$LOG_FILE"

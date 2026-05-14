@@ -278,11 +278,11 @@ asyncio.run(main())
 The script extracts the key from the APK, forges a valid CSCP v1 packet with lethal thresholds, connects without pairing, and writes it to `0xFF01`. The device accepts it immediately.
 
 By analyzing the GATT attribute, you can identify that it is writable (WRITE property) and that the value handling follows the CSCP v1 format.
-![[initial_thresholds.png|300]]
+![[mobile_initial_thresholds.png|300]]
 
-![[overwrite_thresholds.png]]
+![[mobile_overwrite_thresholds.png]]
 
-![[thresholds_changed.png|500]]
+![[mobile_thresholds_changed.png|500]]
 
 ### Comparison: Without CSCP v1 vs With CSCP v1
 

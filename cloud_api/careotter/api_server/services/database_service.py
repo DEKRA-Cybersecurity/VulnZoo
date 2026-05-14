@@ -1,8 +1,8 @@
 """
-database_service.py — Servicio de persistencia SQLite para CareOtter
+database_service.py — SQLite persistence service for CareOtter
 
-Almacena lecturas de vitales, eventos del dispositivo y configuración
-de forma persistente en una base de datos SQLite embebida.
+Stores vital readings, device events, and configuration persistently
+in an embedded SQLite database.
 """
 
 import sqlite3
@@ -12,27 +12,27 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
-# Configurar logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
     """
-    Servicio de base de datos SQLite para almacenar datos del dispositivo CareOtter.
+    SQLite database service for storing CareOtter device data.
     """
 
     def __init__(self, db_path: str = None):
         """
-        Inicializa el servicio de base de datos.
+        Initializes the database service.
         
         Args:
-            db_path: Ruta al archivo SQLite. Si es None, usa la variable
-                    de entorno DB_PATH o default '/app/data/careotter.db'
+            db_path: Path to the SQLite file. If None, uses the
+                    DB_PATH environment variable or default '/app/data/careotter.db'
         """
         self.db_path = db_path or os.getenv('DB_PATH', '/app/data/careotter.db')
         
-        # Asegurar que el directorio existe
+        # Ensure the directory exists
         db_dir = os.path.dirname(self.db_path)
         if db_dir and not os.path.exists(db_dir):
             try:
@@ -40,7 +40,7 @@ class DatabaseService:
                 logger.info(f"[DB] Created database directory: {db_dir}")
             except Exception as e:
                 logger.error(f"[DB] Failed to create directory {db_dir}: {e}")
-                # Fallback a directorio temporal si no podemos crear el directorio
+                # Fallback to a temporary directory if we cannot create the directory
                 self.db_path = '/tmp/careotter.db'
                 logger.warning(f"[DB] Falling back to: {self.db_path}")
         
@@ -55,7 +55,7 @@ class DatabaseService:
             raise
 
     def _init_db(self):
-        """Inicializa el esquema de la base de datos si no existe."""
+        """Initializes the database schema if it does not exist."""
         with sqlite3.connect(self.db_path) as conn:
             conn.executescript('''
                 CREATE TABLE IF NOT EXISTS users (
@@ -155,15 +155,15 @@ class DatabaseService:
     
     def create_user(self, username: str, password: str, role: str = 'user') -> bool:
         """
-        Crea un nuevo usuario.
+        Creates a new user.
         
         Args:
-            username: Nombre de usuario único
-            password: Contraseña en plaintext (se almacena como hash SHA-256)
-            role: Rol del usuario (admin, user, doctor, etc.)
+            username: Unique username
+            password: Plaintext password (stored as a SHA-256 hash)
+            role: User role (admin, user, doctor, etc.)
             
         Returns:
-            True si se creó correctamente, False si ya existe o falló
+            True if created successfully, False if it already exists or failed
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -201,13 +201,13 @@ class DatabaseService:
     
     def get_user_by_username(self, username: str) -> Optional[Dict]:
         """
-        Obtiene un usuario por su nombre de usuario.
+        Gets a user by username.
         
         Args:
-            username: Nombre de usuario
+            username: Username
             
         Returns:
-            Diccionario con datos del usuario o None si no existe
+            Dictionary with user data or None if not found
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -224,15 +224,15 @@ class DatabaseService:
     
     def verify_user(self, username: str, password: str) -> Optional[Dict]:
         """
-        Verifica credenciales de un usuario.
+        Verifies a user's credentials.
         
         Args:
-            username: Nombre de usuario
-            password: Contraseña en plaintext
+            username: Username
+            password: Plaintext password
             
         Returns:
-            Diccionario con datos del usuario (sin password_hash) si es válido,
-            None si las credenciales son incorrectas
+            Dictionary with user data (without password_hash) if valid,
+            None if the credentials are incorrect
         """
         user = self.get_user_by_username(username)
         if not user:
@@ -269,7 +269,7 @@ class DatabaseService:
             return False
 
     def get_device(self, mac: str) -> Optional[Dict]:
-        """Return device info including owning patient username."""
+        """Return device info including the owning patient username."""
         mac = mac.upper()
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -341,7 +341,7 @@ class DatabaseService:
         """Register a device using its factory signature.
 
         The bedside monitor sends this payload after being provisioned via BLE.
-        VULNERABILITY: signature is hardcoded and identical across all devices,
+        VULNERABILITY: the signature is hardcoded and identical across all devices,
         so any attacker who captures it can register a rogue device.
         """
         if signature != self.EXPECTED_DEVICE_SIGNATURE:
@@ -406,10 +406,10 @@ class DatabaseService:
     
     def list_users(self) -> List[Dict]:
         """
-        Lista todos los usuarios (sin password_hash).
+        Lists all users (without password_hash).
         
         Returns:
-            Lista de diccionarios con datos de usuarios
+            List of dictionaries with user data
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -424,14 +424,14 @@ class DatabaseService:
     
     def update_user_role(self, username: str, new_role: str) -> bool:
         """
-        Actualiza el rol de un usuario.
+        Updates a user's role.
         
         Args:
-            username: Nombre de usuario
-            new_role: Nuevo rol
+            username: Username
+            new_role: New role
             
         Returns:
-            True si se actualizó correctamente
+            True if updated successfully
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -450,13 +450,13 @@ class DatabaseService:
     
     def delete_user(self, username: str) -> bool:
         """
-        Elimina un usuario.
+        Deletes a user.
         
         Args:
-            username: Nombre de usuario a eliminar
+            username: Username to delete
             
         Returns:
-            True si se eliminó correctamente
+            True if deleted successfully
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -474,10 +474,10 @@ class DatabaseService:
             return False
 
     def store_vitals(self, data: dict, device_mac: str = None) -> bool:
-        """Almacena una lectura de vitales asociada a la MAC del dispositivo.
+        """Stores a vital reading associated with the device MAC.
 
-        Si device_mac no se pasa, se intenta leer de data['device_mac'].
-        Si la MAC no está registrada, la lectura se rechaza.
+        If device_mac is not provided, it tries to read data['device_mac'].
+        If the MAC is not registered, the reading is rejected.
         """
         mac = (device_mac or data.get('device_mac', '')).upper()
         if not mac:
@@ -510,7 +510,7 @@ class DatabaseService:
 
     def get_vitals_history(self, hours: int = 24, limit: int = 1000,
                            device_mac: str = None) -> List[Dict]:
-        """Historial de vitales con info del dispositivo y paciente propietario."""
+        """Vital history with device info and owning patient."""
         since = (datetime.now() - timedelta(hours=hours)).timestamp()
         mac = device_mac.upper() if device_mac else None
         try:
@@ -544,7 +544,7 @@ class DatabaseService:
             return []
 
     def get_vitals_stats(self, hours: int = 24, device_mac: str = None) -> Dict:
-        """Estadísticas agregadas, opcionalmente filtradas por MAC de dispositivo."""
+        """Aggregated statistics, optionally filtered by device MAC."""
         since = (datetime.now() - timedelta(hours=hours)).timestamp()
         mac = device_mac.upper() if device_mac else None
         try:
@@ -603,13 +603,13 @@ class DatabaseService:
 
     def get_vitals_count(self, hours: int = 24) -> int:
         """
-        Obtiene el número total de lecturas en un período.
+        Gets the total number of readings over a period.
         
         Args:
-            hours: Número de horas hacia atrás
+            hours: Number of hours to look back
             
         Returns:
-            Número de lecturas
+            Number of readings
         """
         since = (datetime.now() - timedelta(hours=hours)).timestamp()
         
@@ -627,22 +627,22 @@ class DatabaseService:
 
     def get_db_info(self) -> Dict:
         """
-        Obtiene información sobre la base de datos para debugging.
+        Gets database information for debugging.
         
         Returns:
-            Diccionario con info de la BD
+            Dictionary with database info
         """
         try:
-            # Verificar que el archivo existe
+            # Check whether the file exists
             file_exists = os.path.exists(self.db_path)
             file_size = os.path.getsize(self.db_path) if file_exists else 0
             
             with sqlite3.connect(self.db_path) as conn:
-                # Contar registros totales
+                # Count total records
                 cursor = conn.execute('SELECT COUNT(*) FROM vitals_readings')
                 total_records = cursor.fetchone()[0]
                 
-                # Obtener rango de fechas
+                # Get date range
                 cursor = conn.execute('''
                     SELECT MIN(timestamp), MAX(timestamp) FROM vitals_readings
                 ''')
@@ -667,15 +667,15 @@ class DatabaseService:
     def log_event(self, event_type: str, details: str = None, 
                   ip_address: str = None) -> bool:
         """
-        Registra un evento del dispositivo.
+        Records a device event.
         
         Args:
-            event_type: Tipo de evento (auth_success, auth_fail, etc.)
-            details: Detalles adicionales del evento
-            ip_address: Dirección IP del cliente
+            event_type: Event type (auth_success, auth_fail, etc.)
+            details: Additional event details
+            ip_address: Client IP address
             
         Returns:
-            True si se registró correctamente
+            True if recorded successfully
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -691,25 +691,25 @@ class DatabaseService:
 
     def cleanup_old_data(self, days: int = 30) -> int:
         """
-        Elimina datos antiguos para mantener el tamaño de la base de datos.
+        Deletes old data to keep the database size under control.
         
         Args:
-            days: Número de días a mantener
+            days: Number of days to keep
             
         Returns:
-            Número de registros eliminados
+            Number of deleted records
         """
         cutoff = datetime.now() - timedelta(days=days)
         
         try:
             with sqlite3.connect(self.db_path) as conn:
-                # Eliminar lecturas antiguas
+                # Delete old readings
                 cursor = conn.execute('''
                     DELETE FROM vitals_readings WHERE timestamp < ?
                 ''', (cutoff.timestamp(),))
                 vitals_deleted = cursor.rowcount
                 
-                # Eliminar eventos antiguos
+                # Delete old events
                 cursor = conn.execute('''
                     DELETE FROM device_events WHERE timestamp < ?
                 ''', (cutoff,))

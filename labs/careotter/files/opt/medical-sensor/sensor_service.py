@@ -42,7 +42,7 @@ def _get_eth0_mac() -> str:
 
 _DEVICE_MAC = _get_eth0_mac()
 
-# ── Configuración ─────────────────────────────────────────
+# ── Configuration ─────────────────────────────────────────
 CONFIG_FILE = "/opt/medical-sensor/config.json"
 THRESH_FILE = "/tmp/careotter.thresholds"
 
@@ -60,10 +60,11 @@ SPO2_BASE = cfg.get("spo2", 98)
 HTTP_PORT = cfg.get("http_port", 8081)
 LOG_FILE = cfg.get("log_file", "/tmp/medical-logs/vitals.log")
 SAMPLE_RATE_HZ = cfg.get("sample_rate", 10)
-SUMMARY_EVERY = cfg.get("summary_every_s", 60)  # Segundos entre resúmenes
-LOG_BUFFER_MAX = cfg.get("log_buffer_max", 1440)  # Máximo entradas en buffer
+SUMMARY_EVERY = cfg.get("summary_every_s", 60)  # Seconds between summaries
+LOG_BUFFER_MAX = cfg.get("log_buffer_max", 1440)  # Maximum entries in buffer
+API_KEY = cfg.get("api_key", "careotter-2024-lab")
 
-# ── Estado compartido ──────────────────────────────────────
+# ── Shared state ──────────────────────────────────────────
 latest = {
     "bpm": BPM_BASE,
     "spo2": SPO2_BASE,
@@ -122,20 +123,20 @@ SNAPSHOT_INTERVAL = 10
 vitals_snapshot: dict = {}
 snapshot_lock = threading.Lock()
 
-# ── Log rotación support ───────────────────────────────────
+# ── Log rotation support ───────────────────────────────────
 class LogReopener:
-    """Maneja la reapertura de logs ante señal SIGUSR1"""
+    """Handles log reopening on SIGUSR1."""
     def __init__(self, log_path):
         self.log_path = log_path
         self._file = None
         self._open()
     
     def _open(self):
-        """Abre el archivo de log"""
+        """Opens the log file."""
         try:
             if self._file:
                 self._file.close()
-            # Asegurar que el directorio existe
+            # Ensure the directory exists
             if self.log_path:
                 os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
             self._file = open(self.log_path, "a") if self.log_path else None
@@ -143,12 +144,12 @@ class LogReopener:
             sys.stderr.write(f"[medical-sensor] Error opening log: {e}\n")
     
     def reopen(self):
-        """Reabre el archivo (llamado por SIGUSR1)"""
+        """Reopens the file (called by SIGUSR1)."""
         sys.stdout.write("[medical-sensor] Reopening log file (SIGUSR1)\n")
         self._open()
     
     def write(self, data):
-        """Escribe datos al log"""
+        """Writes data to the log."""
         if self._file:
             try:
                 self._file.write(data)
@@ -160,27 +161,27 @@ class LogReopener:
         if self._file:
             self._file.close()
 
-# Instancia global del logger
+# Global logger instance
 logger = LogReopener(LOG_FILE)
 
-# ── Función de logging con buffer ─────────────────────────
+# ── Buffered logging function ────────────────────────────
 def append_log(entry):
-    """Añade entrada al buffer y opcionalmente a archivo"""
+    """Adds an entry to the buffer and optionally to the file."""
     with log_lock:
         log_buffer.append(entry)
         if len(log_buffer) > LOG_BUFFER_MAX:
             log_buffer.pop(0)
     
-    # Escribir a archivo fuera del lock (si está configurado)
+    # Write to the file outside the lock (if configured)
     if LOG_FILE:
         try:
             logger.write(json.dumps(entry) + "\n")
         except Exception as e:
             sys.stderr.write(f"[medical-sensor] Error writing to log file: {e}\n")
 
-# ── Manejo de señales ─────────────────────────────────────
+# ── Signal handling ───────────────────────────────────────
 def handle_sigusr1(signum, frame):
-    """Manejador de SIGUSR1 para log rotation"""
+    """SIGUSR1 handler for log rotation."""
     logger.reopen()
 
 def handle_sighup(signum, frame):
@@ -188,14 +189,14 @@ def handle_sighup(signum, frame):
     _load_thresholds_from_file()
 
 def handle_shutdown(signum, frame):
-    """Manejador de SIGTERM/SIGINT"""
+    """SIGTERM/SIGINT handler."""
     sys.stdout.write("[medical-sensor] Shutting down...\n")
     logger.close()
     sys.exit(0)
 
-# ── Cálculo BPM desde señal PPG ───────────────────────────
+# ── BPM calculation from PPG signal ───────────────────────
 def calculate_bpm(red_samples, sample_rate):
-    """Detección de picos simple sobre buffer de muestras."""
+    """Simple peak detection over a sample buffer."""
     if len(red_samples) < 4:
         return BPM_BASE
     mean = sum(red_samples) / len(red_samples)
@@ -208,13 +209,13 @@ def calculate_bpm(red_samples, sample_rate):
     duration = len(red_samples) / sample_rate
     return int((peaks / duration) * 60) if duration > 0 else BPM_BASE
 
-# ── Loop de lectura del sensor ─────────────────────────────
+# ── Sensor read loop ──────────────────────────────────────
 def sensor_loop():
     bus = get_bus(real=USE_REAL_HW, bpm=BPM_BASE, spo2=SPO2_BASE)
     red_buffer = []
     interval = 1.0 / SAMPLE_RATE_HZ
     
-    # Acumuladores para resúmenes
+    # Accumulators for summaries
     bpm_accum = []
     spo2_accum = []
     sample_count = 0
@@ -227,21 +228,21 @@ def sensor_loop():
             ir = (raw[3] << 16 | raw[4] << 8 | raw[5]) & 0x3FFFF
 
             red_buffer.append(red)
-            # Buffer de 60 segundos para tener suficientes muestras a cualquier sample_rate
+            # 60-second buffer to keep enough samples at any sample rate
             if len(red_buffer) > SAMPLE_RATE_HZ * 60:
                 red_buffer.pop(0)
 
-            # En modo simulado, usar valores base saludables; en hardware real, calcular de la señal
+            # In simulated mode, use healthy base values; on real hardware, calculate from the signal
             if USE_REAL_HW:
                 bpm = calculate_bpm(red_buffer, SAMPLE_RATE_HZ)
-                # SpO2 desde ratio IR/RED (solo hardware real)
+                # SpO2 from the IR/RED ratio (real hardware only)
                 spo2 = min(100, int(110 - 25 * (red / max(ir, 1))))
             else:
-                # Simulación: valores saludables constantes
+                # Simulation: constant healthy values
                 import random
-                # BPM: variación pequeña alrededor del valor base (60-100 es normal en reposo)
+                # BPM: small variation around the base value (60-100 is normal at rest)
                 bpm = max(60, min(100, BPM_BASE + random.randint(-3, 3)))
-                # SpO2: constante en 98% (rango saludable normal: 95-100%)
+                # SpO2: constant at 98% (normal healthy range: 95-100%)
                 spo2 = 98
 
             with lock:
@@ -253,12 +254,12 @@ def sensor_loop():
                     "timestamp": time.time(),
                 })
 
-            # Acumular para resumen
+            # Accumulate for the summary
             bpm_accum.append(bpm)
             spo2_accum.append(spo2)
             sample_count += 1
             
-            # Generar resumen cuando toque
+            # Generate a summary when due
             if sample_count >= samples_per_summary:
                 summary = {
                     "bpm_avg": round(sum(bpm_accum) / len(bpm_accum), 1),
@@ -273,7 +274,7 @@ def sensor_loop():
                 }
                 append_log(summary)
                 
-                # Resetear acumuladores
+                # Reset accumulators
                 bpm_accum = []
                 spo2_accum = []
                 sample_count = 0
@@ -283,13 +284,27 @@ def sensor_loop():
 
         time.sleep(interval)
 
-# ── Servidor HTTP ──────────────────────────────────────────
+# ── HTTP server ───────────────────────────────────────────
 class VitalsHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
-        pass  # Silenciar log HTTP por defecto
+        pass  # Silence default HTTP logging
+
+    def _check_auth(self) -> bool:
+        return self.headers.get("X-API-Key", "") == API_KEY
+
+    def _send_401(self):
+        body = json.dumps({"error": "unauthorized", "X-API-Key": "invalid"}).encode()
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_GET(self):
         if self.path == "/vitals":
+            if not self._check_auth():
+                self._send_401()
+                return
             with snapshot_lock:
                 data = dict(vitals_snapshot) if vitals_snapshot else dict(latest)
             body = json.dumps(data).encode()
@@ -313,16 +328,22 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
         elif self.path == "/reload":
-            """Endpoint para forzar reopen de logs (alternativa a SIGUSR1)"""
+            if not self._check_auth():
+                self._send_401()
+                return
+            """Endpoint to force log reopening (SIGUSR1 alternative)."""
             logger.reopen()
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"log reopened")
         
         elif self.path == "/log":
-            """Devuelve el buffer completo de logs"""
+            if not self._check_auth():
+                self._send_401()
+                return
+            """Returns the full log buffer."""
             with log_lock:
-                data = list(log_buffer)  # Copia para evitar race conditions
+                data = list(log_buffer)  # Copy to avoid race conditions
             body = json.dumps(data).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -331,7 +352,10 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         
         elif self.path == "/log/last":
-            """Devuelve solo el último log"""
+            if not self._check_auth():
+                self._send_401()
+                return
+            """Returns only the most recent log entry."""
             with log_lock:
                 data = log_buffer[-1] if log_buffer else {}
             body = json.dumps(data).encode()
@@ -342,20 +366,10 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         
         elif self.path == "/config":
-            # VULNERABILITY: _simulator_pid and _sensor_mode exposed — information disclosure
-            config = {
-                "use_real_hardware": USE_REAL_HW,
-                "bpm": BPM_BASE,
-                "spo2": SPO2_BASE,
-                "http_port": HTTP_PORT,
-                "log_file": LOG_FILE,
-                "sample_rate": SAMPLE_RATE_HZ,
-                "summary_every_s": SUMMARY_EVERY,
-                "log_buffer_max": LOG_BUFFER_MAX,
-                "_simulator_pid": os.getpid(),
-                "_sensor_mode": "fake" if not USE_REAL_HW else "real",
-            }
-            body = json.dumps(config).encode()
+            if not self._check_auth():
+                self._send_401()
+                return
+            body = json.dumps(dict(cfg)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", len(body))
@@ -363,6 +377,9 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
         elif self.path == "/alerts":
+            if not self._check_auth():
+                self._send_401()
+                return
             with lock:
                 bpm = latest["bpm"]
                 spo2 = latest["spo2"]
@@ -392,6 +409,9 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
         elif self.path.startswith("/history"):
+            if not self._check_auth():
+                self._send_401()
+                return
             # VULNERABILITY: minutes parameter accepted without validation
             # minutes=99999 returns full buffer without error
             from urllib.parse import urlparse, parse_qs
@@ -419,8 +439,10 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        if not self._check_auth():
+            self._send_401()
+            return
         if self.path == "/thresholds":
-            # VULNERABILITY: no authentication required — any client can change alert thresholds
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length)
             try:
@@ -471,20 +493,20 @@ def snapshot_loop():
 
 # ── Main ───────────────────────────────────────────────────
 def main():
-    # Configurar manejadores de señales
+    # Configure signal handlers
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGUSR1, handle_sigusr1)  # Para logrotate
+    signal.signal(signal.SIGUSR1, handle_sigusr1)  # For logrotate
     signal.signal(signal.SIGHUP,  handle_sighup)   # Reload thresholds from file
 
-    # Hilo sensor en background
+    # Background sensor thread
     t = threading.Thread(target=sensor_loop, daemon=True)
     t.start()
 
     # Snapshot thread — freezes latest every 30s for /vitals
     threading.Thread(target=snapshot_loop, daemon=True).start()
 
-    # Servidor HTTP en primer plano
+    # Foreground HTTP server
     server = HTTPServer(("0.0.0.0", HTTP_PORT), VitalsHandler)
     sys.stdout.write(f"[medical-sensor] Listening on :{HTTP_PORT}\n")
     sys.stdout.write(f"[medical-sensor] Log file: {LOG_FILE}\n")
@@ -493,7 +515,7 @@ def main():
     sys.stdout.write("[medical-sensor] Send SIGUSR1 to reopen logs (logrotate)\n")
     sys.stdout.flush()
 
-    # Load thresholds from careservice file if it already exists
+    # Load thresholds from the careservice file if it already exists
     _load_thresholds_from_file()
 
     # Background thread: auto-reload thresholds when careservice updates the file

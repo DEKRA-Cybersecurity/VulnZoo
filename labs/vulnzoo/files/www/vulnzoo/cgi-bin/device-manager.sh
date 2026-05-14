@@ -113,14 +113,17 @@ load_device() {
     save_device_state "$device_type"
     log_message "Device state saved in UCI before rc.local execution"
 
-    # Execute device rc.local if it exists
-    if [ -f "/etc/rc.local" ]; then
-        log_message "Executing device rc.local script"
-        /etc/rc.local >/dev/null 2>&1 &
-        log_message "Device rc.local executed in background"
-    else
-        log_message "No rc.local found for device $device_type"
-    fi
+    # NOTE: /etc/rc.local is intentionally NOT invoked here.
+    # rc.local + /etc/init.d/vulnzoo are designed to RESTORE state on a cold
+    # boot — they re-extract the tarball and re-run all hooks. Invoking them
+    # mid-load (right after the hooks above just succeeded) caused:
+    #   * tar -xzf overwriting binaries/configs of services already running
+    #   * 50-medical-sensor.sh failing because :8081 was still bound
+    #   * 55-ble-server.sh killing the live BLE process and racing D-Bus
+    #     registration → asyncio hang → watchdog reboot
+    #   * 75-firewall.sh reloading firewall and dropping active SSH/uhttpd
+    # rc.local will run as expected on the next real reboot.
+    log_message "Skipping /etc/rc.local invocation — hooks already executed in-line (rc.local is for cold boot only)"
     
     # Restart web services - uhttpd configuration is handled by device hooks
     log_message "Restarting web services after device hooks execution"
@@ -170,8 +173,8 @@ restore_original_system() {
     fi
 }
 
-stop_device() {
-    log_message "Stopping current device"
+reset_device() {
+    log_message "Resetting current device"
     
     local device_type="$(get_current_device)"
     
@@ -183,29 +186,29 @@ stop_device() {
         return 1
     fi
     
-    log_message "Stopping device: $device_type"
-    stop_device_internal "$device_type"
+    log_message "Resetting device: $device_type"
+    reset_device_internal "$device_type"
     
     # Clear device state from UCI
     clear_device_state
     
     echo "Content-Type: application/json"
     echo ""
-    echo "{\"success\": true, \"message\": \"Device $device_type stopped\"}"
+    echo "{\"success\": true, \"message\": \"Device $device_type reset\"}"
 }
 
-stop_device_internal() {
+reset_device_internal() {
     local device_type="$1"
     
     # Restore original system configuration
-    log_message "Restoring original system after stopping device: $device_type"
+    log_message "Restoring original system after resetting device: $device_type"
     if restore_original_system; then
         log_message "System successfully restored to original state"
     else
         log_message "WARNING: Failed to restore original system state"
     fi
     
-    log_message "Device $device_type stopped and system restored"
+    log_message "Device $device_type reset and system restored"
 }
 
 get_status() {
@@ -304,8 +307,8 @@ case "$action" in
     "load")
         load_device "$device"
         ;;
-    "stop") 
-        stop_device "$device"
+    "reset") 
+        reset_device "$device"
         ;;
     "status"|"get_status")
         get_status

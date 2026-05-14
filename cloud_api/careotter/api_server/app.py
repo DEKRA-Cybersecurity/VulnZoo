@@ -87,7 +87,7 @@ try:
     db = DatabaseService()
     logger.info(f"[App] Database initialized at: {Config.DB_PATH}")
     # NO default users are created at startup — the device must register itself
-    # via POST /admin/device/register (or fallback /initialize_iot for attackers).
+    # via POST /admin/device/register (or fallback GET /initialize_iot for lab operators).
     user_count = db.user_count() if db else 0
     logger.info(f"[App] Users in database: {user_count} (0 = waiting for device registration)")
 except Exception as e:
@@ -536,7 +536,7 @@ def get_my_device():
     token = auth_header.split(' ', 1)[1].strip()
     result = JWTService.decode_token(token)
     payload = result.get('payload', {})
-    username = payload.get('username')
+    username = payload.get('sub') or payload.get('username')
 
     if not username:
         return jsonify({'error': 'Unable to identify user from token'}), 400
@@ -734,21 +734,16 @@ def test_db_store():
 
 @app.route('/hint')
 def hint():
-    """Unauthenticated hint endpoint.
 
-    VULNERABILITY: exposed to any visitor who scans the Cloud API ports.
-    The message is intentionally vague — it tells the attacker that the device
-    needs provisioning, but does not mention the hidden BLE service directly.
-    Reversing the official CareOtter Medical Service configuration software
-    (or simply scanning BLE GATT services) reveals the Factory Provisioning
-    Channel (0xFF10) where WiFi and Cloud URL can be written.
-    """
     return (
+        "OUT-OF-SCOPE HINT: This endpoint is intentionally unauthenticated and provides a hint for attackers. "
         "CareOtter is in an initial state where it needs an administrator "
         "to configure it before it can connect to the cloud API. "
         "The use of CareOtter Medical Service configuration software is not authorized, "
         "but you can analyze how this software initializes the device "
         "and introduces it into a common network."
+        "You can also use /initialize_iot to create default users and trigger Ethernet mode, "
+        "so you can test another analysis and attack path when the IoT device has been initialized without going through the BLE provisioning flow."
     ), 200
 
 
@@ -805,13 +800,17 @@ def device_register():
     }), 200
 
 
-@app.route('/initialize_iot', methods=['POST'])
+@app.route('/initialize_iot', methods=['GET'])
 def initialize_iot():
-    """Fallback endpoint for lab playability.
+    """Automatic lab bootstrap endpoint.
 
-    If the attacker never discovers the BLE provisioning flow, calling this
-    endpoint creates default admin + patient users and falls back to Ethernet
-    polling (192.168.2.1) so the lab remains functional.
+    Creates default admin + patient users in SQLite and registers the CareOtter
+    device at its Ethernet address (192.168.2.1). If the environment variables
+    WIFI_SSID and WIFI_PSK are provided, the Cloud API automatically pushes
+    WiFi credentials to the Pi over IGP via the Ethernet link so the device
+    can join the same network as the Cloud API container.
+
+    No request body required — intended as a one-click GET for lab operators.
 
     Returns 409 if the system has already been initialized (users exist).
     """
@@ -824,21 +823,59 @@ def initialize_iot():
                      'Use /admin/device/register for signature-based registration.'
         }), 409
 
-    # Fallback: create default users and Ethernet device
+    # ── Ethernet fallback (direct cable) ───────────────────────────────────────
+    eth_ip = '192.168.2.1'
+    device_ip = Config.DEVICE_IP or eth_ip
+
+    # Seed users + device, persist the Ethernet IP as fallback.
     db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
     db.create_or_update_user('patient', 'patient123', 'patient')
     db.register_device('AA:BB:CC:DD:EE:FF', 'patient', 'CareOtter_HR')
-    db._set_config('device_ip', '192.168.2.1')
-    Config.DEVICE_IP = '192.168.2.1'
+    db._set_config('device_ip', device_ip)
+    Config.DEVICE_IP = device_ip
 
-    logger.warning("[App] FALLBACK /initialize_iot called — default users created, Ethernet mode")
+    # ── Optional auto-provision WiFi over Ethernet ─────────────────────────────
+    wifi_ssid = os.getenv('WIFI_SSID', '').strip()
+    wifi_psk  = os.getenv('WIFI_PSK',  '').strip()
+    wifi_result = None
+
+    if wifi_ssid and wifi_psk:
+        try:
+            # Force IGP traffic through the Ethernet link for this bootstrap step
+            original_ip = Config.DEVICE_IP
+            Config.DEVICE_IP = eth_ip
+            eth_device = DeviceService()
+            wifi_result = eth_device.set_wifi(wifi_ssid, wifi_psk)
+            Config.DEVICE_IP = original_ip
+            logger.info(
+                f"[App] /initialize_iot pushed WiFi credentials to {eth_ip}: "
+                f"{wifi_result}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[App] /initialize_iot WiFi push to {eth_ip} failed "
+                f"(device may be offline or careservice not running): {e}"
+            )
+            wifi_result = {'error': str(e), 'success': False}
+    else:
+        logger.info(
+            "[App] /initialize_iot: WIFI_SSID/WIFI_PSK not set — "
+            "skipping automatic WiFi provisioning. The Pi will remain on Ethernet."
+        )
+
+    logger.warning(
+        f"[App] /initialize_iot called — default users created, "
+        f"device_ip={device_ip}, wifi_ssid={'<set>' if wifi_ssid else '<not set>'}"
+    )
     return jsonify({
-        'status': 'initialized',
-        'message': 'Default users created. '
-                   'For the real provisioning flow, discover the hidden BLE service (0xFF10).',
-        'admin': {'username': 'admin', 'password': 'CareOtter2026!'},
-        'patient': {'username': 'patient', 'password': 'patient123'},
-        'device_ip': '192.168.2.1'
+        'status':    'initialized',
+        'message':   'Default users created. '
+                     'For the real provisioning flow, discover the hidden BLE service (0xFF10).',
+        'admin':     {'username': 'admin',   'password': 'CareOtter2026!'},
+        'patient':   {'username': 'patient', 'password': 'patient123'},
+        'device_ip': device_ip,
+        'wifi_provisioned': bool(wifi_ssid and wifi_psk and wifi_result and wifi_result.get('success')),
+        'wifi_result': wifi_result
     }), 200
 
 

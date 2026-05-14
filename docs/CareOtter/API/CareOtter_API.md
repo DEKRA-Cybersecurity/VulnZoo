@@ -176,7 +176,7 @@ Authorization: Bearer <JWT>
 |--------|----------|---------|-------------|
 | GET | `/api/health` | — | API status, version, device connectivity |
 | GET | `/hint` | — | Unauthenticated hint — reveals device needs provisioning |
-| POST | `/initialize_iot` | — | Fallback: creates default users + Ethernet device if none exist |
+| GET | `/initialize_iot` | — | **Out of scope** — lab playability fallback only. Auto-creates default users, uses Ethernet fallback (`192.168.2.1`), and optionally pushes WiFi credentials to the Pi via IGP if `WIFI_SSID`/`WIFI_PSK` env vars are set. Not part of attack chains. |
 | GET | `/api/device/info` | 0x01 SYS_INFO | Kernel version and architecture |
 | GET | `/api/device/status` | 0x05 VERIFY_STATUS | Module diagnostics (vulnerable to format string) |
 | GET | `/api/vitals` | HTTP :8081 | Current BPM/SpO2 from sensor |
@@ -204,9 +204,41 @@ initializes the device and introduces it into a common network.
 
 #### `/initialize_iot` — Fallback Lab Initialization
 
+> **⚠️ OUT OF SCOPE:** This endpoint is a **lab playability fallback** for Phase 2 (post-provisioning operational mode). It shortcuts the intended BLE provisioning flow and is **not part of any documented attack chain** in the CareOtter playbook. See `CareOtter.md` → *Lab Scope and Phases* for the boundary definition.
+
 ```bash
-curl -X POST http://localhost:5002/initialize_iot
+# No body required — one-click GET for lab operators
+curl -X GET http://localhost:5002/initialize_iot
 ```
+
+**Optional — automatic WiFi provisioning:**
+
+If you want `/initialize_iot` to also push WiFi credentials to the bedside monitor over IGP (so the Pi joins your WiFi network without manual BLE provisioning), set the `WIFI_SSID` and `WIFI_PSK` environment variables before starting the container.
+
+Using `docker run`:
+```bash
+docker run -e WIFI_SSID="MyNetwork" -e WIFI_PSK="secret123" -p 5002:5002 careotter-api
+```
+
+Using `docker compose` (add to `cloud_api/careotter/.env` or export in your shell):
+```bash
+# .env
+WIFI_SSID=MyNetwork
+WIFI_PSK=secret123
+```
+
+Then start the stack as usual:
+```bash
+cd cloud_api/careotter
+docker compose up -d --build
+
+# Trigger initialization — the Pi will receive the WiFi config over Ethernet
+curl http://localhost:5002/initialize_iot
+```
+
+> **What happens:** The Cloud API temporarily switches its IGP target to `192.168.2.1`, authenticates with the hardcoded admin token (`OtterMobile2026`), sends command `0x06 SET_WIFI` with the supplied SSID/PSK, then restores the original `DEVICE_IP`. The Pi's wireless interface (`phy0-sta0`) will attempt to associate with the network using UCI (`uci set wireless...@wifi-iface[0].ssid='...'`).
+
+![[initialize_iot.png]]
 
 **Response (200) — when DB is empty:**
 ```json
@@ -224,7 +256,7 @@ curl -X POST http://localhost:5002/initialize_iot
 {"error": "System already initialized. Use /admin/device/register for signature-based registration."}
 ```
 
-**Purpose:** Ensures the lab remains playable if the attacker never discovers the BLE provisioning vector. Creates default accounts and falls back to Ethernet polling (`192.168.2.1`).
+**Purpose (playability only):** Ensures the lab remains playable if the attacker never discovers the BLE provisioning vector. Creates default accounts and falls back to Ethernet polling (`192.168.2.1`). This is **not a vulnerability** to be tested or reported; it exists solely to prevent a dead-end lab state.
 
 ---
 
@@ -465,6 +497,8 @@ curl http://localhost:5002/api/health
 | `JWT_EXPIRATION_HOURS` | `8` | Token validity |
 | `PORT` | `5002` | API listening port |
 | `DB_PATH` | `/app/data/careotter.db` | SQLite database path |
+| `WIFI_SSID` | *(empty)* | WiFi network name to push to the device via `/initialize_iot` |
+| `WIFI_PSK` | *(empty)* | WiFi passphrase to push to the device via `/initialize_iot` |
 
 ---
 

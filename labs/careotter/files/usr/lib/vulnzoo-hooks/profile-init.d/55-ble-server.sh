@@ -36,52 +36,50 @@ if [ ! -f /opt/medical-sensor/ble_server.py ]; then
     exit 1
 fi
 
-# Stop any existing instance
-if [ -f "$PID_FILE" ]; then
-    old_pid=$(cat "$PID_FILE" 2>/dev/null)
-    if kill -0 "$old_pid" 2>/dev/null; then
-        log_message "Stopping existing BLE server (PID: $old_pid)"
-        kill "$old_pid" 2>/dev/null
-        sleep 2
-    fi
-    rm -f "$PID_FILE"
-fi
+# ============================================================================
+# START SERVICE (via procd init script for auto-restart on boot)
+# ============================================================================
 
-log_message "Starting BLE GATT server..."
-
-# Configure D-Bus environment for OpenWRT
-export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}"
-log_message "D-Bus system bus: ${DBUS_SYSTEM_BUS_ADDRESS}"
-
-# Configure BLE emission interval (seconds) - sync with sensor sample rate
-export BLE_INTERVAL="${BLE_INTERVAL:-1}"
-log_message "BLE emit interval: ${BLE_INTERVAL}s"
-
-# Start BLE server with unbuffered output (-u flag)
-BLE_SCRIPT="/opt/medical-sensor/ble_server.py"
-if [ -f "$BLE_SCRIPT" ]; then
-    $PYTHON_BIN -u "$BLE_SCRIPT" >> /tmp/ble_server.log 2>&1 &
-else
-    log_message "ERROR: ble_server.py not found"
+# Ensure the init script is present
+if [ ! -f /etc/init.d/ble-server ]; then
+    log_message "ERROR: /etc/init.d/ble-server not found"
     exit 1
 fi
-ble_pid=$!
 
-echo $ble_pid > "$PID_FILE"
+# Stop any existing instance first
+/etc/init.d/ble-server stop 2>/dev/null
+sleep 1
 
-sleep 3
-if kill -0 $ble_pid 2>/dev/null; then
-    log_message "BLE server started successfully (PID: $ble_pid)"
-    log_message "Device name: CareOtter_HR"
-    log_message "BLE UUIDs: HR=0000180d-, SpO2=c0a10001-, Battery=00002a19-"
-else
-    log_message "ERROR: BLE server failed to start"
-    log_message "Check /tmp/ble_server.log for details"
-    if [ -f /tmp/ble_server.log ]; then
-        log_message "Last 5 lines of ble_server.log:"
-        tail -5 /tmp/ble_server.log >> "$LOG_FILE"
+# Enable auto-start on boot
+log_message "Enabling BLE server service..."
+/etc/init.d/ble-server enable
+
+# Configure environment so procd inherits them
+export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}"
+export BLE_INTERVAL="${BLE_INTERVAL:-1}"
+log_message "D-Bus system bus: ${DBUS_SYSTEM_BUS_ADDRESS}"
+log_message "BLE emit interval: ${BLE_INTERVAL}s"
+
+# Start the service via procd
+log_message "Starting BLE GATT server via init script..."
+if /etc/init.d/ble-server start; then
+    sleep 3
+    # Verify it started
+    if [ -f /var/run/ble-server.pid ]; then
+        ble_pid=$(cat /var/run/ble-server.pid 2>/dev/null)
+        if kill -0 "$ble_pid" 2>/dev/null; then
+            log_message "BLE server started successfully (PID: $ble_pid)"
+            log_message "Device name: CareOtter_HR"
+            log_message "BLE UUIDs: HR=0000180d-, SpO2=c0a10001-, Battery=00002a19-"
+        else
+            log_message "ERROR: BLE server PID file exists but process is dead"
+            exit 1
+        fi
+    else
+        log_message "WARNING: BLE server PID file not found after start — checking procd status"
     fi
-    rm -f "$PID_FILE"
+else
+    log_message "ERROR: BLE server init script failed to start"
     exit 1
 fi
 
