@@ -3,7 +3,7 @@ let currentDevice = null;
 
 async function loadDevice(deviceType) {
     if (currentDevice) {
-        if (!confirm('Stop current device and load ' + deviceType + '?')) {
+        if (!confirm('Reset current device and load ' + deviceType + '?')) {
             return;
         }
     }
@@ -67,14 +67,14 @@ async function loadDevice(deviceType) {
     }, 20000);
 }
 
-function stopCurrentDevice() {
+function resetCurrentDevice() {
     if (!currentDevice) {
         alert('No device is currently running');
         return;
     }
 
-    console.log('Stopping device:', currentDevice);
-    updateStatus('Stopping device ' + currentDevice + '...');
+    console.log('Resetting device:', currentDevice);
+    updateStatus('Resetting device ' + currentDevice + '...');
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/cgi-bin/device-manager.sh', true);
@@ -82,26 +82,26 @@ function stopCurrentDevice() {
     
     xhr.onreadystatechange = function() {
         if (xhr.readyState === 4) {
-            console.log('Stop response status:', xhr.status);
-            console.log('Stop response text:', xhr.responseText);
+            console.log('Reset response status:', xhr.status);
+            console.log('Reset response text:', xhr.responseText);
             
             if (xhr.status === 200) {
                 try {
                     var data = JSON.parse(xhr.responseText);
                     if (data.success) {
                         document.getElementById('active-device').textContent = 'None';
-                        document.getElementById('device-status').textContent = 'Stopped';
-                        document.getElementById('device-status').className = 'status stopped';
+                        document.getElementById('device-status').textContent = 'Reset';
+                        document.getElementById('device-status').className = 'status reset';
                         document.querySelectorAll('.device-card').forEach(function(card) {
                             card.classList.remove('active');
                         });
                         currentDevice = null;
-                        updateStatus('Device stopped successfully');
+                        updateStatus('Device reset successfully');
                         
                         // Disable device interface buttons
                         disableAllDeviceInterfaces();
                     } else {
-                        updateStatus('Error stopping device: ' + (data.message || 'Unknown error'));
+                        updateStatus('Error resetting device: ' + (data.message || 'Unknown error'));
                     }
                 } catch (e) {
                     updateStatus('JSON parsing error: ' + e.message);
@@ -113,7 +113,7 @@ function stopCurrentDevice() {
         }
     };
     
-    var postData = 'action=stop&device=' + encodeURIComponent(currentDevice);
+    var postData = 'action=reset&device=' + encodeURIComponent(currentDevice);
     console.log('Sending POST data:', postData);
     xhr.send(postData);
 }

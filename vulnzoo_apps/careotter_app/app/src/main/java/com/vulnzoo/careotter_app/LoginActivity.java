@@ -113,7 +113,7 @@ public class LoginActivity extends AppCompatActivity {
             etHostOctet.setText(DEFAULT_HOST);
             tvStatus.setVisibility(android.view.View.VISIBLE);
             tvStatus.setTextColor(0xFF9AA0A6);
-            tvStatus.setText("Red detectada: " + prefix + DEFAULT_HOST);
+            tvStatus.setText("Network detected: " + prefix + DEFAULT_HOST);
         });
 
         // Ping the API server (ICMP reachability via InetAddress.isReachable)

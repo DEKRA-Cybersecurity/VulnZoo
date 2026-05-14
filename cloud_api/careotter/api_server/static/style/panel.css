@@ -1,4 +1,4 @@
-/* ── panel.css — estilos compartidos para todas las vistas del panel ───────── */
+/* ── panel.css — shared styles for all panel views ───────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {

@@ -18,7 +18,9 @@ RUN pip install --upgrade pip && \
 COPY ./ /careotter
 
 ENV VULNERABLE=1
-ENV DEVICE_IP=192.168.2.1
+# DEVICE_IP intentionally not set here — the device IP is learned at runtime
+# via POST /admin/device/register (BLE provisioning) or POST /initialize_iot
+# (fallback). Defaults to "" in config.py until then.
 ENV IGP_PORT=9999
 ENV HTTP_PORT=8081
 ENV PORT=5002

@@ -8,20 +8,36 @@ services:
     cpus: 1.0
     environment:
       - VULNERABLE=1
-      - DEVICE_IP=${DEVICE_IP:-192.168.2.1}
+      # DEVICE_IP starts empty on purpose. The CareOtter device IP is learned
+      # at runtime via either:
+      #   - POST /admin/device/register (BLE provisioning flow), or
+      #   - GET /initialize_iot (automatic Ethernet fallback to 192.168.2.1).
+      # Both write the IP into the SQLite `device_config` table and update
+      # Config.DEVICE_IP in memory. There is no assumption about which host
+      # interface reaches the Pi: kernel routing on the host (default gateway,
+      # wlan0/eth0/etc.) decides automatically because of network_mode: host.
+      - DEVICE_IP=${DEVICE_IP:-}
       - IGP_PORT=${IGP_PORT:-9999}
       - HTTP_PORT=${HTTP_PORT:-8081}
       - JWT_SECRET=${JWT_SECRET:-careotter_jwt_2026}
       - JWT_EXPIRATION_HOURS=8
       - PORT=5002
       - DB_PATH=/app/data/careotter.db
+      # Optional: auto-provision WiFi on the Pi during /initialize_iot via IGP
+      # over the Ethernet link. If set, the Cloud API pushes these credentials
+      # to careservice at 192.168.2.1:9999 so the Pi joins the WiFi network.
+      # If omitted, the Pi remains on Ethernet only.
+      - WIFI_SSID=${WIFI_SSID:-}
+      - WIFI_PSK=${WIFI_PSK:-}
     volumes:
       # Volumen persistente para la base de datos SQLite
       - careotter_data:/app/data
-    # Host networking: container shares the host network stack so the API
-    # can read wlan0 IP directly and report it via /api/health.
-    # Also allows routing to the device at 192.168.2.1 via eth0.
-    network_mode: host
+    # Host networking: container shares the host network stack so requests to
+    # the CareOtter Pi follow the host's normal routing table — typically the
+    # default-gateway interface (e.g. wlan0 → 192.168.1.0/24 via the home
+    # router) — without any hardcoded assumption about eth0 / 192.168.2.0/24.
+    ports:
+      - "0.0.0.0:5002:5002"
     restart: unless-stopped
 
 volumes:

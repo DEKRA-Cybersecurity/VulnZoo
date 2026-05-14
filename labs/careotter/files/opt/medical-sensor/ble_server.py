@@ -25,8 +25,33 @@ from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method, signal, dbus_property, PropertyAccess
 
 # URLs y configuración
+SENSOR_CONFIG_PATH = "/opt/medical-sensor/config.json"
 SENSOR_URL = "http://127.0.0.1:8081/vitals"
 DEVICE_NAME = "CareOtter_HR"
+
+
+def _load_sensor_api_key() -> str:
+    """Read api_key from /opt/medical-sensor/config.json.
+
+    The sensor HTTP service on :8081 requires an X-API-Key header on every
+    protected endpoint (vitals, log, alerts, …). Falling back to the same
+    hardcoded literal that ``sensor_service.py`` uses keeps this file usable
+    in environments where the config file has not been provisioned yet."""
+    try:
+        with open(SENSOR_CONFIG_PATH, "r") as f:
+            return json.load(f).get("api_key", "careotter-2024-lab")
+    except Exception as e:
+        print(f"[BLE] Could not read api_key from {SENSOR_CONFIG_PATH}: {e}")
+        return "careotter-2024-lab"
+
+
+SENSOR_API_KEY = _load_sensor_api_key()
+
+
+def _sensor_http_get(url: str, timeout: float = 2.0):
+    """Issue a GET to the sensor HTTP service with the X-API-Key header set."""
+    req = urllib.request.Request(url, headers={"X-API-Key": SENSOR_API_KEY})
+    return urllib.request.urlopen(req, timeout=timeout)
 
 # Cloud API address embedded in BLE advertising ManufacturerData (binary, 10 bytes):
 #   [0:4]  Cloud API IPv4  big-endian  (e.g. 192.168.1.50)
@@ -150,7 +175,7 @@ ALERT_THRESHOLD_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
 PROV_SERVICE_UUID     = "0000ff10-0000-1000-8000-00805f9b34fb"
 PROV_CONFIG_UUID      = "0000ff11-0000-1000-8000-00805f9b34fb"
 PROV_AUTH_UUID        = "0000ff12-0000-1000-8000-00805f9b34fb"
-PROV_PIN_FACTORY      = "1234"
+PROV_PIN_FACTORY      = "6767"
 
 # Paths D-Bus
 BUS_NAME = "org.bluez"
@@ -179,6 +204,52 @@ _alert_bpm_window: float = float(
 
 # Reference to the D-Bus message bus (set during main())
 _system_bus = None
+
+# Advertising registration state — populated in main() once the bus and the
+# advertisement object path exist. Used by Release() and the connection
+# monitor to re-register the advertisement automatically after BlueZ drops it
+# (e.g. on client disconnect or on adapter power cycle).
+_ad_bus = None
+_ad_path = None
+_ad_reregister_lock: Optional[asyncio.Lock] = None
+
+
+async def _ensure_advertisement_registered():
+    """Idempotently (re-)register the LE advertisement against BlueZ.
+
+    BlueZ stops advertising under several conditions (peripheral connected on
+    chipsets with single-link limits, adapter power cycle, explicit Release()).
+    We unregister first to clear any stale registration, then re-register.
+    Both errors are silenced because the goal is simply to converge on the
+    "advertising" state, not to track exact BlueZ bookkeeping.
+    """
+    if _ad_bus is None or _ad_path is None:
+        return
+    global _ad_reregister_lock
+    if _ad_reregister_lock is None:
+        _ad_reregister_lock = asyncio.Lock()
+    async with _ad_reregister_lock:
+        try:
+            introspection = await _ad_bus.introspect(BUS_NAME, ADAPTER_PATH)
+            manager_obj = _ad_bus.get_proxy_object(BUS_NAME, ADAPTER_PATH, introspection)
+            ad_manager = manager_obj.get_interface("org.bluez.LEAdvertisingManager1")
+            try:
+                await ad_manager.call_unregister_advertisement(_ad_path)
+            except Exception:
+                pass  # not registered yet — fine
+            await ad_manager.call_register_advertisement(_ad_path, {})
+            print("[BLE] Advertising registrado/renovado")
+        except Exception as e:
+            print(f"[BLE] _ensure_advertisement_registered error: {e}")
+
+
+def _schedule_advertisement_reregister():
+    """Fire-and-forget the advertisement re-register coroutine from any context."""
+    try:
+        asyncio.ensure_future(_ensure_advertisement_registered())
+    except RuntimeError:
+        # No running event loop (server is tearing down) — nothing to do.
+        pass
 
 # ── Factory Provisioning state ────────────────────────────────────────────────
 # VULNERABILITY P8: initialized_at marks the 30-minute "provisioning window",
@@ -309,7 +380,7 @@ def _refresh_vitals_cache():
     """
     global latest_vitals
     try:
-        with urllib.request.urlopen(SENSOR_URL, timeout=2) as resp:
+        with _sensor_http_get(SENSOR_URL, timeout=2) as resp:
             data = json.loads(resp.read().decode())
             latest_vitals.update({
                 "bpm":  data.get("bpm",  latest_vitals["bpm"]),
@@ -722,7 +793,7 @@ class AlertThresholdChrc(ServiceInterface):
 class ProvisioningAuthChrc(ServiceInterface):
     """Factory Provisioning — Auth/PIN (0xFF12)
 
-    VULNERABILITY P3: hardcoded 4-digit PIN ('1234'), never rotated across devices.
+    VULNERABILITY P3: hardcoded 4-digit PIN ('6767'), never rotated across devices.
     VULNERABILITY: no rate limiting — brute force of 10.000 combinations is trivial.
     """
 
@@ -811,11 +882,28 @@ class ProvisioningConfigChrc(ServiceInterface):
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
+        # Gate: same rule as WriteValue — no plaintext provisioning state
+        # (wifi_ssid / wifi_psk / cloud_url) leaks before the PIN has been
+        # verified on the AuthChrc (0xFF12). P5 (plaintext PSK storage) is
+        # preserved: once the PIN gate is passed the PSK is still returned
+        # in cleartext — same downgrade pattern as P4/P6/P7.
+        if not _provisioning_state.get("authenticated", False):
+            print("[BLE] Provisioning read rejected — PIN not verified")
+            return json.dumps({"error": "PIN_REQUIRED"}).encode()
         return self.Value
 
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
-        # VULNERABILITY: commands accepted even if PIN has never been verified
+        # Gate: require a successful PIN write on the AuthChrc (0xFF12) before
+        # accepting any provisioning command on the ConfigChrc (0xFF11).
+        # NOTE: this closes the "command accepted without PIN" gap (P0 below),
+        # but the surrounding lab vulnerabilities are kept intact on purpose:
+        #   * P3 — hardcoded PIN "6767", identical across all devices.
+        #   * P3 — no rate limiting / lockout: 10 000 PINs remain brute-forceable.
+        #   * P8 — no temporal expiry: `authenticated=True` never auto-clears.
+        if not _provisioning_state.get("authenticated", False):
+            print("[BLE] Provisioning command rejected — PIN not verified")
+            return
         try:
             cmd = json.loads(bytes(value).decode("utf-8", errors="ignore"))
         except Exception:
@@ -941,6 +1029,12 @@ class Advertisement(ServiceInterface):
         self.local_name = DEVICE_NAME
         self.service_uuids = [HR_SERVICE_UUID, PLX_SERVICE_UUID]
         self.flags = ["general-discoverable", "le-only"]
+        self.includes: list[str] = []
+        # Fixed advertising intervals (ms). Forces the controller to honour
+        # one stable AdvA per advertising train instead of falling back to a
+        # sentinel address (AA:AA:AA:AA:AA:AA on Cypress BCM43430).
+        self.min_interval = 100
+        self.max_interval = 200
         # Encode API URL as manufacturer-specific data:
         #   [Company ID 2 bytes LE] [URL bytes UTF-8]
         # BlueZ ManufacturerData dict maps company_id (uint16) -> Variant("ay", bytes)
@@ -973,9 +1067,26 @@ class Advertisement(ServiceInterface):
     def ManufacturerData(self) -> "a{qv}":  # type: ignore[return]
         return self.manufacturer_data
 
+    @dbus_property(access=PropertyAccess.READ)
+    def Includes(self) -> "as":  # type: ignore[return]
+        return self.includes
+
+    @dbus_property(access=PropertyAccess.READ)
+    def MinInterval(self) -> "u":
+        return self.min_interval
+
+    @dbus_property(access=PropertyAccess.READ)
+    def MaxInterval(self) -> "u":
+        return self.max_interval
+
     @method()
     def Release(self):
-        print("[BLE] Advertising liberado")
+        # BlueZ calls Release() when it stops advertising on our behalf
+        # (peripheral connection on single-link chipsets, adapter power cycle,
+        # explicit UnregisterAdvertisement, …). Re-arm advertising so the
+        # device stays discoverable to subsequent clients.
+        print("[BLE] Advertising liberado por BlueZ — reprogramando RegisterAdvertisement")
+        _schedule_advertisement_reregister()
 
 
 class ObjectManager(ServiceInterface):
@@ -993,18 +1104,50 @@ class ObjectManager(ServiceInterface):
         return self.objects
 
 
+def _force_random_static_address() -> None:
+    """Program the controller's LE Random Static Address so every advertising
+    train carries the same AdvA. Works around the Cypress BCM43430 firmware
+    quirk that emits AA:AA:AA:AA:AA:AA as a sentinel when no Random Address
+    has been set since the last reset.
+
+    Uses the raw HCI command ``LE_Set_Random_Address`` (OGF 0x08, OCF 0x0005)
+    via ``hcitool``, which does not contend with the bluetoothd mgmt socket
+    (unlike ``btmgmt``, which deadlocks while bluetoothd is running).
+    """
+    import subprocess
+    try:
+        out = subprocess.check_output(["hciconfig", "hci0"], timeout=3).decode()
+        # Line: "    BD Address: 43:45:C0:00:1F:AC  ACL MTU: ..."
+        mac = next((tok for line in out.splitlines() if "BD Address:" in line
+                    for tok in line.split() if ":" in tok and len(tok) == 17), None)
+        if not mac:
+            print("[BLE] could not parse BD Address from hciconfig")
+            return
+        # HCI expects MAC bytes LSB-first
+        octets = list(reversed(mac.split(":")))
+        cmd = ["hcitool", "-i", "hci0", "cmd", "0x08", "0x0005", *octets]
+        subprocess.run(cmd, capture_output=True, timeout=3, check=False)
+        print(f"[BLE] LE_Set_Random_Address → {mac}")
+    except Exception as exc:
+        print(f"[BLE] LE_Set_Random_Address failed: {exc!r}")
+
+
 async def setup_adapter(bus: MessageBus):
     """Configura el adaptador Bluetooth"""
     introspection = await bus.introspect(BUS_NAME, ADAPTER_PATH)
     adapter_obj = bus.get_proxy_object(BUS_NAME, ADAPTER_PATH, introspection)
     adapter = adapter_obj.get_interface("org.bluez.Adapter1")
-    
+
     # Usar set_ methods para propiedades
     await adapter.set_alias(DEVICE_NAME)
     await adapter.set_powered(True)
     await adapter.set_discoverable(True)
     await adapter.set_pairable(False)  # BLE-only — BR/EDR pairing disabled
-    
+
+    # Pin the LE Random Address so the controller never falls back to the
+    # AA:AA:AA:AA:AA:AA sentinel. Done AFTER the adapter is powered.
+    _force_random_static_address()
+
     print(f"[BLE] Adaptador configurado: {DEVICE_NAME}")
 
 
@@ -1075,6 +1218,10 @@ async def monitor_connections(bus: MessageBus):
         else:
             info = connected_devices.pop(mac, {})
             log_connection_event("DISCONNECTED", info.get("name", name), mac)
+            # BlueZ frequently stops advertising while a peripheral has an
+            # active link. Re-arm RegisterAdvertisement so the device becomes
+            # discoverable again to other clients without manual intervention.
+            _schedule_advertisement_reregister()
     
     bus.add_message_handler(on_message)
     print("[BLE] Connection monitor started")
@@ -1189,6 +1336,12 @@ async def main():
     ad = Advertisement()
     ad_path = "/org/careotter/advertisement0"
     bus.export(ad_path, ad)
+
+    # Publish references so Release() and the connection monitor can re-register
+    # the advertisement on demand (single source of truth for the BlueZ ad state).
+    global _ad_bus, _ad_path
+    _ad_bus = bus
+    _ad_path = ad_path
 
     # Configurar adaptador
     await setup_adapter(bus)

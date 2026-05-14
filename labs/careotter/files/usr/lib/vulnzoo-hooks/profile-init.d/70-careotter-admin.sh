@@ -83,32 +83,42 @@ if [ -n "$port_check" ]; then
 fi
 
 # ============================================================================
-# START SERVICE
+# START SERVICE (via procd init script for auto-restart on boot)
 # ============================================================================
 
-log_message "Starting careservice on port $CARESERVICE_PORT..."
+# Ensure the init script is present
+if [ ! -f /etc/init.d/careservice ]; then
+    log_message "ERROR: /etc/init.d/careservice not found"
+    exit 1
+fi
+
+# Enable auto-start on boot
+log_message "Enabling careservice..."
+/etc/init.d/careservice enable
+
+# Start the service via procd
+log_message "Starting careservice on port $CARESERVICE_PORT via init script..."
 logger -t careotter-admin "Starting admin service (IGP protocol, port $CARESERVICE_PORT)"
 
-# Create directory if it does not exist
-mkdir -p /opt/careotter
-
-# Start the service
-$CARESERVICE_BIN >> /tmp/careservice.log 2>&1 &
-service_pid=$!
-
-# Save PID
-echo $service_pid > "$PID_FILE"
-
-# Verify that it started correctly
-sleep 2
-if kill -0 $service_pid 2>/dev/null; then
-    log_message "Admin service started successfully (PID: $service_pid)"
-    logger -t careotter-admin "Service active - Commands: 0x01=INFO, 0x02=AUTH, 0x03=WIFI, 0x04=PREFS, 0x05=STATUS"
-    logger -t careotter-admin "Vulnerabilities: Format String, Integer Underflow, Hardcoded Token"
+if /etc/init.d/careservice start; then
+    sleep 2
+    # Verify it started
+    if [ -f /var/run/careservice.pid ]; then
+        service_pid=$(cat /var/run/careservice.pid 2>/dev/null)
+        if kill -0 "$service_pid" 2>/dev/null; then
+            log_message "Admin service started successfully (PID: $service_pid)"
+            logger -t careotter-admin "Service active - Commands: 0x01=INFO, 0x02=AUTH, 0x03=WIFI, 0x04=PREFS, 0x05=STATUS"
+            logger -t careotter-admin "Vulnerabilities: Format String, Integer Underflow, Hardcoded Token"
+        else
+            log_message "ERROR: careservice PID file exists but process is dead"
+            exit 1
+        fi
+    else
+        log_message "WARNING: careservice PID file not found after start — checking procd status"
+    fi
 else
-    log_message "ERROR: Admin service failed to start"
+    log_message "ERROR: careservice init script failed to start"
     logger -t careotter-admin "ERROR: Service failed - check /tmp/careservice.log"
-    rm -f "$PID_FILE"
     exit 1
 fi
 

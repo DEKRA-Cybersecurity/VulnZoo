@@ -31,7 +31,7 @@
           <div class="eyebrow">vulnzoo / device / medical</div>
           <h2>CareOtter</h2>
         </div>
-        <span id="device-status" class="status stopped">Stopped</span>
+        <span id="device-status" class="status stopped">Stop</span>
       </div>
 
       <div class="content-section">
@@ -43,7 +43,7 @@
         <h2>CareOtter control</h2>
         <div class="btn-row">
           <button class="btn btn-primary" onclick="loadDevice('careotter')">Load CareOtter</button>
-          <button class="btn btn-danger" onclick="stopCurrentDevice()">Stop device</button>
+          <button class="btn btn-danger" onclick="resetCurrentDevice()">RESET DEVICE</button>
           <a href="admin.html" class="btn">VulnZoo admin</a>
           <button class="btn" onclick="openDeviceInterface('careotter')" id="careotter-interface-btn" disabled>Open interface</button>
         </div>
@@ -54,7 +54,7 @@
         <p><strong>CareOtter</strong> is a vulnerable cardiac device ecosystem simulator for security testing and learning. It reproduces a realistic modern cardiac remote-monitoring deployment composed of two layers:</p>
         <p><strong>1. DAI/ICD Implant</strong> — a simulated cardiac implant (Implantable Cardioverter-Defibrillator) represented by a <strong>MAX30102 pulse-oximeter sensor</strong> connected via I2C to the bedside monitor. It generates continuous cardiac telemetry (BPM / SpO₂) and accepts therapeutic commands such as defibrillation simulation and threshold configuration.</p>
         <p><strong>2. Bedside Monitor / Home Monitor</strong> — a <strong>Raspberry Pi 3B+ running OpenWRT</strong> that acts as the clinical gateway. It reads vitals from the implant over I2C, exposes them via BLE for bedside/mobile review, streams them over HTTP to the hospital cloud, and provides device administration through a legacy binary protocol (IGP v4).</p>
-        <p><strong>VulnZoo WWW interface</strong> — device management, loading/stopping the CareOtter simulator, and project administration.</p>
+        <p><strong>VulnZoo WWW interface</strong> — device management, loading/resetting the CareOtter simulator, and project administration.</p>
         <p><strong>CareOtter device interface</strong> — the bedside monitor and its vulnerable services (BLE, HTTP, IGP v4). This is where you perform penetration testing against a realistic medical IoT gateway.</p>
       </div>
 

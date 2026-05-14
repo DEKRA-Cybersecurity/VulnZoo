@@ -1,9 +1,9 @@
 """
-vitals_service.py — Acceso directo al servicio de sensor médico (puerto 8081)
+vitals_service.py — Direct access to the medical sensor service (port 8081)
 
-Consulta el servicio HTTP del oxímetro de pulso en el dispositivo sin pasar
-por el protocolo IGP. Esta ruta directa existe porque los datos de vitales
-son datos de lectura no privilegiados que no requieren autenticación de admin.
+Queries the pulse oximeter HTTP service on the device without going through
+the IGP protocol. This direct path exists because vital data is unprivileged
+read-only data that does not require admin authentication.
 """
 
 import requests
@@ -11,6 +11,9 @@ from config import Config
 
 
 class VitalsService:
+
+    # VULNERABILITY: hardcoded sensor token — identical across all deployments
+    _SENSOR_API_KEY = "careotter-2024-lab"
 
     def __init__(self):
         self._timeout = Config.HTTP_TIMEOUT
@@ -23,11 +26,16 @@ class VitalsService:
             return ''
         return f"http://{ip}:{Config.HTTP_PORT}"
 
+    def _headers(self) -> dict:
+        """Return headers including the sensor auth token.
+        The sensor_service.py requires X-API-Key on all endpoints except /health."""
+        return {'X-API-Key': self._SENSOR_API_KEY}
+
     def get_current(self) -> dict:
         """
-        Obtiene BPM y SpO2 actuales desde GET /vitals.
+        Gets current BPM and SpO2 from GET /vitals.
 
-        Respuesta del dispositivo:
+        Device response:
             {"bpm": 72, "spo2": 98, "red_raw": 61085,
              "ir_raw": 61036, "timestamp": 1773738799.89, "source": "simulator"}
         """
@@ -35,13 +43,13 @@ class VitalsService:
         if not base:
             return {'success': False, 'error': 'Device not registered — no IP configured'}
         try:
-            r = requests.get(f"{base}/vitals", timeout=self._timeout)
+            r = requests.get(f"{base}/vitals", headers=self._headers(), timeout=self._timeout)
             r.raise_for_status()
             return {'success': True, 'data': r.json()}
         except requests.Timeout:
-            return {'success': False, 'error': 'Timeout conectando al sensor'}
+            return {'success': False, 'error': 'Timeout connecting to the sensor'}
         except requests.ConnectionError as e:
-            return {'success': False, 'error': f'Error de conexión al sensor: {e}'}
+            return {'success': False, 'error': f'Connection error to the sensor: {e}'}
         except requests.HTTPError as e:
             return {'success': False, 'error': f'HTTP {e.response.status_code}'}
         except Exception as e:
@@ -49,27 +57,27 @@ class VitalsService:
 
     def get_history(self) -> dict:
         """
-        Obtiene el historial de resúmenes de vitales desde GET /log.
-        El dispositivo mantiene un buffer circular de hasta 1440 entradas (24h).
+        Gets the history of vital summaries from GET /log.
+        The device keeps a circular buffer of up to 1440 entries (24h).
 
-        Cada entrada contiene bpm_avg/min/max y spo2_avg/min para un intervalo.
+        Each entry contains bpm_avg/min/max and spo2_avg/min for an interval.
         """
         base = self._base()
         if not base:
             return {'success': False, 'error': 'Device not registered — no IP configured'}
         try:
-            r = requests.get(f"{base}/log", timeout=self._timeout)
+            r = requests.get(f"{base}/log", headers=self._headers(), timeout=self._timeout)
             r.raise_for_status()
             return {'success': True, 'history': r.json()}
         except requests.Timeout:
-            return {'success': False, 'error': 'Timeout obteniendo historial'}
+            return {'success': False, 'error': 'Timeout retrieving history'}
         except requests.ConnectionError as e:
-            return {'success': False, 'error': f'Error de conexión: {e}'}
+            return {'success': False, 'error': f'Connection error: {e}'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
     def get_health(self) -> dict:
-        """Verifica que el servicio sensor está activo via GET /health."""
+        """Verifies that the sensor service is running via GET /health."""
         base = self._base()
         if not base:
             return {'success': False, 'error': 'Device not registered — no IP configured'}

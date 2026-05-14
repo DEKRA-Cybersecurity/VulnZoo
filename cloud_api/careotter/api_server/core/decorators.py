@@ -1,9 +1,9 @@
 """
-decorators.py — Decoradores de autorización para endpoints CareOtter API
+decorators.py — Authorization decorators for CareOtter API endpoints
 
-Proporciona @token_required para proteger rutas API y
+Provides @token_required to protect API routes and
 @web_login_required / @web_admin_required / @web_patient_required
-para proteger rutas HTML mediante cookie JWT.
+to protect HTML routes via JWT cookie.
 """
 
 from functools import wraps
@@ -12,7 +12,7 @@ from core.jwt_service import JWTService
 
 
 def _get_token_from_request():
-    """Extrae JWT del header Authorization o de la cookie careotter_token."""
+    """Extracts the JWT from the Authorization header or the careotter_token cookie."""
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
         return auth_header.split(' ', 1)[1].strip()
@@ -20,7 +20,7 @@ def _get_token_from_request():
 
 
 def _decode_and_validate():
-    """Decodifica el token y retorna el payload si es válido, o None."""
+    """Decodes the token and returns the payload if it is valid, or None."""
     token = _get_token_from_request()
     if not token:
         return None
@@ -30,13 +30,13 @@ def _decode_and_validate():
 
 def token_required(f):
     """
-    Decorador que exige un JWT válido en el header Authorization.
+    Decorator that requires a valid JWT in the Authorization header.
 
-    Formato esperado: Authorization: Bearer <token>
+    Expected format: Authorization: Bearer <token>
 
-    En caso de error retorna 401 con un campo 'detail' que incluye
-    el hint del JWTService — descriptivo por diseño del desarrollador
-    original para facilitar el debugging en campo.
+    On error, returns 401 with a 'detail' field that includes
+    the JWTService hint — intentionally descriptive by the original
+    developer's design to make field debugging easier.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -44,16 +44,16 @@ def token_required(f):
 
         if not auth_header.startswith('Bearer '):
             return jsonify({
-                'error':  'Token de autorización requerido',
+                'error':  'Authorization token required',
                 'code':   'MISSING_TOKEN',
-                'detail': 'Incluir header: Authorization: Bearer <token>'
+                'detail': 'Include header: Authorization: Bearer <token>'
             }), 401
 
         token = auth_header.split(' ', 1)[1].strip()
         result = JWTService.decode_token(token)
 
         if not result['success']:
-            # VULNERABILIDAD: expone detalles internos del error de validación
+            # VULNERABILITY: exposes internal validation error details
             return jsonify({
                 'error':  result['error'],
                 'code':   'INVALID_TOKEN',
@@ -66,7 +66,7 @@ def token_required(f):
 
 
 def web_login_required(f):
-    """Requiere JWT válido en cookie para rutas HTML. Redirige a /patient/login si no."""
+    """Requires a valid JWT cookie for HTML routes. Redirects to /patient/login if not."""
     @wraps(f)
     def decorated(*args, **kwargs):
         payload = _decode_and_validate()
@@ -77,7 +77,7 @@ def web_login_required(f):
 
 
 def web_admin_required(f):
-    """Requiere JWT válido con rol 'admin'. Redirige a /admin/login si no."""
+    """Requires a valid JWT with the 'admin' role. Redirects to /admin/login if not."""
     @wraps(f)
     def decorated(*args, **kwargs):
         payload = _decode_and_validate()
@@ -88,7 +88,7 @@ def web_admin_required(f):
 
 
 def web_patient_required(f):
-    """Requiere JWT válido con rol 'patient' o 'admin'. Redirige a /patient/login si no."""
+    """Requires a valid JWT with the 'patient' or 'admin' role. Redirects to /patient/login if not."""
     @wraps(f)
     def decorated(*args, **kwargs):
         payload = _decode_and_validate()

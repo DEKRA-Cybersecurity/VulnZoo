@@ -1,0 +1,48 @@
+#!/bin/sh /etc/rc.common
+#
+# CareOtter BLE GATT Server
+# Bluetooth Low Energy peripheral for mobile app connectivity
+#
+
+USE_PROCD=1
+START=96
+STOP=10
+
+PROG=/usr/bin/python3
+SCRIPT=/opt/medical-sensor/ble_server.py
+PIDFILE=/var/run/ble-server.pid
+
+start_service() {
+    # Verify BLE server script exists
+    if [ ! -f "$SCRIPT" ]; then
+        logger -t ble-server "ERROR: Script not found at $SCRIPT"
+        return 1
+    fi
+
+    # Verify Bluetooth adapter is present (warn but don't fail — adapter may hot-plug)
+    if [ ! -e /sys/class/bluetooth/hci0 ]; then
+        logger -t ble-server "WARNING: Bluetooth adapter not found — service will fail until hci0 appears"
+    fi
+
+    logger -t ble-server "Starting CareOtter BLE GATT server"
+
+    procd_open_instance
+    procd_set_param command "$PROG" -u "$SCRIPT"
+    procd_set_param env DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}"
+    procd_set_param env BLE_INTERVAL="${BLE_INTERVAL:-1}"
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param pidfile "$PIDFILE"
+    procd_close_instance
+}
+
+stop_service() {
+    logger -t ble-server "Stopping CareOtter BLE GATT server"
+    rm -f "$PIDFILE"
+}
+
+reload_service() {
+    stop
+    start
+}

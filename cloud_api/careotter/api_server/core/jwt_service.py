@@ -1,13 +1,13 @@
 """
-jwt_service.py — Gestión de tokens JWT para operadores CareOtter
+jwt_service.py — JWT token management for CareOtter operators
 
-Emite tokens de sesión tras una autenticación exitosa contra el dispositivo.
-El token se usa en los endpoints protegidos de la API.
+Emits session tokens after a successful authentication against the device.
+The token is used in the protected API endpoints.
 
-VULNERABILIDAD INTENCIONAL: secreto JWT débil por defecto ('careotter_jwt_2026').
-En un entorno real este valor vendría de un gestor de secretos, no de un .env
-con valor por defecto hardcodeado. Los mensajes de error también son demasiado
-descriptivos, revelando si el token está expirado vs. tiene firma incorrecta.
+INTENTIONAL VULNERABILITY: weak default JWT secret ('careotter_jwt_2026').
+In a real environment this value would come from a secrets manager, not from a
+hardcoded default in a .env file. The error messages are also too descriptive,
+revealing whether the token is expired vs. has an incorrect signature.
 """
 
 import jwt
@@ -20,9 +20,9 @@ class JWTService:
     @staticmethod
     def generate_token(username: str, role: str = 'user') -> str:
         """
-        Genera un JWT HS256 con expiración configurable.
-        El 'sub' contiene el nombre de usuario del operador autenticado.
-        El 'role' se incluye en el payload para validación posterior.
+        Generates an HS256 JWT with configurable expiration.
+        The 'sub' contains the authenticated operator's username.
+        The 'role' is included in the payload for later validation.
         """
         payload = {
             'sub':  username,
@@ -37,8 +37,8 @@ class JWTService:
             Config.JWT_SECRET,
             algorithm=Config.JWT_ALGORITHM
         )
-        # PyJWT 1.x devuelve bytes; 2.x devuelve str.
-        # Forzamos str para que jsonify no serialice como array de enteros.
+        # PyJWT 1.x returns bytes; 2.x returns str.
+        # Force str so jsonify does not serialize it as an array of integers.
         if isinstance(token, bytes):
             token = token.decode('utf-8')
         return token
@@ -46,15 +46,15 @@ class JWTService:
     @staticmethod
     def decode_token(token: str) -> dict:
         """
-        Decodifica y valida el token JWT.
+        Decodes and validates the JWT.
 
-        Retorna:
+        Returns:
             {'success': True,  'payload': {...}}
             {'success': False, 'error': '...', 'hint': '...'}
 
-        VULNERABILIDAD: el campo 'hint' diferencia entre token expirado
-        y firma incorrecta — información útil para un atacante que intenta
-        falsificar o extender tokens.
+        VULNERABILITY: the 'hint' field distinguishes between an expired token
+        and an incorrect signature — information useful to an attacker trying
+        to forge or extend tokens.
         """
         try:
             payload = jwt.decode(
@@ -67,20 +67,20 @@ class JWTService:
         except jwt.ExpiredSignatureError:
             return {
                 'success': False,
-                'error':   'Token expirado',
-                'hint':    'Estructura válida, firma correcta, pero el token ha caducado'
+                'error':   'Token expired',
+                'hint':    'Valid structure, correct signature, but the token has expired'
             }
         except jwt.InvalidSignatureError:
             return {
                 'success': False,
-                'error':   'Firma inválida',
-                'hint':    'Payload decodificable pero la firma no coincide con el secreto'
+                'error':   'Invalid signature',
+                'hint':    'Payload is decodable but the signature does not match the secret'
             }
         except jwt.DecodeError:
             return {
                 'success': False,
-                'error':   'Token malformado',
-                'hint':    'No se puede decodificar la estructura base64'
+                'error':   'Malformed token',
+                'hint':    'The base64 structure cannot be decoded'
             }
         except Exception as e:
             return {'success': False, 'error': str(e)}

