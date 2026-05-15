@@ -156,6 +156,13 @@ class IGPClient:
         """
         return self.send_command(0x08, tlv_payload)
 
+    def get_thresholds(self) -> bytes:
+        """
+        0x0E GET_THRESHOLD — read current clinical alert thresholds.
+        Response: 'bpm_min=50\nbpm_max=120\nspo2_min=90' (no auth required).
+        """
+        return self.send_command(0x0E)
+
     def reboot_service(self, service_name: str) -> bytes:
         """
         0x09 REBOOT_SERVICE — restarts a device init.d service.

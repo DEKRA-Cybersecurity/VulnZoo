@@ -154,7 +154,7 @@ Total header: 8 bytes. Payload immediately follows. Server closes connection aft
 | 0x05 | VERIFY_STATUS   | No   | Module name string   | Status diagnostic text                   | **VULN: format string**                                                                               |
 | 0x06 | SET_WIFI        | Yes  | `"SSID\|PSK"`        | `WIFI_UPDATED` / `WIFI_ERR` / `ERR_*`    | **FLAW: shell injection via system()**                                                                |
 | 0x07 | GET_VITALS      | No   | —                    | Full HTTP response from :8081/vitals     | IGP→HTTP proxy                                                                                        |
-| 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)    | `THRESHOLD_SET`                          | Clean parser, writes to `/tmp/careotter.thresholds`                                                   |
+| 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)    | `THRESHOLD_SET`                          | Clean parser, writes to `/var/log/careotter.thresholds`                                                   |
 | 0x09 | REBOOT_SERVICE  | Yes  | Service name string  | `SVC_RESTART_QUEUED` / `REBOOT_ERR`      | **FLAW: no waitpid() → zombie processes**                                                             |
 | 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/tmp/careservice.log` | `LOG_EMPTY` if not present                                                                            |
 | 0x0B | DEFIBRILLATE    | Yes  | Any string           | `DEFIB_TRIGGERED:200J:<timestamp>`       | **VULN: format string in event log**; simulates 200 J discharge                                       |
@@ -712,9 +712,9 @@ This section tracks the remaining development work required to align the CareOtt
    - **Action:** Define the alert transport (options: HTTP POST from sensor to Cloud API, BLE notify to patient app with retransmission, or dedicated IGP command 0x0C as proxy). Implement the sender in `sensor_service.py` and the receiver/notification logic in the Cloud API dashboard.
 
 3. **Unify clinical threshold persistence**
-   - `careservice.c` command 0x08 (`SET_THRESHOLD`) writes to `/tmp/careotter.thresholds`.
+   - `careservice.c` command 0x08 (`SET_THRESHOLD`) writes to `/var/log/careotter.thresholds`.
    - `sensor_service.py` maintains its own in-memory `alert_thresholds` and never reads the file written by the admin service.
-   - **Action:** Make the Python sensor service load thresholds from `/tmp/careotter.thresholds` on startup and reload it on SIGHUP/SIGUSR1 so that administrative changes take effect.
+   - **Action:** Make the Python sensor service load thresholds from `/var/log/careotter.thresholds` on startup and reload it on SIGHUP/SIGUSR1 so that administrative changes take effect.
 
 ### 🟡 Medium — Functional improvement and realism
 

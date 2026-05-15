@@ -57,7 +57,7 @@ The source code explicitly documents six vulnerabilities. **VULN #6 is intention
 | **Vitals falsification** | Rogue device sends HR notifications with BPM = 0, BPM = 250, or SpO₂ = 0. | The app displays critical values and triggers the local alert banner, proving an attacker can inject clinical panic. |
 | **Malicious threshold manipulation via hidden panel** | Discover and unlock the diagnostic panel (see §6 below), then edit JSON to `{"bpm_min":0,"bpm_max":300,"spo2_min":0}` and tap *Write Threshold*. | The raw JSON is sent unvalidated to the DAI (**VULN #2**). Life-saving alerts are effectively disabled (*therapeutic suppression*). |
 | **Malicious threshold manipulation via BLE** | Use *nRF Connect* or a custom GATT client to write directly to `ALERT_THRESHOLD` (0xFF01) without using the app UI. | The characteristic is writable without pairing. Confirms that the attack surface exists independently of the hidden UI panel. |
-| **BLE fuzzing** | Write malformed payloads (e.g., `AAAA`, `<script>`, null bytes, oversized buffers) to `0xFF01`. | Observe whether `ble_server.py` crashes, throws a D-Bus exception, or writes garbage to `/tmp/careotter.thresholds`. |
+| **BLE fuzzing** | Write malformed payloads (e.g., `AAAA`, `<script>`, null bytes, oversized buffers) to `0xFF01`. | Observe whether `ble_server.py` crashes, throws a D-Bus exception, or writes garbage to `/var/log/careotter.thresholds`. |
 
 ### 6. Hidden Diagnostic Panel Discovery
 

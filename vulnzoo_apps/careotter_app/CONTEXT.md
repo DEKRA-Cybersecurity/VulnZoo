@@ -105,7 +105,7 @@ Payload (variable)
 | 0x05 | VERIFY_STATUS    | No   | `snprintf(buf, size, user_input)` → format string.     |
 | 0x06 | SET_WIFI         | Yes  | SSID/PSK concatenated into `system()` — OS injection.  |
 | 0x07 | GET_VITALS       | Yes  | Proxies sensor service.                                |
-| 0x08 | SET_THRESHOLD    | Yes  | Writes `/tmp/careotter.thresholds`.                    |
+| 0x08 | SET_THRESHOLD    | Yes  | Writes `/var/log/careotter.thresholds`.                 |
 | 0x09 | REBOOT_SERVICE   | Yes  | `fork()` without `waitpid()` — zombie leak.            |
 | 0x0A | GET_LOG          | Yes  | Reads `/tmp/careotter_events.log`.                     |
 | 0x0B | DEFIBRILLATE     | Yes  | Second `snprintf` uses payload as format → log fmt-str.|

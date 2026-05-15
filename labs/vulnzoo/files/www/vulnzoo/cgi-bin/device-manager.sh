@@ -54,7 +54,11 @@ clear_device_state() {
     uci set vulnzoo.state.current_device="none"
     uci set vulnzoo.state.loaded_timestamp=""
     uci commit vulnzoo
-    
+
+    # Drop the per-boot hook-pass lock(s) so a live reload in the same boot
+    # session re-runs the hooks (hook-manager.sh skips while the lock exists).
+    rm -f /tmp/vulnzoo-hooks-*.lock 2>/dev/null
+
     log_message "Device state cleared from UCI"
 }
 

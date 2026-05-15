@@ -57,22 +57,15 @@ fi
 /etc/init.d/uhttpd enable
 /etc/init.d/uhttpd start
 
-# Execute device profile hooks if a device was previously loaded
-# Idempotency guard: skip the hook pass if device-manager.sh just loaded this
-# profile in-line (UCI loaded_timestamp within the last 60 s). Without this
-# guard, a live load runs hooks twice: once in device-manager.sh and again
-# here when rc.local is (incorrectly) invoked mid-load — which used to crash
-# the BLE/D-Bus stack and trigger a watchdog reboot.
+# Execute device profile hooks if a device was previously loaded.
+# Double-run protection lives inside hook-manager.sh via a per-boot lockfile
+# in /tmp (tmpfs, wiped every boot). If device-manager.sh already ran the
+# hook pass in-line during a live load, hook-manager will see the lock and
+# skip here — clock-independent (the RPi has no RTC, so the old
+# loaded_timestamp comparison broke whenever the clock jumped).
 if [ -x "/usr/lib/vulnzoo-hooks/hook-manager.sh" ] && [ "$DEVICE_NAME" != "none" ]; then
-    LAST_LOAD="$(uci -q get vulnzoo.state.loaded_timestamp 2>/dev/null)"
-    NOW="$(date +%s)"
-    if [ -n "$LAST_LOAD" ] && [ "$LAST_LOAD" -gt 0 ] 2>/dev/null \
-        && [ $((NOW - LAST_LOAD)) -lt 60 ]; then
-        logger -t vulnzoo-base "Skipping hook pass for $DEVICE_NAME — loaded $((NOW - LAST_LOAD))s ago (live load, not cold boot)"
-    else
-        logger -t vulnzoo-base "Executing hooks for restored device: $DEVICE_NAME"
-        /usr/lib/vulnzoo-hooks/hook-manager.sh init "$DEVICE_NAME"
-    fi
+    logger -t vulnzoo-base "Invoking hook pass for restored device: $DEVICE_NAME (hook-manager dedups via /tmp lock)"
+    /usr/lib/vulnzoo-hooks/hook-manager.sh init "$DEVICE_NAME"
 fi
 
 exit 0

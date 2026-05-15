@@ -8,6 +8,16 @@ HOOKS_DIR="/usr/lib/vulnzoo-hooks/profile-init.d"
 EXECUTION_LOG="/usr/lib/vulnzoo-hooks/execution.log"
 UCI_PREFIX="vulnzoo.hooks"
 
+# Per-boot, per-device hook-pass lock. /tmp is tmpfs and wiped on every boot,
+# so the lock means "the full hook pass already ran in THIS boot session".
+# This collapses the pathological double-run (device-manager.sh live load AND
+# rc.local cold-boot path firing in the same boot) that killed the BLE/D-Bus
+# stack and triggered a watchdog reboot. Clock-independent — the previous
+# timestamp guard broke whenever the RPi clock jumped (no RTC).
+hook_lock_path() {
+    echo "/tmp/vulnzoo-hooks-${1}.lock"
+}
+
 # Initialize UCI hooks section if it doesn't exist
 init_uci_hooks() {
     if ! uci -q get vulnzoo.hooks >/dev/null 2>&1; then
@@ -139,6 +149,13 @@ case "$1" in
             echo "Usage: $0 init <device_name> [force]"
             exit 1
         fi
+        lock="$(hook_lock_path "$device")"
+        if [ "$force" != "force" ] && [ -e "$lock" ]; then
+            log_hook "DEVICE_$device" "SKIPPED_PASS" "LOCK_PRESENT ($lock)"
+            logger -t vulnzoo-hooks "Hook pass for $device already ran this boot session — skipping (lock: $lock)"
+            exit 0
+        fi
+        : > "$lock"
         execute_device_hooks "$device" "$force"
         ;;
     "status")

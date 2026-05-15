@@ -192,6 +192,28 @@ class DeviceService:
             }
         }
 
+    def get_thresholds(self) -> dict:
+        """
+        IGP 0x0E — Read current clinical alert thresholds (no auth required).
+        Parses response 'bpm_min=50\nbpm_max=120\nspo2_min=90' into a dict.
+        Falls back to defaults if the device does not respond or the file is missing.
+        """
+        self._ensure_igp()
+        raw  = self._igp.get_thresholds()
+        text = raw.decode('utf-8', errors='replace').strip()
+        result = {'bpm_min': 60, 'bpm_max': 100, 'spo2_min': 95, 'raw': text}
+        for line in text.split('\n'):
+            if '=' in line:
+                k, v = line.split('=', 1)
+                k = k.strip()
+                v = v.strip()
+                if k in ('bpm_min', 'bpm_max', 'spo2_min'):
+                    try:
+                        result[k] = int(v)
+                    except ValueError:
+                        pass
+        return result
+
     # ── System services ────────────────────────────────────────────────────
 
     def restart_service(self, service_name: str) -> dict:

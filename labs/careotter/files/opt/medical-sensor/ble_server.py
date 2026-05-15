@@ -837,7 +837,7 @@ class AlertThresholdChrc(ServiceInterface):
         )
         # Persist to shared file so sensor_service and careservice stay in sync
         try:
-            with open("/tmp/careotter.thresholds", "w") as fh:
+            with open("/var/log/careotter.thresholds", "w") as fh:
                 fh.write(f"bpm_min={alert_thresholds['bpm_min']}\n")
                 fh.write(f"bpm_max={alert_thresholds['bpm_max']}\n")
                 fh.write(f"spo2_min={alert_thresholds['spo2_min']}\n")

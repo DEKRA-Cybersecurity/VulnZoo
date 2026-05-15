@@ -128,6 +128,10 @@ JWT_PATIENT=$(curl -s -X POST http://localhost:5002/api/auth/login/patient \
 echo "$JWT_PATIENT"
 ```
 
+You can dinamically obtain the JWT Token by login in the cloud's login panel:
+![[api-06-login-patient.png]]
+Cloud starts showing some hints as "type" field with value "Bearer".  JWT Token is really located on browser's cookies.
+![[Pasted image 20260515114444.png]]
 ### Step 2 — Inspect the token payload to confirm `role: patient`
 
 ```bash

@@ -69,16 +69,37 @@ public class AdminActivity extends AppCompatActivity {
         tvOutput     = findViewById(R.id.tvAdminOutput);
         scrollOutput = findViewById(R.id.scrollAdminOutput);
 
-        // Pre-fill device IP discovered via BLE advertising
-        SharedPreferences prefs = getSharedPreferences("careotter_prefs", MODE_PRIVATE);
-        String deviceIp = prefs.getString("device_ip", "192.168.2.1");
-        etIp.setText(deviceIp);
+        // Pre-fill target network base address from the phone's wlan0 interface.
+        // We take the IPv4 address of wlan0 and zero the host part (last octet)
+        String targetIp = "192.168.2.1"; // fallback
+        try {
+            java.net.NetworkInterface wlan = java.net.NetworkInterface.getByName("wlan0");
+            if (wlan != null) {
+                java.util.Enumeration<java.net.InetAddress> addrs = wlan.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    java.net.InetAddress addr = addrs.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof java.net.Inet4Address) {
+                        String ip = addr.getHostAddress();
+                        int lastDot = ip.lastIndexOf('.');
+                        if (lastDot != -1) {
+                            targetIp = ip.substring(0, lastDot + 1) + "0";
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // wlan0 not available — keep fallback
+        }
+        etIp.setText(targetIp);
 
+        SharedPreferences prefs = getSharedPreferences("careotter_prefs", MODE_PRIVATE);
         String username = prefs.getString("username", "admin");
         appendOutput("[SESSION] Logged in as: " + username + " (admin)");
 
         Button btnAdminLogout    = findViewById(R.id.btnAdminLogout);
         Button btnSysInfo        = findViewById(R.id.btnSysInfo);
+        Button btnPing           = findViewById(R.id.btnPing);
         btnAuthenticate          = findViewById(R.id.btnAuthenticate);
         Button btnWifiConfig     = findViewById(R.id.btnWifiConfig);
         Button btnStatus         = findViewById(R.id.btnStatus);
@@ -117,6 +138,9 @@ public class AdminActivity extends AppCompatActivity {
 
         btnSysInfo.setOnClickListener(v ->
                 runCommandAsync("SYS_INFO", () -> igp().sysInfo()));
+
+        btnPing.setOnClickListener(v ->
+                runCommandAsync("PING", () -> igp().ping()));
 
         btnStatus.setOnClickListener(v -> {
             String module = etModuleName.getText().toString();

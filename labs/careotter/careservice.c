@@ -18,7 +18,7 @@
 #define ADMIN_TOKEN   "OtterMobile2026"
 #define LOG_FILE      "/tmp/careservice.log"
 #define EVENTS_FILE   "/opt/careotter_events.log"
-#define THRESH_FILE   "/tmp/careotter.thresholds"
+#define THRESH_FILE   "/var/log/careotter.thresholds"
 #define ALERT_CONF    "/etc/careotter/alert.conf"
 #define SENSOR_PORT   8081
 #define _STRINGIFY(x) #x
@@ -544,6 +544,13 @@ void handle_request(int c_fd) {
             break;
         }
 
+        /* ── 0x0F PING — connectivity probe ──────────────────────────────── */
+        case 0x0F: {
+            send(c_fd, "PONG", 4, 0);
+            log_event("PING: probe received");
+            break;
+        }
+
         default:
             send(c_fd, "ERR_CMD", 7, 0);
             break;
@@ -575,6 +582,22 @@ int main(void) {
     }
 
     log_event("careservice started on port " STRINGIFY(PORT));
+
+    /* Idempotent threshold file bootstrap: if the file does not exist,
+     * create it with clinical defaults so sensor_service.py and the
+     * Cloud API have a consistent baseline from boot. */
+    int tfd = open(THRESH_FILE, O_RDONLY);
+    if (tfd < 0) {
+        tfd = open(THRESH_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (tfd >= 0) {
+            const char *defaults = "bpm_min=50\nbpm_max=120\nspo2_min=90\n";
+            write(tfd, defaults, strlen(defaults));
+            close(tfd);
+            log_event("THRESH_FILE created with defaults");
+        }
+    } else {
+        close(tfd);
+    }
 
     while (1) {
         int c_fd = accept(s_fd, NULL, NULL);
