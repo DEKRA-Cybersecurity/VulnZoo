@@ -83,7 +83,10 @@ class IGPClient:
 
         except socket.timeout:
             raise IGPError(
-                f"Timeout ({self.timeout}s) connecting to {self.host}:{self.port}"
+                f"Timeout ({self.timeout}s) connecting to {self.host}:{self.port}. "
+                f"Possible causes: (1) Docker bridge mode has no route to the WiFi subnet — "
+                f"try network_mode: host. (2) OpenWRT firewall blocks port 9999 on WAN. "
+                f"(3) careservice is not running. Use /api/device/ping for diagnostics."
             )
         except ConnectionRefusedError:
             raise IGPError(

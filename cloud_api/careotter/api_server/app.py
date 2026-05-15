@@ -98,6 +98,19 @@ vitals = VitalsService()
 try:
     db = DatabaseService()
     logger.info(f"[App] Database initialized at: {Config.DB_PATH}")
+
+    # Bootstrap DEVICE_IP from persisted DB value or Ethernet fallback.
+    # This lets the API talk to the Pi immediately without requiring an
+    # explicit /initialize_iot call on every container restart.
+    persisted_ip = db.get_device_ip() if db else ''
+    if persisted_ip:
+        Config.DEVICE_IP = persisted_ip
+        logger.info(f"[App] Restored DEVICE_IP from DB: {Config.DEVICE_IP}")
+    else:
+        eth_fallback = '192.168.2.1'
+        Config.DEVICE_IP = eth_fallback
+        logger.info(f"[App] No persisted device_ip — using Ethernet fallback: {Config.DEVICE_IP}")
+
     # NO default users are created at startup — the device must register itself
     # via POST /admin/device/register (or fallback GET /initialize_iot for lab operators).
     user_count = db.user_count() if db else 0
@@ -273,11 +286,6 @@ def admin_logs():
 @app.route('/patient/login')
 def patient_login():
     return render_template('patient_login.html')
-
-@app.route('/patient/dashboard')
-@web_patient_required
-def patient_dashboard():
-    return render_template('patient_dashboard.html')
 
 @app.route('/history')
 @web_patient_required
@@ -458,6 +466,72 @@ def device_status():
         return jsonify({'error': str(e)}), 503
 
 
+@app.route('/api/device/ping')
+@token_required
+def device_ping():
+    """
+    TCP connectivity check to the device's IGP port (:9999).
+    Does NOT require IGP authentication — it only opens and closes a TCP socket.
+
+    Returns diagnostic hints when the Cloud API container cannot reach the Pi
+    (common with Docker bridge mode + WiFi subnets).
+    """
+    host = Config.DEVICE_IP
+    port = Config.IGP_PORT
+    timeout = 3
+
+    if not host:
+        return jsonify({
+            'reachable': False,
+            'host': host,
+            'port': port,
+            'error': 'No device IP configured. Call /initialize_iot or register the device first.',
+            'hint': 'DEVICE_IP is empty'
+        }), 503
+
+    try:
+        t0 = time.time()
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            elapsed = round((time.time() - t0) * 1000, 1)
+            return jsonify({
+                'reachable': True,
+                'host': host,
+                'port': port,
+                'latency_ms': elapsed,
+                'message': f'TCP connection to {host}:{port} established in {elapsed} ms.'
+            }), 200
+    except socket.timeout:
+        return jsonify({
+            'reachable': False,
+            'host': host,
+            'port': port,
+            'error': f'TCP connection to {host}:{port} timed out after {timeout}s.',
+            'hint': (
+                'Common causes: (1) Docker bridge networking — the container may not have '
+                'a route to the device WiFi subnet. Add "network_mode: host" to docker-compose.yml '
+                'or run with --network host. (2) OpenWRT firewall blocks port 9999 on the WAN zone. '
+                '(3) careservice is not running. (4) Wrong IP — the device may have changed IP '
+                'after WiFi roaming.'
+            )
+        }), 504
+    except ConnectionRefusedError:
+        return jsonify({
+            'reachable': False,
+            'host': host,
+            'port': port,
+            'error': f'Connection refused on {host}:{port}.',
+            'hint': 'The careservice daemon is not listening. Check /etc/init.d/careservice on the Pi.'
+        }), 503
+    except OSError as e:
+        return jsonify({
+            'reachable': False,
+            'host': host,
+            'port': port,
+            'error': f'Network error: {e}',
+            'hint': 'No route to host. Verify routing between the Cloud API host and the device.'
+        }), 503
+
+
 # ── Vitals ────────────────────────────────────────────────────────────────────
 
 @app.route('/api/vitals')
@@ -528,6 +602,24 @@ def get_vitals_db_stats():
     device_mac = request.args.get('device_mac', None)
     stats      = db.get_vitals_stats(hours=hours, device_mac=device_mac)
     return jsonify(stats), 200
+
+
+@app.route('/api/alerts/db/history')
+def get_alerts_db_history():
+    """Clinical alert events from the database.
+    Query params: ?hours=24 &limit=500 &device_mac=AA:BB:CC:DD:EE:FF
+    """
+    hours      = request.args.get('hours', 24, type=int)
+    limit      = request.args.get('limit', 500, type=int)
+    device_mac = request.args.get('device_mac', None)
+
+    events = db.get_alerts_history(hours=hours, limit=limit, device_mac=device_mac)
+    return jsonify({
+        'hours':      hours,
+        'count':      len(events),
+        'device_mac': device_mac,
+        'alerts':     events
+    }), 200
 
 
 # ── User device endpoint ──────────────────────────────────────────────────────
@@ -682,8 +774,18 @@ def set_wifi():
                 'or POST /initialize_iot once the device joins the WiFi.'
             )
 
-    status = 200 if result.get('success') else 500
-    return jsonify(result), status
+    if result.get('success'):
+        return jsonify(result), 200
+
+    result_text = result.get('result', '')
+    if result_text.startswith('WIFI_CONNECT_FAIL'):
+        return jsonify({
+            'error': 'WiFi configuration was applied but the device could not connect. '
+                     'Verify SSID and password are correct and the access point is reachable.',
+            'detail': result_text
+        }), 502
+
+    return jsonify(result), 500
 
 
 # ── Device Configuration ──────────────────────────────────────────────────────
@@ -1014,11 +1116,49 @@ def _vitals_collector():
         time.sleep(INTERVAL)
 
 
+def _alerts_collector():
+    """Background thread: pull edge-triggered alert events from sensor and persist.
+
+    Watermark = max(timestamp) already stored in the alerts table for this
+    device. The sensor returns only events with timestamp > since, so steady
+    state costs a single empty HTTP round-trip per interval.
+    """
+    INTERVAL = 5  # seconds — finer than vitals because alerts are sparse + latency-sensitive
+    logger.info(f"[AlertsCollector] Started (interval={INTERVAL}s)")
+    while True:
+        try:
+            if not Config.DEVICE_IP or not DEVICE_MAC:
+                time.sleep(INTERVAL)
+                continue
+
+            since = db.get_latest_alert_timestamp(device_mac=DEVICE_MAC) if db else 0.0
+            result = vitals.get_alerts(since=since)
+            if not result.get('success'):
+                logger.debug(f"[AlertsCollector] Pull failed: {result.get('error')}")
+                time.sleep(INTERVAL)
+                continue
+
+            for event in result.get('alerts', []):
+                if db and db.store_alert(event, device_mac=DEVICE_MAC):
+                    logger.info(
+                        f"[AlertsCollector] Stored {event.get('state')} "
+                        f"{event.get('type')}={event.get('value')} "
+                        f"(threshold={event.get('threshold')}, "
+                        f"severity={event.get('severity')})"
+                    )
+        except Exception as e:
+            logger.warning(f"[AlertsCollector] Error: {e}")
+        time.sleep(INTERVAL)
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5002))
 
     collector = threading.Thread(target=_vitals_collector, daemon=True)
     collector.start()
+
+    alerts_collector = threading.Thread(target=_alerts_collector, daemon=True)
+    alerts_collector.start()
 
     # ── Auto-initialize in vulnerable lab mode ──────────────────────────────────
     # When VULNERABLE=1 and the database has no users, automatically run

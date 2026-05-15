@@ -86,7 +86,7 @@
             localStorage.setItem('careotter_expires', data.expires_in || '8h');
 
             showSuccess('Authentication successful. Redirecting…');
-            setTimeout(() => { window.location.href = '/patient/dashboard'; }, 900);
+            setTimeout(() => { window.location.href = '/'; }, 900);
 
         } catch (err) {
             showError('Unable to connect to the server. Check the network.');

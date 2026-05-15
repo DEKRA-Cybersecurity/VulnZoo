@@ -166,6 +166,87 @@ log_buffer = []  # Circular log buffer
 alert_thresholds = {"bpm_min": 40, "bpm_max": 120, "spo2_min": 90}
 thresholds_lock = threading.Lock()
 
+# ── Clinical alert dispatcher ─────────────────────────────
+# Edge-triggered: only emit on healthy→fired and fired→cleared transitions to
+# avoid flooding the log + cloud collector with one event per sensor cycle.
+ALERT_LOG_FILE = "/tmp/medical-logs/alerts.log"
+ALERT_BUFFER_MAX = 500
+alerts_buffer = []          # circular, mirror of recent alert events
+alerts_log_lock = threading.Lock()
+
+# Per-condition latch — last edge state. False = healthy, True = currently firing.
+_last_alert_state = {"bpm_low": False, "bpm_high": False, "spo2_low": False}
+_alert_state_lock = threading.Lock()
+
+
+def _alert_severity(kind: str, value: int, threshold: int) -> str:
+    """Coarse severity: SpO2 below 90 or HR drift > 20 from threshold = critical."""
+    if kind == "spo2_low":
+        return "critical" if value < 90 else "warning"
+    if kind == "bpm_low":
+        return "critical" if value < max(0, threshold - 20) else "warning"
+    if kind == "bpm_high":
+        return "critical" if value > threshold + 30 else "warning"
+    return "warning"
+
+
+def _append_alert(event: dict) -> None:
+    """Add an alert event to the circular buffer + append to alerts.log."""
+    with alerts_log_lock:
+        alerts_buffer.append(event)
+        if len(alerts_buffer) > ALERT_BUFFER_MAX:
+            alerts_buffer.pop(0)
+    try:
+        os.makedirs(os.path.dirname(ALERT_LOG_FILE), exist_ok=True)
+        with open(ALERT_LOG_FILE, "a") as fh:
+            fh.write(json.dumps(event) + "\n")
+    except OSError as e:
+        sys.stderr.write(f"[medical-sensor] Alert log write failed: {e}\n")
+
+
+def _evaluate_alerts(bpm: int, spo2: int, ts: float) -> None:
+    """Evaluate current vitals against thresholds and emit edge-triggered events.
+
+    Three independent conditions latch in `_last_alert_state`. A `fired` event is
+    emitted when a condition first crosses its threshold; a `cleared` event when
+    it returns to healthy. Steady-state firing produces zero events — that's the
+    whole point of using edges instead of level-triggering.
+    """
+    with thresholds_lock:
+        thr = dict(alert_thresholds)
+
+    conditions = {
+        "bpm_low":  (bpm  < thr["bpm_min"],  bpm,  thr["bpm_min"]),
+        "bpm_high": (bpm  > thr["bpm_max"],  bpm,  thr["bpm_max"]),
+        "spo2_low": (spo2 < thr["spo2_min"], spo2, thr["spo2_min"]),
+    }
+
+    with _alert_state_lock:
+        for kind, (firing, value, threshold) in conditions.items():
+            previously_firing = _last_alert_state[kind]
+            if firing and not previously_firing:
+                _last_alert_state[kind] = True
+                _append_alert({
+                    "timestamp": ts,
+                    "type":      kind,
+                    "state":     "fired",
+                    "value":     int(value),
+                    "threshold": int(threshold),
+                    "severity":  _alert_severity(kind, value, threshold),
+                    "source":    "simulator" if not USE_REAL_HW else "hardware",
+                })
+            elif not firing and previously_firing:
+                _last_alert_state[kind] = False
+                _append_alert({
+                    "timestamp": ts,
+                    "type":      kind,
+                    "state":     "cleared",
+                    "value":     int(value),
+                    "threshold": int(threshold),
+                    "severity":  "info",
+                    "source":    "simulator" if not USE_REAL_HW else "hardware",
+                })
+
 
 def _load_thresholds_from_file():
     """Load thresholds from THRESH_FILE written by careservice IGP 0x08 SET_THRESHOLD.
@@ -330,14 +411,20 @@ def sensor_loop():
                 # SpO2: constant at 98% (normal healthy range: 95-100%)
                 spo2 = 98
 
+            now_ts = time.time()
             with lock:
                 latest.update({
                     "bpm": bpm,
                     "spo2": spo2,
                     "red_raw": red,
                     "ir_raw": ir,
-                    "timestamp": time.time(),
+                    "timestamp": now_ts,
                 })
+
+            # Edge-triggered alert dispatch — runs every sensor cycle but only
+            # writes to buffer/log on healthy↔fired transitions, so steady-state
+            # alerts cost ~0 disk + 0 cloud bandwidth.
+            _evaluate_alerts(bpm, spo2, now_ts)
 
             # Accumulate for the summary
             bpm_accum.append(bpm)
@@ -500,6 +587,27 @@ class VitalsHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
 
+        elif self.path.startswith("/alerts/history"):
+            if not self._check_auth():
+                self._send_401()
+                return
+            # Cloud collector poll: returns alert events with timestamp > since.
+            # Without `since` returns the full in-memory buffer (up to ALERT_BUFFER_MAX).
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                since = float(qs.get("since", ["0"])[0])
+            except (ValueError, IndexError):
+                since = 0.0
+            with alerts_log_lock:
+                events = [e for e in alerts_buffer if e.get("timestamp", 0) > since]
+            body = json.dumps({"alerts": events, "count": len(events)}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
         elif self.path.startswith("/history"):
             if not self._check_auth():
                 self._send_401()
@@ -544,6 +652,14 @@ class VitalsHandler(BaseHTTPRequestHandler):
                     if "bpm_max"  in data: alert_thresholds["bpm_max"]  = int(data["bpm_max"])
                     if "spo2_min" in data: alert_thresholds["spo2_min"] = int(data["spo2_min"])
                     result = dict(alert_thresholds)
+                # Persist to shared file so careservice and BLE stay in sync
+                try:
+                    with open(THRESH_FILE, "w") as fh:
+                        fh.write(f"bpm_min={alert_thresholds['bpm_min']}\n")
+                        fh.write(f"bpm_max={alert_thresholds['bpm_max']}\n")
+                        fh.write(f"spo2_min={alert_thresholds['spo2_min']}\n")
+                except OSError:
+                    pass
                 resp = json.dumps({"ok": True, "thresholds": result}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

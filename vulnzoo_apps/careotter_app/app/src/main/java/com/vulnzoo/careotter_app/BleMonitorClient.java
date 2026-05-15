@@ -121,7 +121,7 @@ public class BleMonitorClient {
                 // Only react to the exact target name — but name is attacker-controlled
                 if (DEVICE_NAME.equals(name)) {
                     stopScan();
-                    listener.onLog("Encontrado: " + name + " [" + device.getAddress() + "] — conectando…");
+                    listener.onLog("Found: " + name + " [" + device.getAddress() + "] — connected");
                     connect(device.getAddress());
                 }
             }
@@ -136,7 +136,7 @@ public class BleMonitorClient {
         if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) return;
         scanner.stopScan(activeScanCallback != null ? activeScanCallback : new ScanCallback() {});
         scanning = false;
-        listener.onLog("Scan detenido");
+        listener.onLog("Scan stopped");
     }
 
     // ── Connect ───────────────────────────────────────────────────────────────

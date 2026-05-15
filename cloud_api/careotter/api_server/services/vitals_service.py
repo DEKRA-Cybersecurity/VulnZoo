@@ -76,6 +76,33 @@ class VitalsService:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
+    def get_alerts(self, since: float = 0.0) -> dict:
+        """
+        Pull alert events from sensor's GET /alerts/history?since=<ts>.
+
+        The sensor emits one event per healthy↔fired transition (edge-triggered),
+        so the cloud collector polls with a watermark and only ingests new rows.
+        """
+        base = self._base()
+        if not base:
+            return {'success': False, 'error': 'Device not registered — no IP configured'}
+        try:
+            r = requests.get(
+                f"{base}/alerts/history",
+                headers=self._headers(),
+                params={'since': since},
+                timeout=self._timeout
+            )
+            r.raise_for_status()
+            payload = r.json()
+            return {'success': True, 'alerts': payload.get('alerts', [])}
+        except requests.Timeout:
+            return {'success': False, 'error': 'Timeout retrieving alerts'}
+        except requests.ConnectionError as e:
+            return {'success': False, 'error': f'Connection error: {e}'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
     def get_health(self) -> dict:
         """Verifies that the sensor service is running via GET /health."""
         base = self._base()

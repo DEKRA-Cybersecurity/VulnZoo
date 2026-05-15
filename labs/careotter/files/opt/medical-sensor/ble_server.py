@@ -835,6 +835,14 @@ class AlertThresholdChrc(ServiceInterface):
         _alert_bpm_window = float(
             alert_thresholds["bpm_max"] - alert_thresholds["bpm_min"]
         )
+        # Persist to shared file so sensor_service and careservice stay in sync
+        try:
+            with open("/tmp/careotter.thresholds", "w") as fh:
+                fh.write(f"bpm_min={alert_thresholds['bpm_min']}\n")
+                fh.write(f"bpm_max={alert_thresholds['bpm_max']}\n")
+                fh.write(f"spo2_min={alert_thresholds['spo2_min']}\n")
+        except OSError:
+            pass
         print(f"[BLE] CSCP v1 thresholds updated: {alert_thresholds}")
         if notifying_alert:
             try:

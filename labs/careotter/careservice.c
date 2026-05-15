@@ -17,7 +17,7 @@
 #define MAGIC         0x43415245   /* "CARE" — IoT Gateway Protocol v4 */
 #define ADMIN_TOKEN   "OtterMobile2026"
 #define LOG_FILE      "/tmp/careservice.log"
-#define EVENTS_FILE   "/tmp/careotter_events.log"
+#define EVENTS_FILE   "/opt/careotter_events.log"
 #define THRESH_FILE   "/tmp/careotter.thresholds"
 #define ALERT_CONF    "/etc/careotter/alert.conf"
 #define SENSOR_PORT   8081
@@ -166,14 +166,44 @@ void get_system_status(int c_fd, char *module_name) {
 
 void handle_request(int c_fd) {
     igp_hdr_t hdr;
-    if (recv(c_fd, &hdr, sizeof(hdr), 0) != sizeof(hdr)) return;
-    if (ntohl(hdr.magic) != MAGIC) return;
+    ssize_t got = recv(c_fd, &hdr, sizeof(hdr), 0);
+    if (got != (ssize_t)sizeof(hdr)) {
+        /* Short header — lab diagnostic so operators handcrafting IGP frames
+         * see *why* the server hung up. Real-world servers would stay silent
+         * to deter protocol fingerprinting, but this is a training rig. */
+        char err[64];
+        int n = snprintf(err, sizeof(err),
+                         "ERR_SHORT_HEADER:got=%zd exp=%zu", got, sizeof(hdr));
+        send(c_fd, err, n, 0);
+        log_event("HEADER: short read");
+        return;
+    }
+    uint32_t got_magic = ntohl(hdr.magic);
+    if (got_magic != MAGIC) {
+        char err[80];
+        int n = snprintf(err, sizeof(err),
+                         "ERR_MAGIC:got=0x%08x exp=0x%08x",
+                         got_magic, MAGIC);
+        send(c_fd, err, n, 0);
+        log_event("HEADER: bad magic");
+        return;
+    }
 
     uint16_t p_len = ntohs(hdr.len);
     unsigned char *payload = malloc(p_len + 1);
     if (!payload) return;
     if (p_len > 0) {
-        recv(c_fd, payload, p_len, 0);
+        ssize_t pgot = recv(c_fd, payload, p_len, 0);
+        if (pgot != (ssize_t)p_len) {
+            char err[80];
+            int n = snprintf(err, sizeof(err),
+                             "ERR_PAYLOAD_SHORT:cmd=0x%02x got=%zd exp=%u",
+                             hdr.cmd, pgot, p_len);
+            send(c_fd, err, n, 0);
+            log_event("PAYLOAD: short read");
+            free(payload);
+            return;
+        }
         payload[p_len] = '\0';
     }
 
@@ -287,13 +317,27 @@ void handle_request(int c_fd) {
                      ssid, psk);
 
             int r = system(cmd);
-            if (r == 0) {
-                send(c_fd, "WIFI_UPDATED", 12, 0);
-                log_event("SET_WIFI: configuration applied");
-            } else {
+            if (r != 0) {
                 send(c_fd, "WIFI_ERR", 8, 0);
                 log_event("SET_WIFI: system() failed");
+                break;
             }
+
+            /* Verify the device actually associated with the access point */
+            sleep(5);
+            int connected = system(
+                "for iface in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do "
+                "  iw dev \"$iface\" link >/dev/null 2>&1 && exit 0; "
+                "done; exit 1"
+            );
+            if (connected != 0) {
+                send(c_fd, "WIFI_CONNECT_FAIL: device could not associate with the access point", 66, 0);
+                log_event("SET_WIFI: connection failed — check SSID and PSK");
+                break;
+            }
+
+            send(c_fd, "WIFI_UPDATED", 12, 0);
+            log_event("SET_WIFI: configuration applied and connected");
             break;
         }
 
@@ -482,6 +526,21 @@ void handle_request(int c_fd) {
             authenticated = 0;
             send(c_fd, "DEAUTH_OK", 9, 0);
             log_event("DEAUTHENTICATE: session closed");
+            break;
+        }
+
+        /* ── 0x0E GET_THRESHOLD — read current clinical thresholds ─────────── */
+        case 0x0E: {
+            int fd = open(THRESH_FILE, O_RDONLY);
+            if (fd < 0) {
+                send(c_fd, "THRESH_NOT_SET", 14, 0);
+                break;
+            }
+            char buf[128];
+            int n = read(fd, buf, sizeof(buf));
+            close(fd);
+            if (n > 0) send(c_fd, buf, n, 0);
+            else       send(c_fd, "THRESH_EMPTY", 12, 0);
             break;
         }
 

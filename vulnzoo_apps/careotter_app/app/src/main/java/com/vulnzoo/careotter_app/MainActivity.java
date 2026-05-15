@@ -21,8 +21,15 @@ import androidx.core.app.ActivityCompat;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 
 /**
@@ -86,6 +93,21 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
+    // Periodic poller for the Cloud /api/vitals/db/stats alert counters.
+    // Edge-triggered counts come from the cloud, which ingests events from the
+    // sensor every ~5s. UI refresh interval is intentionally coarser (30s) —
+    // the count is meant to reflect care episodes, not real-time waveform.
+    private static final long ALERTS_POLL_INTERVAL_S = 30;
+    private final ScheduledExecutorService alertsScheduler =
+            Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> alertsPollHandle;
+    private String assignedDeviceMac = null;
+
+    // Alerts UI
+    private TextView tvAlertsCount;
+    private TextView tvAlertsBreakdown;
+    private TextView tvAlertsUpdated;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -108,6 +130,9 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         btnWriteThreshold = findViewById(R.id.btnWriteThreshold);
         tvOutput         = findViewById(R.id.tvOutput);
         scrollOutput     = findViewById(R.id.scrollOutput);
+        tvAlertsCount      = findViewById(R.id.tvAlertsCount);
+        tvAlertsBreakdown  = findViewById(R.id.tvAlertsBreakdown);
+        tvAlertsUpdated    = findViewById(R.id.tvAlertsUpdated);
 
         // VULNERABILITY #4: default thresholds hardcoded — visible via APK decompilation
         etThresholdJson.setText(DEFAULT_THRESHOLDS);
@@ -139,16 +164,16 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
             }
         });
 
-        // SCAN: busca CareOtter_HR y conecta automáticamente al encontrarlo
+        // SCAN: search for CareOtter_HR and auto-connect when discovered
         btnScan.setOnClickListener(v -> {
-            tvDeviceName.setText("Buscando " + BleMonitorClient.DEVICE_NAME + "…");
+            tvDeviceName.setText("Scanning for " + BleMonitorClient.DEVICE_NAME + "…");
             tvDeviceName.setTextColor(0xFFFFB300);
             bleClient.startScan();
         });
 
-        // CONNECT: alias de scan (el target es siempre CareOtter_HR)
+        // CONNECT: alias for scan (target is always CareOtter_HR)
         btnConnect.setOnClickListener(v -> {
-            tvDeviceName.setText("Buscando " + BleMonitorClient.DEVICE_NAME + "…");
+            tvDeviceName.setText("Scanning for " + BleMonitorClient.DEVICE_NAME + "…");
             tvDeviceName.setTextColor(0xFFFFB300);
             bleClient.startScan();
         });
@@ -194,13 +219,13 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
 
     @Override
     public void onDisconnected() {
-        uiHandler.post(() -> {
-            tvDeviceName.setTextColor(0xFFFF6B6B);
-            tvDeviceName.setText("Desconectado");
-            tvBpm.setText("--");
-            tvSpo2.setText("--");
-            tvAlertBanner.setVisibility(View.GONE);
-        });
+            uiHandler.post(() -> {
+                tvDeviceName.setTextColor(0xFFFF6B6B);
+                tvDeviceName.setText("Disconnected");
+                tvBpm.setText("--");
+                tvSpo2.setText("--");
+                tvAlertBanner.setVisibility(View.GONE);
+            });
     }
 
     @Override
@@ -357,6 +382,8 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         super.onDestroy();
         bleClient.close();
         executor.shutdownNow();
+        if (alertsPollHandle != null) alertsPollHandle.cancel(false);
+        alertsScheduler.shutdownNow();
     }
 
     // ── Assigned device fetch ────────────────────────────────────────────────
@@ -377,11 +404,14 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
                 if (json.has("mac")) {
                     final String mac = json.getString("mac");
                     final String name = json.optString("device_name", "CareOtter_HR");
+                    assignedDeviceMac = mac;
                     uiHandler.post(() -> {
                         tvModel.setText(name + " [" + mac + "]");
                         tvDeviceName.setText(name);
                         appendLog("[DEVICE] Assigned: " + name + " " + mac);
                     });
+                    // Now that we have the MAC, start polling alerts for this device.
+                    startAlertsPolling(apiUrl, token, mac);
                 } else if (json.has("error")) {
                     final String err = json.getString("error");
                     uiHandler.post(() -> appendLog("[DEVICE] " + err));
@@ -391,6 +421,68 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
                 uiHandler.post(() -> appendLog("[DEVICE] Failed to load assignment: " + e.getMessage()));
             }
         });
+    }
+
+    // ── Alert counter (cloud-sourced, edge-triggered) ────────────────────────
+    //
+    // Hits GET /api/vitals/db/stats?hours=24&device_mac=<mac>. The cloud has
+    // already collapsed every multi-cycle out-of-range episode into a single
+    // "fired" event in its alerts table — see _alerts_collector in app.py and
+    // _evaluate_alerts in sensor_service.py — so the number we render here is
+    // the count of *episodes*, not the count of out-of-range readings.
+    private void startAlertsPolling(String apiUrl, String token, String deviceMac) {
+        if (alertsPollHandle != null) {
+            alertsPollHandle.cancel(false);
+        }
+        alertsPollHandle = alertsScheduler.scheduleAtFixedRate(
+                () -> pollAlerts(apiUrl, token, deviceMac),
+                0, ALERTS_POLL_INTERVAL_S, TimeUnit.SECONDS
+        );
+    }
+
+    private void pollAlerts(String apiUrl, String token, String deviceMac) {
+        try {
+            URL url = new URL(apiUrl
+                    + "/api/vitals/db/stats?hours=24&device_mac="
+                    + URLEncoder.encode(deviceMac, "UTF-8"));
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Authorization", "Bearer " + token);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+
+            int code = conn.getResponseCode();
+            java.io.InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
+            String body = new String(readAllBytesCompat(is), java.nio.charset.StandardCharsets.UTF_8);
+            if (code >= 400) {
+                Log.w("MainActivity", "alerts stats http " + code + ": " + body);
+                return;
+            }
+
+            JSONObject json = new JSONObject(body);
+            JSONObject alerts = json.optJSONObject("alerts");
+            if (alerts == null) return;
+
+            final int bpmCount      = alerts.optInt("bpm", 0);
+            final int spo2Count     = alerts.optInt("spo2", 0);
+            final int criticalCount = alerts.optInt("critical", 0);
+            final int total         = bpmCount + spo2Count;
+            final String stamp = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
+
+            uiHandler.post(() -> {
+                tvAlertsCount.setText(String.valueOf(total));
+                tvAlertsCount.setTextColor(criticalCount > 0 ? 0xFFDC2626
+                                          : total > 0       ? 0xFFB45309
+                                                            : 0xFF0F172A);
+                tvAlertsBreakdown.setText(
+                        "BPM: " + bpmCount + " · SpO₂: " + spo2Count
+                                + " · Critical: " + criticalCount);
+                tvAlertsUpdated.setText("Updated " + stamp);
+            });
+        } catch (Exception e) {
+            Log.w("MainActivity", "pollAlerts failed: " + e.getMessage());
+            uiHandler.post(() -> tvAlertsUpdated.setText("Sync error: " + e.getMessage()));
+        }
     }
 
     private String doFetchDevice(String baseUrl, String token) throws Exception {
