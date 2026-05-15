@@ -101,7 +101,7 @@ public class LoginActivity extends AppCompatActivity {
 
         tvStatus.setVisibility(android.view.View.VISIBLE);
         tvStatus.setTextColor(0xFF9AA0A6);
-        tvStatus.setText("Edita solo el último número si la red es correcta");
+        tvStatus.setText("Edit only the last octet if the detected network prefix is correct");
 
         btnLogin.setOnClickListener(v -> attemptLogin());
 

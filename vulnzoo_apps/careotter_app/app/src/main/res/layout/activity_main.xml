@@ -310,6 +310,65 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- Alerts summary (sourced from Cloud /api/vitals/db/stats — edge-triggered count) -->
+            <LinearLayout
+                android:id="@+id/layoutAlertsCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/card_background"
+                android:padding="14dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="ALERTS · LAST 24H"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.08"
+                        android:textColor="#92400E" />
+
+                    <TextView
+                        android:id="@+id/tvAlertsBreakdown"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="BPM: — · SpO₂: — · Critical: —"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="#64748B"
+                        android:layout_marginTop="4dp" />
+
+                    <TextView
+                        android:id="@+id/tvAlertsUpdated"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Waiting for first sync…"
+                        android:textSize="10sp"
+                        android:textColor="#94A3B8"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvAlertsCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="—"
+                    android:textSize="36sp"
+                    android:textStyle="bold"
+                    android:textColor="#0F172A"
+                    android:fontFamily="monospace"
+                    android:gravity="end" />
+            </LinearLayout>
+
             <!-- Manufacturer (shown when connected) -->
             <LinearLayout
                 android:id="@+id/layoutManufacturer"

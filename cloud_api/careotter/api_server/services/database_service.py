@@ -118,6 +118,29 @@ class DatabaseService:
                     value TEXT,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                -- Edge-triggered clinical alerts emitted by sensor_service.py
+                -- (one row per healthy↔fired transition; steady-state firing
+                -- produces zero rows).
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_mac TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    type TEXT NOT NULL,         -- bpm_low | bpm_high | spo2_low
+                    state TEXT NOT NULL,        -- fired | cleared
+                    severity TEXT NOT NULL,     -- info | warning | critical
+                    value INTEGER,
+                    threshold INTEGER,
+                    source TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(device_mac, timestamp, type, state),
+                    FOREIGN KEY (device_mac) REFERENCES devices(mac)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
+                    ON alerts(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_alerts_mac_timestamp
+                    ON alerts(device_mac, timestamp);
             ''')
             conn.commit()
 
@@ -544,7 +567,13 @@ class DatabaseService:
             return []
 
     def get_vitals_stats(self, hours: int = 24, device_mac: str = None) -> Dict:
-        """Aggregated statistics, optionally filtered by device MAC."""
+        """Aggregated statistics, optionally filtered by device MAC.
+
+        Vitals aggregates (avg/min/max/total) come from `vitals_readings`.
+        Alert counts come from the `alerts` table — only rows with state='fired'
+        are counted, so a single sustained alert episode contributes 1 (not one
+        per cycle as the previous inline COUNT(CASE …) over vitals did).
+        """
         since = (datetime.now() - timedelta(hours=hours)).timestamp()
         mac = device_mac.upper() if device_mac else None
         try:
@@ -554,9 +583,7 @@ class DatabaseService:
                         SELECT
                             AVG(bpm), MIN(bpm), MAX(bpm),
                             AVG(spo2), MIN(spo2), MAX(spo2),
-                            COUNT(*),
-                            COUNT(CASE WHEN bpm < 60 OR bpm > 100 THEN 1 END),
-                            COUNT(CASE WHEN spo2 < 95 THEN 1 END)
+                            COUNT(*)
                         FROM vitals_readings
                         WHERE timestamp >= ? AND device_mac = ?
                     ''', (since, mac))
@@ -565,14 +592,32 @@ class DatabaseService:
                         SELECT
                             AVG(bpm), MIN(bpm), MAX(bpm),
                             AVG(spo2), MIN(spo2), MAX(spo2),
-                            COUNT(*),
-                            COUNT(CASE WHEN bpm < 60 OR bpm > 100 THEN 1 END),
-                            COUNT(CASE WHEN spo2 < 95 THEN 1 END)
+                            COUNT(*)
                         FROM vitals_readings
                         WHERE timestamp >= ?
                     ''', (since,))
-                
+
                 row = cursor.fetchone()
+
+                if mac:
+                    alerts_row = conn.execute('''
+                        SELECT
+                            COUNT(CASE WHEN type IN ('bpm_low','bpm_high') THEN 1 END),
+                            COUNT(CASE WHEN type = 'spo2_low' THEN 1 END),
+                            COUNT(CASE WHEN severity = 'critical' THEN 1 END)
+                        FROM alerts
+                        WHERE timestamp >= ? AND device_mac = ? AND state = 'fired'
+                    ''', (since, mac)).fetchone()
+                else:
+                    alerts_row = conn.execute('''
+                        SELECT
+                            COUNT(CASE WHEN type IN ('bpm_low','bpm_high') THEN 1 END),
+                            COUNT(CASE WHEN type = 'spo2_low' THEN 1 END),
+                            COUNT(CASE WHEN severity = 'critical' THEN 1 END)
+                        FROM alerts
+                        WHERE timestamp >= ? AND state = 'fired'
+                    ''', (since,)).fetchone()
+
                 return {
                     'bpm': {
                         'avg': round(row[0], 1) if row[0] else None,
@@ -586,8 +631,9 @@ class DatabaseService:
                     },
                     'total_readings': row[6] or 0,
                     'alerts': {
-                        'bpm': row[7] or 0,
-                        'spo2': row[8] or 0
+                        'bpm':      alerts_row[0] or 0,
+                        'spo2':     alerts_row[1] or 0,
+                        'critical': alerts_row[2] or 0
                     },
                     'period_hours': hours
                 }
@@ -688,6 +734,92 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error logging event: {e}")
             return False
+
+    # ── Clinical alerts ─────────────────────────────────────────────────────
+
+    def store_alert(self, event: dict, device_mac: str) -> bool:
+        """Persist one alert event from the sensor.
+
+        Idempotent via the UNIQUE(device_mac, timestamp, type, state) constraint —
+        the cloud poller may re-fetch the same event if the watermark resets, but
+        only one row will land in the table.
+        """
+        mac = (device_mac or '').upper()
+        if not mac:
+            logger.warning("[DB] store_alert called without device_mac — rejected")
+            return False
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute('''
+                    INSERT OR IGNORE INTO alerts
+                        (device_mac, timestamp, type, state, severity, value, threshold, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    mac,
+                    float(event.get('timestamp', 0)),
+                    str(event.get('type', '')),
+                    str(event.get('state', 'fired')),
+                    str(event.get('severity', 'warning')),
+                    int(event.get('value', 0))     if event.get('value')     is not None else None,
+                    int(event.get('threshold', 0)) if event.get('threshold') is not None else None,
+                    str(event.get('source', 'unknown'))
+                ))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error storing alert: {e}")
+            return False
+
+    def get_alerts_history(self, hours: int = 24, limit: int = 500,
+                           device_mac: str = None) -> List[Dict]:
+        """Return alert events newest-first with the owning patient joined."""
+        since = (datetime.now() - timedelta(hours=hours)).timestamp()
+        mac = device_mac.upper() if device_mac else None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                if mac:
+                    rows = conn.execute('''
+                        SELECT a.id, a.device_mac, a.timestamp, a.type, a.state,
+                               a.severity, a.value, a.threshold, a.source, a.created_at,
+                               d.patient_username, d.device_name
+                        FROM alerts a
+                        LEFT JOIN devices d ON a.device_mac = d.mac
+                        WHERE a.timestamp >= ? AND a.device_mac = ?
+                        ORDER BY a.timestamp DESC
+                        LIMIT ?
+                    ''', (since, mac, limit)).fetchall()
+                else:
+                    rows = conn.execute('''
+                        SELECT a.id, a.device_mac, a.timestamp, a.type, a.state,
+                               a.severity, a.value, a.threshold, a.source, a.created_at,
+                               d.patient_username, d.device_name
+                        FROM alerts a
+                        LEFT JOIN devices d ON a.device_mac = d.mac
+                        WHERE a.timestamp >= ?
+                        ORDER BY a.timestamp DESC
+                        LIMIT ?
+                    ''', (since, limit)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] Error fetching alerts history: {e}")
+            return []
+
+    def get_latest_alert_timestamp(self, device_mac: str = None) -> float:
+        """Watermark used by the cloud collector to request only newer events."""
+        mac = device_mac.upper() if device_mac else None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                if mac:
+                    row = conn.execute(
+                        'SELECT MAX(timestamp) FROM alerts WHERE device_mac = ?', (mac,)
+                    ).fetchone()
+                else:
+                    row = conn.execute('SELECT MAX(timestamp) FROM alerts').fetchone()
+                return float(row[0]) if row and row[0] else 0.0
+        except Exception as e:
+            logger.error(f"[DB] Error fetching latest alert timestamp: {e}")
+            return 0.0
 
     def cleanup_old_data(self, days: int = 30) -> int:
         """

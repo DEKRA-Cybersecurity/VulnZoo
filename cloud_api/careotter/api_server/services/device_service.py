@@ -121,13 +121,27 @@ class DeviceService:
             'raw':    text
         }
 
+    # SET_WIFI on the Pi runs `sleep(5)` after `wifi reload` to wait for STA
+    # association, then a second `system()` to verify the link with `iw`.
+    # Pi-side wall-clock is ~6–8 s — well above the default IGP_TIMEOUT (5 s),
+    # which made every successful reconfig surface as a generic socket timeout
+    # in the cloud even though the radio had associated and acquired an IP.
+    # Per-call override; the default stays tight for every other command.
+    _SET_WIFI_TIMEOUT = 15
+
     def set_wifi(self, ssid: str, password: str) -> dict:
         """IGP 0x06 — Configures the WiFi SSID and password (requires auth)."""
-        raw  = self._exec_protected('set_wifi', ssid, password)
+        self._ensure_igp()
+        original_timeout = self._igp.timeout
+        self._igp.timeout = self._SET_WIFI_TIMEOUT
+        try:
+            raw = self._exec_protected('set_wifi', ssid, password)
+        finally:
+            self._igp.timeout = original_timeout
         text = raw.decode('utf-8', errors='replace').strip()
         return {
             'result':  text,
-            'success': text == 'WIFI_UPDATED'
+            'success': text.startswith('WIFI_UPDATED')
         }
 
     # ── Diagnostics ─────────────────────────────────────────────────────────

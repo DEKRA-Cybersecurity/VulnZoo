@@ -473,6 +473,119 @@
                     <Button android:id="@+id/btnSetTheme" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Apply" android:textSize="12sp" android:backgroundTint="#2563EB" />
                 </LinearLayout>
 
+                <!-- Clinical thresholds (IGP 0x08 SET_THRESHOLD) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Clinical thresholds"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="BPM window and minimum SpO₂ for alerts"
+                        android:textSize="12sp"
+                        android:textColor="#64748B"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="10dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="8dp">
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginEnd="6dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BPM min" android:textSize="10sp" android:textStyle="bold" android:textColor="#64748B" android:letterSpacing="0.08" android:layout_marginBottom="4dp" />
+                            <EditText
+                                android:id="@+id/etBpmMin"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:hint="50"
+                                android:text="50"
+                                android:inputType="number"
+                                android:textSize="13sp"
+                                android:fontFamily="monospace"
+                                android:textColor="#0F172A"
+                                android:background="@drawable/input_background"
+                                android:paddingStart="10dp"
+                                android:paddingEnd="10dp" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginEnd="6dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BPM max" android:textSize="10sp" android:textStyle="bold" android:textColor="#64748B" android:letterSpacing="0.08" android:layout_marginBottom="4dp" />
+                            <EditText
+                                android:id="@+id/etBpmMax"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:hint="120"
+                                android:text="120"
+                                android:inputType="number"
+                                android:textSize="13sp"
+                                android:fontFamily="monospace"
+                                android:textColor="#0F172A"
+                                android:background="@drawable/input_background"
+                                android:paddingStart="10dp"
+                                android:paddingEnd="10dp" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SpO₂ min" android:textSize="10sp" android:textStyle="bold" android:textColor="#64748B" android:letterSpacing="0.08" android:layout_marginBottom="4dp" />
+                            <EditText
+                                android:id="@+id/etSpo2Min"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:hint="90"
+                                android:text="90"
+                                android:inputType="number"
+                                android:textSize="13sp"
+                                android:fontFamily="monospace"
+                                android:textColor="#0F172A"
+                                android:background="@drawable/input_background"
+                                android:paddingStart="10dp"
+                                android:paddingEnd="10dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnGetThreshold"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:text="Read thresholds"
+                            android:textSize="12sp"
+                            android:backgroundTint="#2563EB"
+                            android:textColor="#FFFFFF" />
+
+                        <Button
+                            android:id="@+id/btnSetThreshold"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:text="Apply thresholds"
+                            android:textSize="12sp"
+                            android:backgroundTint="#2563EB"
+                            android:textColor="#FFFFFF" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

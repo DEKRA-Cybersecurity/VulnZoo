@@ -23,7 +23,7 @@ import java.nio.ByteOrder;
 public class IgpClient {
 
     private static final int    IGP_MAGIC      = 0x43415245; // "CARE"
-    private static final int    DEFAULT_TIMEOUT = 5000;
+    private static final int    DEFAULT_TIMEOUT = 3000;
 
     // VULNERABILITY: admin token XOR-obfuscated with key 0x5A — trivially reversible
     private static final byte[] ENCODED_TOKEN = {
@@ -45,6 +45,7 @@ public class IgpClient {
     public static final byte CMD_DEFIBRILLATE    = 0x0B;
     public static final byte CMD_EMERGENCY_ALERT = 0x0C;
     public static final byte CMD_DEAUTHENTICATE  = 0x0D;
+    public static final byte CMD_GET_THRESHOLD   = 0x0E;
 
     private final String host;
     private final int    port;
@@ -94,13 +95,14 @@ public class IgpClient {
     public String getNetwork()     throws IOException { return send(CMD_GET_NETWORK, null); }
     public String getVitals()      throws IOException { return send(CMD_GET_VITALS, null); }
     public String getLog()         throws IOException { return send(CMD_GET_LOG, null); }
+    public String getThresholds()  throws IOException { return send(CMD_GET_THRESHOLD, null); }
     public String defibrillate()   throws IOException { return send(CMD_DEFIBRILLATE, "TRIGGER".getBytes()); }
 
     /**
-     * 0x0D DEAUTHENTICATE — resetea authenticated=0 en el proceso careservice.
-     * Llamar tras cada operación protegida para cerrar la sesión de administrador
-     * y minimizar la ventana en la que el estado global authenticated=1 es
-     * explotable por otros clientes TCP directos al puerto 9999.
+     * 0x0D DEAUTHENTICATE — resets authenticated=0 in the careservice process.
+     * Call after every protected operation to close the administrator session
+     * and minimize the window during which the global authenticated=1 state
+     * can be exploited by other direct TCP clients on port 9999.
      */
     public String deauthenticate() throws IOException { return send(CMD_DEAUTHENTICATE, null); }
 
@@ -141,5 +143,28 @@ public class IgpClient {
             0x44, 0x61, 0x72, 0x6B   // "Dark"
         };
         return send(CMD_SET_PREFS, tlv);
+    }
+
+    /**
+     * 0x08 SET_THRESHOLD — clinical alert thresholds (TLV).
+     *
+     * Wire layout (matches parse_thresholds in careservice.c):
+     *   [0xBB][0x04][bpm_min hi][bpm_min lo][bpm_max hi][bpm_max lo]
+     *   [0xCC][0x01][spo2_min]
+     *
+     * Server clamps each TLV by length, but performs NO clinical-range
+     * validation — values like (0, 65535, 0) are accepted and propagated
+     * to /tmp/careotter.thresholds, suppressing all alerts on the sensor.
+     */
+    public String setThreshold(int bpmMin, int bpmMax, int spo2Min) throws IOException {
+        ByteBuffer tlv = ByteBuffer.allocate(9).order(ByteOrder.BIG_ENDIAN);
+        tlv.put((byte) 0xBB);
+        tlv.put((byte) 0x04);
+        tlv.putShort((short) (bpmMin & 0xFFFF));
+        tlv.putShort((short) (bpmMax & 0xFFFF));
+        tlv.put((byte) 0xCC);
+        tlv.put((byte) 0x01);
+        tlv.put((byte) (spo2Min & 0xFF));
+        return send(CMD_SET_THRESHOLD, tlv.array());
     }
 }
