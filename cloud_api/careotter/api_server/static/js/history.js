@@ -141,9 +141,16 @@
         return date.toLocaleString();
     }
 
+    function getThresholds() {
+        return (typeof window !== 'undefined' && window.THRESHOLDS)
+            ? window.THRESHOLDS
+            : { bpm_min: 60, bpm_max: 100, spo2_min: 95 };
+    }
+
     function getStatusBadge(bpm, spo2) {
-        const bpmAlert = bpm < 60 || bpm > 100;
-        const spo2Alert = spo2 < 95;
+        const thr = getThresholds();
+        const bpmAlert = bpm < thr.bpm_min || bpm > thr.bpm_max;
+        const spo2Alert = spo2 < thr.spo2_min;
 
         if (bpmAlert || spo2Alert) {
             if (spo2Alert && spo2 < 90) {
@@ -347,6 +354,7 @@
         const labelColor = isDark ? '#94a3b8' : '#64748b';
 
         const { labels, bpm, spo2 } = buildChartData(readings);
+        const thr = getThresholds();
 
         const commonOptions = (yLabel, yMin, yMax) => ({
             responsive: true,
@@ -382,7 +390,7 @@
                     datasets: [
                         {
                             label: 'Normal range',
-                            data: labels.map(() => 100),
+                            data: labels.map(() => thr.bpm_max),
                             borderColor: 'transparent',
                             backgroundColor: 'rgba(229,57,53,0.08)',
                             fill: '+1',
@@ -391,7 +399,7 @@
                         },
                         {
                             label: 'Normal range low',
-                            data: labels.map(() => 60),
+                            data: labels.map(() => thr.bpm_min),
                             borderColor: 'rgba(229,57,53,0.3)',
                             borderDash: [4, 4],
                             backgroundColor: 'transparent',
@@ -426,7 +434,7 @@
                     datasets: [
                         {
                             label: 'Critical threshold',
-                            data: labels.map(() => 95),
+                            data: labels.map(() => thr.spo2_min),
                             borderColor: 'rgba(239,68,68,0.6)',
                             borderDash: [4, 4],
                             backgroundColor: 'transparent',

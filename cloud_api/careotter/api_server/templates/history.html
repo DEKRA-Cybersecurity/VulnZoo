@@ -112,7 +112,7 @@
                     <h3>Heart Rate (BPM)</h3>
                     <span class="chart-legend">
                         <span class="legend-dot" style="background:#E53935"></span> BPM
-                        <span class="legend-dot" style="background:#e5393540;border:1px solid #E53935;margin-left:8px"></span> Normal range 60–100
+                        <span class="legend-dot" style="background:#e5393540;border:1px solid #E53935;margin-left:8px"></span> Normal range {{ thresholds.bpm_min }}–{{ thresholds.bpm_max }}
                     </span>
                 </div>
                 <canvas id="chart-bpm"></canvas>
@@ -122,7 +122,7 @@
                     <h3>Blood Oxygen (SpO₂)</h3>
                     <span class="chart-legend">
                         <span class="legend-dot" style="background:#1E88E5"></span> SpO₂
-                        <span class="legend-dot" style="background:#ef444440;border:1px solid #ef4444;margin-left:8px"></span> Critical threshold &lt;95%
+                        <span class="legend-dot" style="background:#ef444440;border:1px solid #ef4444;margin-left:8px"></span> Critical threshold &lt;{{ thresholds.spo2_min }}%
                     </span>
                 </div>
                 <canvas id="chart-spo2"></canvas>
@@ -213,6 +213,9 @@
     <p>CareOtter Medical Device Monitor</p>
 </footer>
 
+<script>
+window.THRESHOLDS = {{ thresholds | tojson }};
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/static/js/history.js"></script>
 </body>

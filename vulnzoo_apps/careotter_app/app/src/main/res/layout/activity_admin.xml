@@ -149,6 +149,20 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
+                    <Button
+                        android:id="@+id/btnPing"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="Ping"
+                        android:textSize="12sp"
+                        android:backgroundTint="#2563EB"
+                        android:textColor="#FFFFFF" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

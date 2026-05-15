@@ -46,6 +46,7 @@ public class IgpClient {
     public static final byte CMD_EMERGENCY_ALERT = 0x0C;
     public static final byte CMD_DEAUTHENTICATE  = 0x0D;
     public static final byte CMD_GET_THRESHOLD   = 0x0E;
+    public static final byte CMD_PING            = 0x0F;
 
     private final String host;
     private final int    port;
@@ -96,6 +97,7 @@ public class IgpClient {
     public String getVitals()      throws IOException { return send(CMD_GET_VITALS, null); }
     public String getLog()         throws IOException { return send(CMD_GET_LOG, null); }
     public String getThresholds()  throws IOException { return send(CMD_GET_THRESHOLD, null); }
+    public String ping()           throws IOException { return send(CMD_PING, null); }
     public String defibrillate()   throws IOException { return send(CMD_DEFIBRILLATE, "TRIGGER".getBytes()); }
 
     /**
@@ -154,7 +156,7 @@ public class IgpClient {
      *
      * Server clamps each TLV by length, but performs NO clinical-range
      * validation — values like (0, 65535, 0) are accepted and propagated
-     * to /tmp/careotter.thresholds, suppressing all alerts on the sensor.
+     * to /var/log/careotter.thresholds, suppressing all alerts on the sensor.
      */
     public String setThreshold(int bpmMin, int bpmMax, int spo2Min) throws IOException {
         ByteBuffer tlv = ByteBuffer.allocate(9).order(ByteOrder.BIG_ENDIAN);

@@ -298,7 +298,7 @@ print(igp(0x07))
 #### 0x08 SET\_THRESHOLD (requires auth)
 
 Updates the clinical BPM/SpO₂ alert thresholds and persists them to
-`/tmp/careotter.thresholds`. `sensor_service.py` automatically reloads them within ≤5s.
+`/var/log/careotter.thresholds`. `sensor_service.py` automatically reloads them within ≤5s.
 
 TLV format:
 ```
@@ -317,7 +317,7 @@ print(igp(0x08, tlv))
 # b'THRESHOLD_SET'
 
 # Verify written file (on the RPi):
-# cat /tmp/careotter.thresholds
+# cat /var/log/careotter.thresholds
 # bpm_min=50
 # bpm_max=120
 # spo2_min=90
@@ -430,7 +430,7 @@ clinical alert logic of the lab.
 
 #### Scenario A — Automatic Polling ✅ VERIFIED
 
-The watcher in `sensor_service.py` detects changes in `/tmp/careotter.thresholds` by
+The watcher in `sensor_service.py` detects changes in `/var/log/careotter.thresholds` by
 mtime within ≤5 seconds, with no additional signals or service restart.
 
 **Prerequisites:**
@@ -456,7 +456,7 @@ print(igp(0x08, tlv))   # THRESHOLD_SET
 
 **3. Verify file written on the RPi:**
 ```bash
-ssh root@192.168.2.1 'cat /tmp/careotter.thresholds'
+ssh root@192.168.2.1 'cat /var/log/careotter.thresholds'
 # bpm_min=50
 # bpm_max=60
 # spo2_min=95
@@ -484,7 +484,7 @@ immediately without waiting for the 5s polling cycle.
 
 ```bash
 # 1. Write thresholds directly on the RPi
-ssh root@192.168.2.1 'printf "bpm_min=25\nbpm_max=55\nspo2_min=98\n" > /tmp/careotter.thresholds'
+ssh root@192.168.2.1 'printf "bpm_min=25\nbpm_max=55\nspo2_min=98\n" > /var/log/careotter.thresholds'
 
 # 2. Send SIGHUP — instant reload
 ssh root@192.168.2.1 'kill -HUP $(pgrep -f sensor_service.py)'
@@ -500,13 +500,13 @@ curl -s http://192.168.2.1:8081/alerts | python3 -m json.tool
 
 #### Scenario C — Load at boot ⏳ Pending test
 
-Verifies that if `/tmp/careotter.thresholds` exists before `sensor_service.py`
+Verifies that if `/var/log/careotter.thresholds` exists before `sensor_service.py`
 starts, the thresholds are loaded directly from the file instead of using the
 in-memory defaults (`bpm_min=40, bpm_max=120, spo2_min=90`).
 
 ```bash
 # 1. Pre-write the file BEFORE starting the service
-ssh root@192.168.2.1 'printf "bpm_min=45\nbpm_max=80\nspo2_min=92\n" > /tmp/careotter.thresholds'
+ssh root@192.168.2.1 'printf "bpm_min=45\nbpm_max=80\nspo2_min=92\n" > /var/log/careotter.thresholds'
 
 # 2. Restart sensor_service
 ssh root@192.168.2.1 '/etc/init.d/medical-sensor restart'

@@ -129,7 +129,7 @@ _DEVICE_MAC = _get_eth0_mac()
 
 # ── Configuration ─────────────────────────────────────────
 CONFIG_FILE = "/opt/medical-sensor/config.json"
-THRESH_FILE = "/tmp/careotter.thresholds"
+THRESH_FILE = "/var/log/careotter.thresholds"
 
 def load_config():
     try:

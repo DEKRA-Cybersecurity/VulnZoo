@@ -293,8 +293,19 @@ def history_page():
     """
     Patient history page — View all historical vitals from database.
     Requires patient login.
+    Fetches current clinical thresholds from the device so charts and
+    badges reflect the real configuration rather than hardcoded defaults.
     """
-    return render_template('history.html')
+    try:
+        thresh = device.get_thresholds()
+        thresholds = {
+            'bpm_min':  thresh.get('bpm_min', 60),
+            'bpm_max':  thresh.get('bpm_max', 100),
+            'spo2_min': thresh.get('spo2_min', 95)
+        }
+    except Exception:
+        thresholds = {'bpm_min': 60, 'bpm_max': 100, 'spo2_min': 95}
+    return render_template('history.html', thresholds=thresholds)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
