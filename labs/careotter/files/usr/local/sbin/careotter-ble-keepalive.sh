@@ -4,7 +4,7 @@
 #
 # L1 (asyncio watchdog inside ble_server.py) handles the common case
 # "BlueZ silently stopped advertising" by re-registering every 60 s and
-# writing /tmp/ble_advertising_heartbeat on each tick.
+# writing /var/log/ble_advertising_heartbeat on each tick.
 #
 # This script handles the residual case where the failure is deeper
 # than D-Bus can reach: a wedged Cypress controller, a hung bluetoothd,
@@ -20,7 +20,7 @@
 
 set -u
 
-HEARTBEAT=${HEARTBEAT:-/tmp/ble_advertising_heartbeat}
+HEARTBEAT=${HEARTBEAT:-/var/log/ble_advertising_heartbeat}
 STALE_MAX=${STALE_MAX:-180}          # 3 minutes
 LOG_TAG=careotter-ble-keepalive
 

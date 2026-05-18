@@ -744,8 +744,8 @@ An attacker can pivot from the weakest channel (BLE, no auth) to the strongest (
 
 ```
 careservice.c
-    ├── reads/writes: /tmp/careservice.log
-    ├── reads/writes: /tmp/careotter_events.log
+    ├── reads/writes: /var/log/careservice.log
+    ├── reads/writes: /opt/careotter_events.log
     ├── reads/writes: /var/log/careotter.thresholds  ◄────── sensor_service.py (watcher)
     ├── reads: /etc/config/wireless
     ├── reads: /etc/careotter/alert.conf
@@ -754,7 +754,7 @@ careservice.c
 sensor_service.py
     ├── reads: /opt/medical-sensor/config.json
     ├── reads: /var/log/careotter.thresholds
-    ├── writes: /tmp/medical-logs/vitals.log
+    ├── writes: /var/log/medical-logs/vitals.log
     └── uses: simulator.py (or real smbus2)
 
 ble_server.py

@@ -466,9 +466,98 @@
                     android:elevation="2dp">
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Wi-Fi configuration" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Read current SSID / credentials" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Read current SSID / credentials (IGP)" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
                     </LinearLayout>
                     <Button android:id="@+id/btnWifiConfig" android:layout_width="wrap_content" android:layout_height="38dp" android:text="Read" android:textSize="12sp" android:backgroundTint="#2563EB" />
+                </LinearLayout>
+
+                <!-- BLE WiFi Provisioning (hidden GATT service 0xFF10) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="10dp">
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BLE Wi-Fi Provisioning" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Hidden GATT service — factory installer channel" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="BLE"
+                            android:textSize="9sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:background="@drawable/pill_blue"
+                            android:paddingStart="7dp"
+                            android:paddingEnd="7dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="10dp">
+
+                        <EditText
+                            android:id="@+id/etBleWifiSsid"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:hint="SSID"
+                            android:textSize="13sp"
+                            android:textColor="#0F172A"
+                            android:background="@drawable/input_background"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp" />
+
+                        <EditText
+                            android:id="@+id/etBleWifiPsk"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:hint="Password"
+                            android:inputType="textPassword"
+                            android:textSize="13sp"
+                            android:textColor="#0F172A"
+                            android:background="@drawable/input_background"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnBleWifiSet"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:text="Set WiFi via BLE"
+                        android:textSize="12sp"
+                        android:backgroundTint="#7C3AED"
+                        android:textColor="#FFFFFF"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/tvBleWifiStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:fontFamily="monospace" />
                 </LinearLayout>
 
                 <LinearLayout

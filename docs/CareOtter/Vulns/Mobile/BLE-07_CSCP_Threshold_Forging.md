@@ -213,7 +213,7 @@ The following `bleak` script iterates `0000..9999` writing each candidate to `0x
 
 Iterates 0000..9999, writing each candidate to the Provisioning Auth
 characteristic (0xFF12). Detection: an external watcher tails
-/tmp/ble_server.log on the device over SSH and writes the matched line
+/var/log/ble_server.log on the device over SSH and writes the matched line
 to /tmp/careotter_pin_found; this script polls that sentinel file and
 stops as soon as it is non-empty.
 
@@ -289,7 +289,7 @@ Run the script together with the SSH watcher that creates the sentinel:
 # 1) Watcher: tails the device log, fills the sentinel on AUTH success
 rm -f /tmp/careotter_pin_found
 ( ssh root@192.168.2.1 \
-    "tail -n0 -F /tmp/ble_server.log | grep --line-buffered -m1 'AUTH success'" \
+    "tail -n0 -F /var/log/ble_server.log | grep --line-buffered -m1 'AUTH success'" \
     > /tmp/careotter_pin_found ) &
 
 # 2) Brute force in the foreground

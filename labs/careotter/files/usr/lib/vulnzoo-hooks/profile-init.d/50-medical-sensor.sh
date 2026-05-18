@@ -32,11 +32,11 @@ if [ ! -f /opt/medical-sensor/simulator.py ]; then
     exit 1
 fi
 
-# Ensure log directory exists (now in tmpfs for flash protection)
-mkdir -p /tmp/medical-logs
-chmod 755 /tmp/medical-logs
-touch /tmp/medical-logs/vitals.log
-chmod 644 /tmp/medical-logs/vitals.log
+# Ensure log directory exists under /var/log for persistence across boots
+mkdir -p /var/log/medical-logs
+chmod 755 /var/log/medical-logs
+touch /var/log/medical-logs/vitals.log
+chmod 644 /var/log/medical-logs/vitals.log
 
 # Legacy: ensure old location exists for compatibility
 mkdir -p /opt/medical-sensor

@@ -6,7 +6,7 @@
     "spo2"              : 98,
     "http_port"         : 8081,
     "sample_rate"       : 1,
-    "log_file"          : "/tmp/medical-logs/vitals.log",
+    "log_file"          : "/var/log/medical-logs/vitals.log",
     "api_key"           : "careotter-2024-lab",
     "cloud_endpoint"    : "https://api.careotter.io/ingest",
     "cloud_token"       : "eyJhbGciOiJIUzI1NiJ9.disabled",

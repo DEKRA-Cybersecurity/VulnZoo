@@ -100,19 +100,41 @@
                 android:textColor="#64748B"
                 android:layout_marginBottom="6dp" />
 
-            <EditText
-                android:id="@+id/etPassword"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:hint="••••••••"
-                android:inputType="textPassword"
-                android:textSize="14sp"
-                android:textColor="#0F172A"
-                android:textColorHint="#94A3B8"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:background="@drawable/input_background"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="16dp">
+
+                <EditText
+                    android:id="@+id/etPassword"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:hint="••••••••"
+                    android:inputType="textPassword"
+                    android:textSize="14sp"
+                    android:textColor="#0F172A"
+                    android:textColorHint="#94A3B8"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="2dp"
+                    android:background="@null"
+                    android:singleLine="true" />
+
+                <!-- Show/hide password toggle -->
+                <ImageView
+                    android:id="@+id/btnTogglePassword"
+                    android:layout_width="44dp"
+                    android:layout_height="match_parent"
+                    android:padding="11dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_password_hide"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Show password" />
+            </LinearLayout>
 
             <!-- Sign in button -->
             <Button

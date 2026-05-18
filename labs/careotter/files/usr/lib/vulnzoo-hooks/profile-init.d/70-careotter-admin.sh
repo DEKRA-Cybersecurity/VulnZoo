@@ -136,7 +136,7 @@ if /etc/init.d/careservice start; then
     fi
 else
     log_message "ERROR: careservice init script failed to start"
-    logger -t careotter-admin "ERROR: Service failed - check /tmp/careservice.log"
+    logger -t careotter-admin "ERROR: Service failed - check /var/log/careservice.log"
     exit 1
 fi
 

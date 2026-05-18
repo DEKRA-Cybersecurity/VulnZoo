@@ -17,9 +17,10 @@ openwrt_resources/owlcam/
 openwrt_resources/careotter/
 /*.md
 /*.pdf
-labs/**/*.md
-cloud_api/*.md
-cloud_api/**/*.md
+#labs/**/*.md
+#cloud_api/*.md
+#cloud_api/**/*.md
+#vulnzoo_apps/**/*.md
 releases/
 .aider*
 .qwen*
