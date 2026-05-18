@@ -3,12 +3,15 @@ package com.vulnzoo.careotter_app;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.StrictMode;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -52,6 +55,14 @@ public class AdminActivity extends AppCompatActivity {
 
     // Prevents overlapping network operations (UX guard, not a security control).
     private volatile boolean isBusy = false;
+
+    // BLE WiFi provisioning (installer/factory channel)
+    private BleWifiProvisioner wifiProvisioner;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private EditText etBleWifiSsid;
+    private EditText etBleWifiPsk;
+    private Button   btnBleWifiSet;
+    private TextView tvBleWifiStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -115,6 +126,12 @@ public class AdminActivity extends AppCompatActivity {
         EditText etBpmMin        = findViewById(R.id.etBpmMin);
         EditText etBpmMax        = findViewById(R.id.etBpmMax);
         EditText etSpo2Min       = findViewById(R.id.etSpo2Min);
+
+        etBleWifiSsid  = findViewById(R.id.etBleWifiSsid);
+        etBleWifiPsk   = findViewById(R.id.etBleWifiPsk);
+        btnBleWifiSet  = findViewById(R.id.btnBleWifiSet);
+        tvBleWifiStatus = findViewById(R.id.tvBleWifiStatus);
+        wifiProvisioner = new BleWifiProvisioner(this);
 
         tabInfo     = findViewById(R.id.tabInfo);
         tabConfig   = findViewById(R.id.tabConfig);
@@ -188,6 +205,35 @@ public class AdminActivity extends AppCompatActivity {
 
         btnWifiConfig.setOnClickListener(v ->
                 runCommandAsync("GET_NETWORK", () -> execProtected(() -> igp().getNetwork())));
+
+        // ── BLE WiFi Provisioning (hidden GATT service 0xFF10) ───────────────
+        btnBleWifiSet.setOnClickListener(v -> {
+            if (wifiProvisioner.isBusy()) {
+                Toast.makeText(this, "BLE provisioning already in progress", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String ssid = etBleWifiSsid.getText().toString().trim();
+            String psk  = etBleWifiPsk.getText().toString().trim();
+            if (ssid.isEmpty()) {
+                Toast.makeText(this, "SSID is required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            tvBleWifiStatus.setText("Scanning for CareOtter_HR…");
+            wifiProvisioner.provision(ssid, psk, new BleWifiProvisioner.Callback() {
+                @Override public void onStatus(String message) {
+                    uiHandler.post(() -> tvBleWifiStatus.setText(message));
+                }
+                @Override public void onComplete(boolean success, String message) {
+                    uiHandler.post(() -> {
+                        tvBleWifiStatus.setText(message);
+                        appendOutput("[BLE-WiFi] " + message);
+                        Toast.makeText(AdminActivity.this,
+                                success ? "WiFi set via BLE" : "BLE provisioning failed: " + message,
+                                Toast.LENGTH_LONG).show();
+                    });
+                }
+            });
+        });
 
         btnUnderflow.setOnClickListener(v ->
                 runCommandAsync("UNDERFLOW", () -> execProtected(() -> igp().exploitUnderflow())));

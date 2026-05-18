@@ -143,7 +143,7 @@ USE_REAL_HW = cfg.get("use_real_hardware", False)
 BPM_BASE = cfg.get("bpm", 72)
 SPO2_BASE = cfg.get("spo2", 98)
 HTTP_PORT = cfg.get("http_port", 8081)
-LOG_FILE = cfg.get("log_file", "/tmp/medical-logs/vitals.log")
+LOG_FILE = cfg.get("log_file", "/var/log/medical-logs/vitals.log")
 SAMPLE_RATE_HZ = cfg.get("sample_rate", 10)
 SUMMARY_EVERY = cfg.get("summary_every_s", 60)  # Seconds between summaries
 LOG_BUFFER_MAX = cfg.get("log_buffer_max", 1440)  # Maximum entries in buffer
@@ -169,7 +169,7 @@ thresholds_lock = threading.Lock()
 # ── Clinical alert dispatcher ─────────────────────────────
 # Edge-triggered: only emit on healthy→fired and fired→cleared transitions to
 # avoid flooding the log + cloud collector with one event per sensor cycle.
-ALERT_LOG_FILE = "/tmp/medical-logs/alerts.log"
+ALERT_LOG_FILE = "/var/log/medical-logs/alerts.log"
 ALERT_BUFFER_MAX = 500
 alerts_buffer = []          # circular, mirror of recent alert events
 alerts_log_lock = threading.Lock()

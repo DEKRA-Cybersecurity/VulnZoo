@@ -7,9 +7,12 @@ import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.method.HideReturnsTransformationMethod;
+import android.text.method.PasswordTransformationMethod;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -60,6 +63,8 @@ public class LoginActivity extends AppCompatActivity {
 
     private EditText  etUsername;
     private EditText  etPassword;
+    private ImageView btnTogglePassword;
+    private boolean   passwordVisible = false;
     private EditText  etApiUrl;      // network prefix, e.g. "192.168.1."
     private EditText  etHostOctet;   // last octet, e.g. "2"
     private Button    btnLogin;
@@ -77,6 +82,7 @@ public class LoginActivity extends AppCompatActivity {
 
         etUsername  = findViewById(R.id.etUsername);
         etPassword  = findViewById(R.id.etPassword);
+        btnTogglePassword = findViewById(R.id.btnTogglePassword);
         etApiUrl    = findViewById(R.id.etApiUrl);
         etHostOctet = findViewById(R.id.etHostOctet);
         btnLogin    = findViewById(R.id.btnLogin);
@@ -104,6 +110,21 @@ public class LoginActivity extends AppCompatActivity {
         tvStatus.setText("Edit only the last octet if the detected network prefix is correct");
 
         btnLogin.setOnClickListener(v -> attemptLogin());
+
+        // Password visibility toggle — hidden by default
+        btnTogglePassword.setOnClickListener(v -> {
+            passwordVisible = !passwordVisible;
+            int sel = etPassword.getSelectionEnd();
+            etPassword.setTransformationMethod(passwordVisible
+                    ? HideReturnsTransformationMethod.getInstance()
+                    : PasswordTransformationMethod.getInstance());
+            btnTogglePassword.setImageResource(passwordVisible
+                    ? R.drawable.ic_password_show
+                    : R.drawable.ic_password_hide);
+            btnTogglePassword.setContentDescription(
+                    passwordVisible ? "Hide password" : "Show password");
+            etPassword.setSelection(sel);
+        });
 
         // Reset to WiFi-detected prefix + default host
         btnScanApi.setText("Detect WiFi Prefix");

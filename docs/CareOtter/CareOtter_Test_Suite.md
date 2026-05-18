@@ -490,7 +490,7 @@ python3 igp_helper.py 0x0B '%x.%x.%x'
 
 #### Expected Result
 
-The response shows `DEFIBRILLATED:200J:<timestamp>`, but additionally `/tmp/careotter_events.log` contains leaked stack values from the second vulnerable `snprintf` that uses the payload as format.
+The response shows `DEFIBRILLATED:200J:<timestamp>`, but additionally `/opt/careotter_events.log` contains leaked stack values from the second vulnerable `snprintf` that uses the payload as format.
 
 ---
 

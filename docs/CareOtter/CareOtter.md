@@ -112,7 +112,7 @@ $ curl -s -H "X-API-Key: careotter-2024-lab" http://192.168.2.1:8081/vitals
 $ curl -s -H "X-API-Key: careotter-2024-lab" http://192.168.2.1:8081/config
 {"device_id": "careotter-sensor-04", "firmware_version": "1.4.2",
  "use_real_hardware": false, "bpm": 72, "spo2": 98, "http_port": 8081,
- "sample_rate": 1, "log_file": "/tmp/medical-logs/vitals.log",
+ "sample_rate": 1, "log_file": "/var/log/medical-logs/vitals.log",
  "api_key": "careotter-2024-lab",                          // <-- token echoed in the response
  "cloud_endpoint": "https://api.careotter.io/ingest",
  "cloud_token": "eyJhbGciOiJIUzI1NiJ9.disabled",
@@ -156,7 +156,7 @@ Total header: 8 bytes. Payload immediately follows. Server closes connection aft
 | 0x07 | GET_VITALS      | No   | —                    | Full HTTP response from :8081/vitals     | IGP→HTTP proxy                                                                                        |
 | 0x08 | SET_THRESHOLD   | Yes  | TLV (0xBB + 0xCC)    | `THRESHOLD_SET`                          | Clean parser, writes to `/var/log/careotter.thresholds`                                                   |
 | 0x09 | REBOOT_SERVICE  | Yes  | Service name string  | `SVC_RESTART_QUEUED` / `REBOOT_ERR`      | **FLAW: no waitpid() → zombie processes**                                                             |
-| 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/tmp/careservice.log` | `LOG_EMPTY` if not present                                                                            |
+| 0x0A | GET_LOG         | Yes  | —                    | Last 512 bytes of `/var/log/careservice.log` | `LOG_EMPTY` if not present                                                                            |
 | 0x0B | DEFIBRILLATE    | Yes  | Any string           | `DEFIB_TRIGGERED:200J:<timestamp>`       | **VULN: format string in event log**; simulates 200 J discharge                                       |
 | 0x0C | EMERGENCY_ALERT | Yes  | Alert message string | `ALERT_SENT:<msg>`                       | **FLAW: command injection via `curl` in `system()`**; reads endpoint from `/etc/careotter/alert.conf` |
 | 0x0D | DEAUTHENTICATE  | No   | —                    | `DEAUTH_OK`                              | Resets `authenticated=0`. Called by Cloud API after each protected operation.                         |
@@ -597,7 +597,7 @@ The endpoint `GET /initialize_iot` exists in the Cloud API codebase **strictly a
 | 8      | WiFi PSK exposed via API               | `app.py` — GET `/api/network`, `raw` field in response                                 | GET `/api/network` with valid JWT in `VULNERABLE=1` mode                                                         | API1 | CWE-200 |
 | 9      | Format string via API                  | `app.py` — GET `/api/device/status?module=`                                            | `?module=%25x.%25x.%25x` passes format string to device when `VULNERABLE=1`                                      | API10 | CWE-134 |
 | 10     | Flask debug mode                       | `app.py` — `app.run(debug=(vuln == 1))`                                                | Werkzeug interactive debugger active; RCE via PIN bypass                                                         | API8 | CWE-489 |
-| 11     | Format string (therapy log)            | `careservice.c` — cmd 0x0B DEFIBRILLATE, `snprintf(fmt_buf, sizeof(fmt_buf), payload)` | Payload `%x.%x.%x` leaks stack into `/tmp/careotter_events.log`; `%n` writes                                     | IoT I9 | CWE-134 |
+| 11     | Format string (therapy log)            | `careservice.c` — cmd 0x0B DEFIBRILLATE, `snprintf(fmt_buf, sizeof(fmt_buf), payload)` | Payload `%x.%x.%x` leaks stack into `/opt/careotter_events.log`; `%n` writes                                     | IoT I9 | CWE-134 |
 | 12     | Command injection (alert)              | `careservice.c` — cmd 0x0C EMERGENCY_ALERT, `system(cmd)` with `curl … msg=%s`         | Payload `test'; reboot #` injects shell metacharacters through curl's `-d` parameter                             | IoT I9 | CWE-78 |
 | 13     | Hardcoded API token (sensor)           | `sensor_service.py` — `API_KEY` loaded from `config.json` (`"careotter-2024-lab"`)     | `cat /opt/medical-sensor/config.json` reveals the token; required in the **`X-API-Key`** request header | IoT I1 | CWE-798 |
 | 14     | Timing side-channel (sensor auth)      | `sensor_service.py:_check_auth()` — `self.headers.get("X-API-Key", "") == API_KEY`     | Plain `==` comparison short-circuits on first mismatched byte; remote timing attack against `X-API-Key`            | IoT I9 | CWE-208 |

