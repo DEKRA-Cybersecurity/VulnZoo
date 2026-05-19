@@ -550,13 +550,25 @@ Accessible at `http://localhost:5002/patient/login`. Requires `role=patient` (or
 
 ### Docker Deployment
 
+The recommended way to start the Cloud API is via the **`cloudctl.sh`** helper script, which auto-detects your host's WiFi interface and exports `WIFI_SSID`, `WIFI_PSK`, and `HOST_WIFI_IP` so `/initialize_iot` can push credentials to the Pi automatically.
+
 ```bash
 cd cloud_api/careotter
-docker compose up careotter-api
+./cloudctl.sh start        # build + up -d with auto WiFi detection
+./cloudctl.sh start --no-wifi  # skip WiFi credential injection
+./cloudctl.sh stop         # docker compose down -v
+./cloudctl.sh restart      # stop + start
 
 # API:           http://localhost:5002/api/health
 # Admin Panel:   http://localhost:5002/admin/login
 # Patient Portal: http://localhost:5002/patient/login
+```
+
+If you prefer manual control, you can still use `docker compose` directly:
+
+```bash
+cd cloud_api/careotter
+docker compose up careotter-api
 ```
 
 ---
@@ -655,7 +667,19 @@ Before starting the CareOtter lab, ensure the following physical network topolog
 
 The Cloud API runs as a Docker container on the attacker PC. By default it communicates with the Raspberry Pi over the dedicated Ethernet link (`192.168.2.1`).
 
-**Basic startup (Ethernet only):**
+**Recommended startup (auto WiFi detection via `cloudctl.sh`):**
+
+```bash
+cd cloud_api/careotter
+./cloudctl.sh start
+
+# Verify
+curl http://localhost:5002/api/health
+```
+
+`cloudctl.sh start` detects your active WiFi interface, reads the SSID and PSK from NetworkManager, and passes them as `WIFI_SSID`/`WIFI_PSK` to the container. When you later call `/initialize_iot`, the Pi receives the WiFi config automatically over IGP.
+
+**Manual startup (Ethernet only):**
 ```bash
 cd cloud_api/careotter
 docker compose up -d --build
@@ -664,9 +688,9 @@ docker compose up -d --build
 curl http://localhost:5002/api/health
 ```
 
-**Optional — auto-provision WiFi credentials:**
+**Optional — manual WiFi credential provisioning:**
 
-If you want the bedside monitor to join the shared WiFi network automatically (so the mobile app or Cloud API can reach it over WiFi in addition to Ethernet), pass `WIFI_SSID` and `WIFI_PSK` as environment variables before calling `/initialize_iot`.
+If you are not using `cloudctl.sh` and still want the bedside monitor to join the shared WiFi network automatically, pass `WIFI_SSID` and `WIFI_PSK` as environment variables before calling `/initialize_iot`.
 
 1. Export the variables (or create a `.env` file in `cloud_api/careotter/`):
    ```bash

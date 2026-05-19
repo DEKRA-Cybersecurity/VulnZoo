@@ -477,6 +477,25 @@ POST /api/network
 
 ## Deployment
 
+### Recommended: `cloudctl.sh`
+
+Use the provided helper script to start the stack. It auto-detects your host's active WiFi interface, extracts the SSID and PSK from NetworkManager, and exports them as `WIFI_SSID`/`WIFI_PSK` so `/initialize_iot` can push WiFi credentials to the Pi automatically.
+
+```bash
+cd cloud_api/careotter
+./cloudctl.sh start        # build + up -d with auto WiFi detection
+./cloudctl.sh start --no-wifi  # skip WiFi credential injection
+./cloudctl.sh stop         # docker compose down -v
+./cloudctl.sh restart      # stop + start
+
+# Verify
+curl http://localhost:5002/api/health
+```
+
+### Manual: `docker compose`
+
+If you prefer full manual control:
+
 ```bash
 cd cloud_api/careotter
 docker compose up -d --build
