@@ -81,7 +81,6 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     private TextView     tvModel;
     private LinearLayout diagnosticPanel;
     private EditText     etThresholdJson;
-    private Button       btnScan;
     private Button       btnConnect;
     private Button       btnDisconnect;
     private Button       btnReadThreshold;
@@ -123,7 +122,6 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
         tvModel          = findViewById(R.id.tvModel);
         diagnosticPanel  = findViewById(R.id.diagnosticPanel);
         etThresholdJson  = findViewById(R.id.etThresholdJson);
-        btnScan          = findViewById(R.id.btnScan);
         btnConnect       = findViewById(R.id.btnConnect);
         btnDisconnect    = findViewById(R.id.btnDisconnect);
         btnReadThreshold = findViewById(R.id.btnReadThreshold);
@@ -164,14 +162,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
             }
         });
 
-        // SCAN: search for CareOtter_HR and auto-connect when discovered
-        btnScan.setOnClickListener(v -> {
-            tvDeviceName.setText("Scanning for " + BleMonitorClient.DEVICE_NAME + "…");
-            tvDeviceName.setTextColor(0xFFFFB300);
-            bleClient.startScan();
-        });
-
-        // CONNECT: alias for scan (target is always CareOtter_HR)
+        // CONNECT: scans for CareOtter_HR and auto-connects when discovered
         btnConnect.setOnClickListener(v -> {
             tvDeviceName.setText("Scanning for " + BleMonitorClient.DEVICE_NAME + "…");
             tvDeviceName.setTextColor(0xFFFFB300);

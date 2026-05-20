@@ -546,6 +546,55 @@
                             android:paddingBottom="2dp" />
                     </LinearLayout>
 
+                    <!-- Scan controls -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="8dp">
+
+                        <Button
+                            android:id="@+id/btnBleScan"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:text="Scan BLE"
+                            android:textSize="12sp"
+                            android:backgroundTint="#2563EB"
+                            android:textColor="#FFFFFF" />
+
+                        <Button
+                            android:id="@+id/btnBleStopScan"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:text="Stop"
+                            android:textSize="12sp"
+                            android:backgroundTint="#F1F5F9"
+                            android:textColor="#0F172A"
+                            android:enabled="false" />
+                    </LinearLayout>
+
+                    <!-- Selected device -->
+                    <TextView
+                        android:id="@+id/tvBleSelected"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="No device selected"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace"
+                        android:textColor="#94A3B8"
+                        android:layout_marginBottom="6dp" />
+
+                    <!-- Discovered devices container (rows added programmatically) -->
+                    <LinearLayout
+                        android:id="@+id/llBleDevices"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="10dp" />
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -587,6 +636,7 @@
                         android:textSize="12sp"
                         android:backgroundTint="#7C3AED"
                         android:textColor="#FFFFFF"
+                        android:enabled="false"
                         android:layout_marginBottom="8dp" />
 
                     <TextView

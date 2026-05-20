@@ -12,6 +12,7 @@ import android.os.StrictMode;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -64,10 +65,16 @@ public class AdminActivity extends AppCompatActivity {
     // BLE WiFi provisioning (installer/factory channel)
     private BleWifiProvisioner wifiProvisioner;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private EditText etBleWifiSsid;
-    private EditText etBleWifiPsk;
-    private Button   btnBleWifiSet;
-    private TextView tvBleWifiStatus;
+    private EditText     etBleWifiSsid;
+    private EditText     etBleWifiPsk;
+    private Button       btnBleWifiSet;
+    private Button       btnBleScan;
+    private Button       btnBleStopScan;
+    private TextView     tvBleWifiStatus;
+    private TextView     tvBleSelected;
+    private LinearLayout llBleDevices;
+    private String       selectedBleAddress = null;
+    private String       selectedBleName    = null;
 
     private static final int REQ_BLE_PERMS = 0xB1E;
 
@@ -135,11 +142,24 @@ public class AdminActivity extends AppCompatActivity {
         EditText etBpmMax        = findViewById(R.id.etBpmMax);
         EditText etSpo2Min       = findViewById(R.id.etSpo2Min);
 
-        etBleWifiSsid  = findViewById(R.id.etBleWifiSsid);
-        etBleWifiPsk   = findViewById(R.id.etBleWifiPsk);
-        btnBleWifiSet  = findViewById(R.id.btnBleWifiSet);
+        etBleWifiSsid   = findViewById(R.id.etBleWifiSsid);
+        etBleWifiPsk    = findViewById(R.id.etBleWifiPsk);
+        btnBleWifiSet   = findViewById(R.id.btnBleWifiSet);
+        btnBleScan      = findViewById(R.id.btnBleScan);
+        btnBleStopScan  = findViewById(R.id.btnBleStopScan);
         tvBleWifiStatus = findViewById(R.id.tvBleWifiStatus);
+        tvBleSelected   = findViewById(R.id.tvBleSelected);
+        llBleDevices    = findViewById(R.id.llBleDevices);
         wifiProvisioner = new BleWifiProvisioner(this);
+
+        // Pre-request BLE permissions in onCreate (same as MainActivity does
+        // at line 197). Empirically the admin panel only finds devices on the
+        // first try if perms were granted BEFORE the BluetoothLeScanner is
+        // touched — otherwise the first scan races the permission dialog and
+        // the OS silently delivers zero onScanResult callbacks.
+        if (!hasBlePermissions()) {
+            ActivityCompat.requestPermissions(this, requiredBlePermissions(), REQ_BLE_PERMS);
+        }
 
         tabInfo     = findViewById(R.id.tabInfo);
         tabConfig   = findViewById(R.id.tabConfig);
@@ -215,17 +235,32 @@ public class AdminActivity extends AppCompatActivity {
                 runCommandAsync("GET_NETWORK", () -> execProtected(() -> igp().getNetwork())));
 
         // ── BLE WiFi Provisioning (hidden GATT service 0xFF10) ───────────────
-        btnBleWifiSet.setOnClickListener(v -> {
-            if (wifiProvisioner.isBusy()) {
-                Toast.makeText(this, "BLE provisioning already in progress", Toast.LENGTH_SHORT).show();
-                return;
-            }
+        // Two-phase flow: (1) scan → list devices → user taps to select;
+        // (2) Set WiFi → connect to selected MAC and run the PIN + WiFi writes.
+
+        btnBleScan.setOnClickListener(v -> {
             if (!hasBlePermissions()) {
                 ActivityCompat.requestPermissions(this, requiredBlePermissions(), REQ_BLE_PERMS);
-                tvBleWifiStatus.setText("Grant Bluetooth permission, then tap again");
+                tvBleWifiStatus.setText("Grant Bluetooth permission, then tap Scan again");
                 return;
             }
-            startBleProvisioning();
+            startBleScan();
+        });
+
+        btnBleStopScan.setOnClickListener(v -> wifiProvisioner.stopScan());
+
+        btnBleWifiSet.setOnClickListener(v -> {
+            if (selectedBleAddress == null) {
+                Toast.makeText(this, "Pick a device from the scan list first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String ssid = etBleWifiSsid.getText().toString().trim();
+            String psk  = etBleWifiPsk.getText().toString();
+            if (ssid.isEmpty()) {
+                Toast.makeText(this, "SSID is required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            startBleProvisioning(selectedBleAddress, ssid, psk);
         });
 
         btnUnderflow.setOnClickListener(v ->
@@ -319,28 +354,84 @@ public class AdminActivity extends AppCompatActivity {
         return true;
     }
 
-    private void startBleProvisioning() {
-        String ssid = etBleWifiSsid.getText().toString().trim();
-        String psk  = etBleWifiPsk.getText().toString().trim();
-        if (ssid.isEmpty()) {
-            Toast.makeText(this, "SSID is required", Toast.LENGTH_SHORT).show();
-            return;
+    /** Shared callback: every BLE step is mirrored to the IGP output console. */
+    private final BleWifiProvisioner.Callback bleCallback = new BleWifiProvisioner.Callback() {
+        @Override public void onLog(String message) {
+            uiHandler.post(() -> appendOutput(message));
         }
-        tvBleWifiStatus.setText("Scanning for CareOtter_HR…");
-        wifiProvisioner.provision(ssid, psk, new BleWifiProvisioner.Callback() {
-            @Override public void onStatus(String message) {
-                uiHandler.post(() -> tvBleWifiStatus.setText(message));
-            }
-            @Override public void onComplete(boolean success, String message) {
-                uiHandler.post(() -> {
-                    tvBleWifiStatus.setText(message);
-                    appendOutput("[BLE-WiFi] " + message);
-                    Toast.makeText(AdminActivity.this,
-                            success ? "WiFi set via BLE" : "BLE provisioning failed: " + message,
-                            Toast.LENGTH_LONG).show();
-                });
-            }
+        @Override public void onDeviceFound(String name, String address, int rssi) {
+            uiHandler.post(() -> addDeviceRow(name, address, rssi));
+        }
+        @Override public void onScanStopped(String reason) {
+            uiHandler.post(() -> {
+                btnBleScan.setEnabled(true);
+                btnBleStopScan.setEnabled(false);
+                tvBleWifiStatus.setText("Scan finished (" + reason + ")");
+            });
+        }
+        @Override public void onStatus(String message) {
+            uiHandler.post(() -> tvBleWifiStatus.setText(message));
+        }
+        @Override public void onComplete(boolean success, String message) {
+            uiHandler.post(() -> {
+                tvBleWifiStatus.setText(message);
+                appendOutput("[BLE-WiFi] " + (success ? "OK" : "FAIL") + " — " + message);
+                btnBleScan.setEnabled(true);
+                btnBleStopScan.setEnabled(false);
+                btnBleWifiSet.setEnabled(selectedBleAddress != null);
+                Toast.makeText(AdminActivity.this,
+                        success ? "WiFi set via BLE" : "BLE provisioning failed: " + message,
+                        Toast.LENGTH_LONG).show();
+            });
+        }
+    };
+
+    private void startBleScan() {
+        llBleDevices.removeAllViews();
+        selectedBleAddress = null;
+        selectedBleName    = null;
+        tvBleSelected.setText("No device selected");
+        tvBleSelected.setTextColor(0xFF94A3B8);
+        btnBleWifiSet.setEnabled(false);
+        btnBleScan.setEnabled(false);
+        btnBleStopScan.setEnabled(true);
+        tvBleWifiStatus.setText("Scanning… tap a device to pick it");
+        appendOutput("[BLE] === Scan start ===");
+        wifiProvisioner.startScan(bleCallback);
+    }
+
+    private void startBleProvisioning(String address, String ssid, String psk) {
+        appendOutput("[BLE] === Provisioning " + address + " ===");
+        tvBleWifiStatus.setText("Connecting to " + address + "…");
+        btnBleWifiSet.setEnabled(false);
+        btnBleScan.setEnabled(false);
+        wifiProvisioner.provision(address, ssid, psk, bleCallback);
+    }
+
+    /** Add a tappable row to the device list. Each tap selects that MAC. */
+    private void addDeviceRow(String name, String address, int rssi) {
+        TextView row = new TextView(this);
+        String label = (name != null ? name : "(no name)") + "  " + address + "  " + rssi + "dBm";
+        row.setText(label);
+        row.setTextSize(12);
+        row.setTypeface(android.graphics.Typeface.MONOSPACE);
+        row.setTextColor(0xFF0F172A);
+        row.setPadding(20, 14, 20, 14);
+        row.setBackgroundResource(R.drawable.input_background);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, 8);
+        row.setLayoutParams(lp);
+        row.setOnClickListener(v -> {
+            selectedBleAddress = address;
+            selectedBleName    = name;
+            tvBleSelected.setText("Selected: " + label);
+            tvBleSelected.setTextColor(0xFF16A34A);
+            btnBleWifiSet.setEnabled(true);
+            appendOutput("[BLE] Selected " + address);
         });
+        llBleDevices.addView(row);
     }
 
     @Override
@@ -354,9 +445,9 @@ public class AdminActivity extends AppCompatActivity {
             if (r != PackageManager.PERMISSION_GRANTED) granted = false;
         }
         if (granted) {
-            startBleProvisioning();
+            startBleScan();
         } else {
-            tvBleWifiStatus.setText("Bluetooth permission denied — cannot provision WiFi");
+            tvBleWifiStatus.setText("Bluetooth permission denied — cannot scan");
             Toast.makeText(this, "Bluetooth permission denied", Toast.LENGTH_LONG).show();
         }
     }

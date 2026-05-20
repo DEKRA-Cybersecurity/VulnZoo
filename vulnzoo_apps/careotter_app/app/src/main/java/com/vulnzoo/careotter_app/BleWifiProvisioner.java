@@ -10,7 +10,6 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -21,11 +20,21 @@ import android.util.Log;
 import androidx.core.app.ActivityCompat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * BleWifiProvisioner — standalone BLE client for provisioning WiFi credentials
- * via the hidden Factory Provisioning service (0xFF10).
+ * BleWifiProvisioner — BLE client for the hidden Factory Provisioning service
+ * (0xFF10). Two-phase API:
+ *
+ *   1. startScan(cb) → emits onDeviceFound for every distinct device seen
+ *      (name may be null). User picks one in the UI.
+ *   2. provision(address, ssid, psk, cb) → connect → discover →
+ *      write PIN to 0xFF12 → write WiFi JSON to 0xFF11 → disconnect.
+ *
+ * Every step calls cb.onLog(...) so the UI console can show exactly where the
+ * flow is, instead of an opaque "Scanning…" forever.
  *
  * VULNERABILITY: uses hardcoded PIN "6767" (P3) and trusts the device name
  * without cryptographic identity verification.
@@ -36,154 +45,237 @@ public class BleWifiProvisioner {
     private static final UUID PROV_CONFIG  = UUID.fromString("0000ff11-0000-1000-8000-00805f9b34fb");
     private static final UUID PROV_AUTH    = UUID.fromString("0000ff12-0000-1000-8000-00805f9b34fb");
 
-    private static final String DEVICE_NAME = "CareOtter_HR";
-    private static final String PIN = "6767";
-    private static final String TAG = "BleWifiProvisioner";
+    public  static final String DEVICE_NAME       = "CareOtter_HR";
+    private static final String PIN               = "6767";
+    private static final String TAG               = "BleWifiProvisioner";
+    private static final long   SCAN_TIMEOUT_MS   = 20_000;
 
     public interface Callback {
+        /** Plain text log line for every observable step. */
+        void onLog(String message);
+        /** Fired once per distinct MAC discovered while scanning. */
+        void onDeviceFound(String name, String address, int rssi);
+        /** Scan loop ended (timeout, manual stop, or error). */
+        void onScanStopped(String reason);
+        /** State message intended for a small status label. */
         void onStatus(String message);
+        /** Terminal callback: provisioning attempt finished. */
         void onComplete(boolean success, String message);
     }
 
     private final Context context;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private BluetoothAdapter bluetoothAdapter;
+    private final BluetoothAdapter bluetoothAdapter;
     private BluetoothLeScanner scanner;
     private BluetoothGatt gatt;
+
     private boolean scanning = false;
     private ScanCallback activeScanCallback;
-    private static final long SCAN_TIMEOUT_MS = 15000;
+    private final Set<String> seenAddresses = new HashSet<>();
 
     private Callback callback;
     private String pendingSsid;
     private String pendingPsk;
 
     private enum State { IDLE, SCANNING, CONNECTING, DISCOVERING, WRITING_PIN, WRITING_WIFI, DONE }
-    private State state = State.IDLE;
+    // volatile: written from UI thread, the BLE binder thread (gattCallback)
+    // and the Handler thread (scanTimeoutTask). Without volatile the strict
+    // state-guard in startScan() could read a stale value and reject a tap.
+    private volatile State state = State.IDLE;
 
-    private final Runnable scanTimeout = () -> {
+    private final Runnable scanTimeoutTask = () -> {
         if (state == State.SCANNING) {
-            stopScan();
-            reportComplete(false, "Timed out — " + DEVICE_NAME + " not found");
-            cleanup();
+            log("Scan timeout reached (" + (SCAN_TIMEOUT_MS / 1000) + "s) — stopping");
+            stopScan("timeout");
         }
     };
 
+    // NOTE: no connect timeout. BleMonitorClient (the working patient path)
+    // does not impose one — on Cypress BCM43430 the first connectGatt after a
+    // fresh advertisement can take 5–20 s, and a 15 s timeout was racing the
+    // real STATE_CONNECTED callback and closing the GATT prematurely.
+
     public BleWifiProvisioner(Context context) {
-        this.context = context.getApplicationContext();
+        // Match BleMonitorClient: keep the Activity context directly.
+        this.context = context;
         this.bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
     }
 
-    /**
-     * Start the full provisioning flow: scan → connect → auth → write WiFi.
-     *
-     * @param ssid WiFi SSID
-     * @param psk  WiFi passphrase (PSK)
-     * @param cb   callback for status updates and completion
-     */
-    public void provision(String ssid, String psk, Callback cb) {
-        if (state != State.IDLE) {
-            cb.onComplete(false, "Provisioning already in progress");
-            return;
-        }
-        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
-            cb.onComplete(false, "Bluetooth is disabled");
-            return;
-        }
-        this.pendingSsid = ssid;
-        this.pendingPsk = psk;
-        this.callback = cb;
-        this.state = State.SCANNING;
-        reportStatus("Scanning for " + DEVICE_NAME + "…");
-        startScan();
-    }
-
-    public boolean isBusy() {
-        return state != State.IDLE;
-    }
+    public boolean isScanning() { return state == State.SCANNING; }
+    public boolean isBusy()     { return state != State.IDLE; }
 
     // ── Scan ─────────────────────────────────────────────────────────────────
 
-    private void startScan() {
-        if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
-            reportComplete(false, "Missing BLUETOOTH_SCAN permission");
+    /**
+     * Start an open BLE scan and emit every device through {@link Callback#onDeviceFound}.
+     * Caller is responsible for stopping the scan and then calling
+     * {@link #provision(String, String, String, Callback)} with the chosen MAC.
+     */
+    public void startScan(Callback cb) {
+        // Mirror BleMonitorClient: only block re-entry while a scan is already
+        // running. If a prior provision attempt left the state machine half-
+        // baked (CONNECTING/DISCOVERING with no terminal callback), force a
+        // hard reset here so the user can always re-scan.
+        if (scanning) {
+            cb.onComplete(false, "Scan already in progress");
             return;
         }
-        if (scanning) return;
+        if (state != State.IDLE) {
+            log("Forcing state reset (was " + state + ") before new scan");
+            try { if (gatt != null) gatt.close(); } catch (Exception ignored) {}
+            gatt = null;
+            state = State.IDLE;
+        }
+        if (bluetoothAdapter == null) {
+            cb.onComplete(false, "BluetoothAdapter unavailable");
+            return;
+        }
+        if (!bluetoothAdapter.isEnabled()) {
+            cb.onComplete(false, "Bluetooth is disabled — enable it in system settings");
+            return;
+        }
+        if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
+            cb.onComplete(false, "Missing BLUETOOTH_SCAN runtime permission");
+            return;
+        }
         scanner = bluetoothAdapter.getBluetoothLeScanner();
         if (scanner == null) {
-            reportComplete(false, "BLE scanner unavailable");
+            cb.onComplete(false, "BLE scanner unavailable");
             return;
         }
+
+        this.callback = cb;
+        this.state = State.SCANNING;
+        seenAddresses.clear();
         scanning = true;
+
+        log("Starting BLE scan — emitting every device for " + (SCAN_TIMEOUT_MS / 1000) + "s");
+        status("Scanning…");
+
         activeScanCallback = new ScanCallback() {
             @Override
             public void onScanResult(int callbackType, ScanResult result) {
-                if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
                 BluetoothDevice device = result.getDevice();
-                // Prefer the advertised name from the scan record: for a
-                // never-bonded LE device, device.getName() is usually null
-                // (the name lives in the scan response, not the device cache).
+                if (device == null) return;
+                String addr = device.getAddress();
+                if (addr == null) return;
+
                 String name = null;
-                ScanRecord rec = result.getScanRecord();
-                if (rec != null) name = rec.getDeviceName();
-                if (name == null) name = device.getName();
-                if (DEVICE_NAME.equals(name)) {
-                    uiHandler.removeCallbacks(scanTimeout);
-                    stopScan();
-                    reportStatus("Found " + name + " [" + device.getAddress() + "]");
-                    connect(device.getAddress());
+                if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                    name = device.getName();
                 }
+                if (name == null && result.getScanRecord() != null) {
+                    name = result.getScanRecord().getDeviceName();
+                }
+                // Filter: only surface advertisers whose name matches the
+                // CareOtter monitor. Everything else (other BLE peripherals
+                // nearby, devices with no advertised name) is ignored.
+                if (!DEVICE_NAME.equals(name)) return;
+                if (!seenAddresses.add(addr)) return; // dedupe
+
+                int rssi = result.getRssi();
+                log("Device found: " + name + "  " + addr + "  rssi=" + rssi + "dBm");
+                final String fname = name;
+                uiHandler.post(() -> {
+                    Callback c = callback;
+                    if (c != null) c.onDeviceFound(fname, addr, rssi);
+                });
             }
 
             @Override
             public void onScanFailed(int errorCode) {
-                uiHandler.removeCallbacks(scanTimeout);
-                reportComplete(false, "Scan failed: error " + errorCode);
-                cleanup();
+                log("Scan FAILED — errorCode=" + errorCode);
+                stopScan("error " + errorCode);
             }
         };
-        // Use the exact proven call that BleMonitorClient (the working patient
-        // monitor) uses on this hardware: the 1-arg startScan with default
-        // settings. The 3-arg form with SCAN_MODE_LOW_LATENCY did NOT deliver
-        // results on this Redmi/MIUI device.
+
         scanner.startScan(activeScanCallback);
-        uiHandler.postDelayed(scanTimeout, SCAN_TIMEOUT_MS);
+        uiHandler.postDelayed(scanTimeoutTask, SCAN_TIMEOUT_MS);
     }
 
-    private void stopScan() {
-        if (!scanning || scanner == null) return;
-        if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) return;
-        scanner.stopScan(activeScanCallback != null ? activeScanCallback : new ScanCallback() {});
-        scanning = false;
+    /** Stop the discovery loop. Safe to call repeatedly. */
+    public void stopScan() {
+        stopScan("manual");
     }
 
-    // ── Connect ──────────────────────────────────────────────────────────────
-
-    private void connect(String address) {
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
-            reportComplete(false, "Missing BLUETOOTH_CONNECT permission");
+    private void stopScan(String reason) {
+        uiHandler.removeCallbacks(scanTimeoutTask);
+        if (!scanning) {
+            // Still inform the listener so the UI button can flip back.
+            Callback c = callback;
+            if (c != null) uiHandler.post(() -> c.onScanStopped(reason));
             return;
         }
-        stopScan();
-        state = State.CONNECTING;
+        if (scanner != null && hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
+            try {
+                scanner.stopScan(activeScanCallback != null ? activeScanCallback : new ScanCallback() {});
+            } catch (Exception e) {
+                log("scanner.stopScan threw: " + e.getMessage());
+            }
+        }
+        scanning = false;
+        if (state == State.SCANNING) state = State.IDLE;
+        log("Scan stopped (" + reason + "). Devices seen=" + seenAddresses.size());
+        Callback c = callback;
+        if (c != null) uiHandler.post(() -> c.onScanStopped(reason));
+    }
+
+    // ── Provision (connect + auth + write) ───────────────────────────────────
+
+    /**
+     * Connect to the chosen device by MAC and run the provisioning sequence.
+     * The caller must have stopped the scan beforehand (or it will be stopped
+     * here as a safety net).
+     */
+    public void provision(String address, String ssid, String psk, Callback cb) {
+        if (state == State.SCANNING) {
+            stopScan("provision-start");
+        }
+        // Same permissive policy as startScan: if the previous attempt left
+        // state stuck, blow it away instead of refusing the user's tap.
+        if (state != State.IDLE) {
+            try { if (gatt != null) gatt.close(); } catch (Exception ignored) {}
+            gatt = null;
+            state = State.IDLE;
+        }
+        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            cb.onComplete(false, "Missing BLUETOOTH_CONNECT permission");
+            return;
+        }
+        if (address == null || address.isEmpty()) {
+            cb.onComplete(false, "No device selected");
+            return;
+        }
+        if (ssid == null || ssid.isEmpty()) {
+            cb.onComplete(false, "SSID is required");
+            return;
+        }
+
+        this.callback = cb;
+        this.pendingSsid = ssid;
+        this.pendingPsk = psk != null ? psk : "";
+        this.state = State.CONNECTING;
+
+        log("Provisioning target: " + address + " ssid='" + ssid + "'");
+        status("Connecting to " + address + "…");
+
         BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
         gatt = device.connectGatt(context, false, gattCallback);
-        Log.d(TAG, "connectGatt issued for " + address);
-        reportStatus("Connecting…");
+        log("connectGatt() issued");
     }
 
     private void disconnect() {
         if (gatt == null) return;
         if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
-        gatt.disconnect();
+        try { gatt.disconnect(); } catch (Exception ignored) {}
     }
 
-    private void closeGatt() {
+    private void cleanupGatt() {
         if (gatt != null && hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
-            gatt.close();
+            try { gatt.close(); } catch (Exception ignored) {}
             gatt = null;
         }
+        state = State.IDLE;
     }
 
     // ── GATT Callback ────────────────────────────────────────────────────────
@@ -192,53 +284,60 @@ public class BleWifiProvisioner {
 
         @Override
         public void onConnectionStateChange(BluetoothGatt g, int status, int newState) {
-            Log.d(TAG, "onConnectionStateChange status=" + status + " newState=" + newState);
+            log("GATT state status=" + status + " newState=" + newState);
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                state = State.DISCOVERING;
-                reportStatus("Connected — discovering services…");
-                g.discoverServices();
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                if (state != State.DONE) {
-                    reportComplete(false, "Disconnected unexpectedly (status=" + status + ")");
+                BleWifiProvisioner.this.state = State.DISCOVERING;
+                status("Connected — discovering services…");
+                if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                    g.discoverServices();
                 }
-                cleanup();
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                if (BleWifiProvisioner.this.state != State.DONE) {
+                    reportComplete(false, "Disconnected (gatt status=" + status + ")");
+                }
+                cleanupGatt();
             }
         }
 
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
-            Log.d(TAG, "onServicesDiscovered status=" + status);
+            log("Services discovered status=" + status);
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 reportComplete(false, "Service discovery failed: " + status);
                 disconnect();
                 return;
             }
-
             BluetoothGattService svc = g.getService(PROV_SERVICE);
             if (svc == null) {
-                reportComplete(false, "Hidden provisioning service (0xFF10) not found");
+                StringBuilder names = new StringBuilder();
+                for (BluetoothGattService s : g.getServices()) {
+                    names.append("\n  ").append(s.getUuid());
+                }
+                log("Services available:" + names);
+                reportComplete(false, "Hidden provisioning service 0xFF10 not exposed");
                 disconnect();
                 return;
             }
-
             BluetoothGattCharacteristic authChr = svc.getCharacteristic(PROV_AUTH);
             if (authChr == null) {
-                reportComplete(false, "Auth characteristic (0xFF12) not found");
+                reportComplete(false, "Auth characteristic 0xFF12 not found");
                 disconnect();
                 return;
             }
-
-            state = State.WRITING_PIN;
+            BleWifiProvisioner.this.state = State.WRITING_PIN;
+            status("Authenticating with PIN…");
             authChr.setValue(PIN.getBytes(StandardCharsets.UTF_8));
-            reportStatus("Authenticating with PIN…");
-            boolean ok = g.writeCharacteristic(authChr);
-            Log.d(TAG, "PIN write enqueued=" + ok);
+            boolean ok = false;
+            if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                ok = g.writeCharacteristic(authChr);
+            }
+            log("PIN write enqueued=" + ok);
         }
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
             UUID uuid = c.getUuid();
-            Log.d(TAG, "onCharacteristicWrite uuid=" + uuid + " status=" + status);
+            log("onCharacteristicWrite " + uuid + " status=" + status);
 
             if (uuid.equals(PROV_AUTH)) {
                 if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -246,27 +345,24 @@ public class BleWifiProvisioner {
                     disconnect();
                     return;
                 }
-                reportStatus("PIN accepted — writing WiFi credentials…");
-
                 BluetoothGattService svc = g.getService(PROV_SERVICE);
-                if (svc == null) {
-                    reportComplete(false, "Provisioning service lost after auth");
-                    disconnect();
-                    return;
-                }
-                BluetoothGattCharacteristic cfgChr = svc.getCharacteristic(PROV_CONFIG);
+                BluetoothGattCharacteristic cfgChr =
+                        svc != null ? svc.getCharacteristic(PROV_CONFIG) : null;
                 if (cfgChr == null) {
-                    reportComplete(false, "Config characteristic (0xFF11) not found");
+                    reportComplete(false, "Config characteristic 0xFF11 missing after auth");
                     disconnect();
                     return;
                 }
-
-                String json = "{\"cmd\":\"wifi_set\",\"ssid\":\"" + escapeJson(pendingSsid)
-                        + "\",\"psk\":\"" + escapeJson(pendingPsk) + "\"}";
+                String json = "{\"cmd\":\"wifi_set\",\"ssid\":\""
+                        + escapeJson(pendingSsid) + "\",\"psk\":\""
+                        + escapeJson(pendingPsk) + "\"}";
+                log("Writing WiFi config: " + json.replace(pendingPsk, "***"));
                 cfgChr.setValue(json.getBytes(StandardCharsets.UTF_8));
-                state = State.WRITING_WIFI;
-                boolean ok = g.writeCharacteristic(cfgChr);
-                Log.d(TAG, "WiFi write enqueued=" + ok + " json=" + json);
+                BleWifiProvisioner.this.state = State.WRITING_WIFI;
+                status("Writing WiFi credentials…");
+                boolean ok = hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                        && g.writeCharacteristic(cfgChr);
+                log("WiFi write enqueued=" + ok);
 
             } else if (uuid.equals(PROV_CONFIG)) {
                 if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -274,8 +370,7 @@ public class BleWifiProvisioner {
                     disconnect();
                     return;
                 }
-                reportStatus("WiFi credentials written to device");
-                state = State.DONE;
+                BleWifiProvisioner.this.state = State.DONE;
                 reportComplete(true, "WiFi configured: SSID=" + pendingSsid);
                 disconnect();
             }
@@ -284,31 +379,23 @@ public class BleWifiProvisioner {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void reportStatus(String msg) {
+    private void log(String msg) {
         Log.d(TAG, msg);
-        Callback cb = callback;
-        // Snapshot the reference: the field can be nulled by reportComplete()
-        // before this posted runnable executes on the UI thread.
-        if (cb != null) {
-            uiHandler.post(() -> cb.onStatus(msg));
-        }
+        Callback c = callback;
+        if (c != null) uiHandler.post(() -> c.onLog("[BLE] " + msg));
+    }
+
+    private void status(String msg) {
+        Log.d(TAG, "STATUS " + msg);
+        Callback c = callback;
+        if (c != null) uiHandler.post(() -> c.onStatus(msg));
     }
 
     private void reportComplete(boolean success, String msg) {
         Log.d(TAG, "COMPLETE success=" + success + " msg=" + msg);
-        if (callback != null) {
-            Callback cb = callback;
-            // Clear callback so only one completion fires
-            callback = null;
-            uiHandler.post(() -> cb.onComplete(success, msg));
-        }
-    }
-
-    private void cleanup() {
-        uiHandler.removeCallbacks(scanTimeout);
-        stopScan();
-        closeGatt();
-        state = State.IDLE;
+        Callback c = callback;
+        callback = null;
+        if (c != null) uiHandler.post(() -> c.onComplete(success, msg));
     }
 
     private boolean hasPermission(String permission) {
@@ -316,7 +403,6 @@ public class BleWifiProvisioner {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** Minimal JSON string escape for SSID/PSK values. */
     private static String escapeJson(String raw) {
         return raw.replace("\\", "\\\\")
                   .replace("\"", "\\\"")
