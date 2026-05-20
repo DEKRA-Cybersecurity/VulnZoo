@@ -63,7 +63,7 @@ fi
 # hook pass in-line during a live load, hook-manager will see the lock and
 # skip here — clock-independent (the RPi has no RTC, so the old
 # loaded_timestamp comparison broke whenever the clock jumped).
-if [ -x "/usr/lib/vulnzoo-hooks/hook-manager.sh" ] && [ "$DEVICE_NAME" != "none" ]; then
+if [ -x "/usr/lib/vulnzoo-hooks/hook-manager.sh" ] && [ "$DEVICE_NAME" == "none" ]; then
     logger -t vulnzoo-base "Invoking hook pass for restored device: $DEVICE_NAME (hook-manager dedups via /tmp lock)"
     /usr/lib/vulnzoo-hooks/hook-manager.sh init "$DEVICE_NAME"
 fi
