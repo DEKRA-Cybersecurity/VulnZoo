@@ -62,13 +62,33 @@
         setLoading(true);
 
         try {
-            const res = await fetch('/api/auth/login/patient', {
+            let res = await fetch('/api/auth/login/patient', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ username, password })
             });
 
-            const data = await res.json();
+            let data = await res.json();
+
+            /* Caregiver fallback: if patient login rejects with FORBIDDEN,
+               try caregiver login before giving up. */
+            if (!res.ok && data.code === 'FORBIDDEN') {
+                res = await fetch('/api/auth/login/caregiver', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ username, password })
+                });
+                data = await res.json();
+
+                if (res.ok) {
+                    /* Caregiver authenticated — store token and redirect */
+                    localStorage.setItem('careotter_token', data.token);
+                    localStorage.setItem('careotter_expires', data.expires_in || '8h');
+                    showSuccess('Authentication successful. Redirecting…');
+                    setTimeout(() => { window.location.href = '/caregiver/dashboard'; }, 900);
+                    return;
+                }
+            }
 
             if (!res.ok) {
                 const msg = data.code === 'AUTH_FAIL'

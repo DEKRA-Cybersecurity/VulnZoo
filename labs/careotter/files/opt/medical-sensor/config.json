@@ -10,6 +10,7 @@
     "api_key"           : "careotter-2024-lab",
     "cloud_endpoint"    : "https://api.careotter.io/ingest",
     "cloud_token"       : "eyJhbGciOiJIUzI1NiJ9.disabled",
+    "device_hash"       : "CareOtterFactorySig2026",
     "summary_every_s"   : 60,
     "log_buffer_max"    : 1440
 }

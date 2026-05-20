@@ -53,11 +53,29 @@
         </div>
     </div>
 
+    <!-- No Device Message -->
+    <div id="no-device-message" style="display: none; margin: 2rem 0; text-align: center;">
+        <div class="card" style="padding: 2rem;">
+            <svg viewBox="0 0 24 24" style="width: 48px; height: 48px; margin-bottom: 1rem; color: var(--text-secondary);"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+            <h3 style="margin-bottom: 0.5rem;">No Device Associated</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">Your account does not have a CareOtter device registered. Enter your device registration code below to link it.</p>
+            <div id="register-hash-form" style="max-width: 320px; margin: 0 auto; text-align: left;">
+                <label for="device-hash-input" style="display: block; margin-bottom: 0.25rem; font-size: 0.875rem; color: var(--text-secondary);">Device Registration Code</label>
+                <input id="device-hash-input" type="text" placeholder="e.g. CareOtterFactorySig2026" style="width: 100%; padding: 0.5rem; border-radius: 0.375rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); margin-bottom: 0.75rem;">
+                <button id="btn-register-hash" class="btn btn-primary" style="width: 100%;">Register Device</button>
+                <p id="register-hash-error" style="color: var(--danger); font-size: 0.875rem; margin-top: 0.5rem; display: none;"></p>
+            </div>
+            <div style="font-size: 0.875rem; color: var(--text-secondary); background: var(--surface); padding: 0.75rem; border-radius: 0.5rem; display: inline-block; margin-top: 1rem;">
+                Admin can also register a device via <code>POST /api/devices</code>
+            </div>
+        </div>
+    </div>
+
     <!-- Vitals Display -->
     <section class="vitals-section">
         <h2 class="section-title">
             <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-            Real-Time Vitals
+            Latest Stored Vitals
         </h2>
         
         <div class="vitals-grid">

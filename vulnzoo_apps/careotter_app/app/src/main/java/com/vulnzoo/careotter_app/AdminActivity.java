@@ -1,7 +1,10 @@
 package com.vulnzoo.careotter_app;
 
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,6 +17,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * AdminActivity — IGP v4 device administration panel.
@@ -63,6 +68,8 @@ public class AdminActivity extends AppCompatActivity {
     private EditText etBleWifiPsk;
     private Button   btnBleWifiSet;
     private TextView tvBleWifiStatus;
+
+    private static final int REQ_BLE_PERMS = 0xB1E;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,6 +127,7 @@ public class AdminActivity extends AppCompatActivity {
         Button btnEmergencyAlert = findViewById(R.id.btnEmergencyAlert);
         Button btnCmdInjection   = findViewById(R.id.btnCmdInjection);
         Button btnCheckStatus    = findViewById(R.id.btnCheckStatus);
+        Button btnGetSignature   = findViewById(R.id.btnGetSignature);
         Button btnSetTheme       = findViewById(R.id.btnSetTheme);
         Button btnGetThreshold   = findViewById(R.id.btnGetThreshold);
         Button btnSetThreshold   = findViewById(R.id.btnSetThreshold);
@@ -212,27 +220,12 @@ public class AdminActivity extends AppCompatActivity {
                 Toast.makeText(this, "BLE provisioning already in progress", Toast.LENGTH_SHORT).show();
                 return;
             }
-            String ssid = etBleWifiSsid.getText().toString().trim();
-            String psk  = etBleWifiPsk.getText().toString().trim();
-            if (ssid.isEmpty()) {
-                Toast.makeText(this, "SSID is required", Toast.LENGTH_SHORT).show();
+            if (!hasBlePermissions()) {
+                ActivityCompat.requestPermissions(this, requiredBlePermissions(), REQ_BLE_PERMS);
+                tvBleWifiStatus.setText("Grant Bluetooth permission, then tap again");
                 return;
             }
-            tvBleWifiStatus.setText("Scanning for CareOtter_HR…");
-            wifiProvisioner.provision(ssid, psk, new BleWifiProvisioner.Callback() {
-                @Override public void onStatus(String message) {
-                    uiHandler.post(() -> tvBleWifiStatus.setText(message));
-                }
-                @Override public void onComplete(boolean success, String message) {
-                    uiHandler.post(() -> {
-                        tvBleWifiStatus.setText(message);
-                        appendOutput("[BLE-WiFi] " + message);
-                        Toast.makeText(AdminActivity.this,
-                                success ? "WiFi set via BLE" : "BLE provisioning failed: " + message,
-                                Toast.LENGTH_LONG).show();
-                    });
-                }
-            });
+            startBleProvisioning();
         });
 
         btnUnderflow.setOnClickListener(v ->
@@ -295,6 +288,77 @@ public class AdminActivity extends AppCompatActivity {
             String net  = execProtected(() -> igp().getNetwork());
             return "SYS: " + info + "\nNET (via execProtected): " + net;
         }));
+
+        // ── Device signature (for patient registration) ─────────────────────
+        btnGetSignature.setOnClickListener(v ->
+                runCommandAsync("GET_SIGNATURE", () -> execProtected(() -> igp().getDeviceSignature())));
+    }
+
+    // ── BLE runtime permissions ─────────────────────────────────────────────
+
+    /** Permissions needed for BLE scan/connect — model varies by API level. */
+    private String[] requiredBlePermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+: dedicated runtime BLE permissions
+            return new String[]{
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_CONNECT
+            };
+        }
+        // Android 11 and below: BLE scan requires location
+        return new String[]{ Manifest.permission.ACCESS_FINE_LOCATION };
+    }
+
+    private boolean hasBlePermissions() {
+        for (String p : requiredBlePermissions()) {
+            if (ContextCompat.checkSelfPermission(this, p)
+                    != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void startBleProvisioning() {
+        String ssid = etBleWifiSsid.getText().toString().trim();
+        String psk  = etBleWifiPsk.getText().toString().trim();
+        if (ssid.isEmpty()) {
+            Toast.makeText(this, "SSID is required", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        tvBleWifiStatus.setText("Scanning for CareOtter_HR…");
+        wifiProvisioner.provision(ssid, psk, new BleWifiProvisioner.Callback() {
+            @Override public void onStatus(String message) {
+                uiHandler.post(() -> tvBleWifiStatus.setText(message));
+            }
+            @Override public void onComplete(boolean success, String message) {
+                uiHandler.post(() -> {
+                    tvBleWifiStatus.setText(message);
+                    appendOutput("[BLE-WiFi] " + message);
+                    Toast.makeText(AdminActivity.this,
+                            success ? "WiFi set via BLE" : "BLE provisioning failed: " + message,
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_BLE_PERMS) return;
+
+        boolean granted = grantResults.length > 0;
+        for (int r : grantResults) {
+            if (r != PackageManager.PERMISSION_GRANTED) granted = false;
+        }
+        if (granted) {
+            startBleProvisioning();
+        } else {
+            tvBleWifiStatus.setText("Bluetooth permission denied — cannot provision WiFi");
+            Toast.makeText(this, "Bluetooth permission denied", Toast.LENGTH_LONG).show();
+        }
     }
 
     // ── IGP client factory ──────────────────────────────────────────────────

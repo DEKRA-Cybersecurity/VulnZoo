@@ -7,7 +7,7 @@ to protect HTML routes via JWT cookie.
 """
 
 from functools import wraps
-from flask import request, jsonify, redirect, url_for
+from flask import request, jsonify, redirect, url_for, g
 from core.jwt_service import JWTService
 
 
@@ -60,6 +60,7 @@ def token_required(f):
                 'detail': result.get('hint', '')
             }), 401
 
+        g.current_user = result['payload']
         return f(*args, **kwargs)
 
     return decorated
@@ -93,6 +94,17 @@ def web_patient_required(f):
     def decorated(*args, **kwargs):
         payload = _decode_and_validate()
         if not payload or payload.get('role') not in ('patient', 'admin'):
+            return redirect(url_for('patient_login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def web_caregiver_required(f):
+    """Requires a valid JWT with the 'caregiver' role. Redirects to /patient/login if not."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        payload = _decode_and_validate()
+        if not payload or payload.get('role') != 'caregiver':
             return redirect(url_for('patient_login'))
         return f(*args, **kwargs)
     return decorated

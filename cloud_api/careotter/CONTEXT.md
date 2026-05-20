@@ -58,8 +58,8 @@
 | `/api/device/info` | GET | 0x01 SYS_INFO | No | Kernel/architecture info |
 | `/api/auth/login` | POST | — | No | Login with username+password → JWT |
 | `/api/device/status` | GET | 0x05 VERIFY_STATUS | No | Module diagnostics (format string proxy) |
-| `/api/vitals` | GET | HTTP :8081 | No | Current BPM/SpO2 from sensor (stores to DB) |
-| `/api/vitals/history` | GET | HTTP :8081 | No | Device circular buffer history |
+| `/api/vitals` | GET | — | No | Latest BPM/SpO2 from SQLite (pushed by device) |
+| `/api/vitals/history` | GET | — | No | SQLite history (previously polled from device buffer) |
 | `/api/vitals/db/history` | GET | — | No | SQLite history (device_mac, patient filter) |
 | `/api/vitals/db/stats` | GET | — | No | Aggregated stats from SQLite |
 | `/api/network` | GET | 0x03 GET_NETWORK | JWT | WiFi config (exposes PSK in vuln=1) |
@@ -78,7 +78,10 @@
 | `/api/db/info` | GET | — | No | Database debug info |
 | `/api/db/test` | GET | — | No | Inserts a dummy vitals reading (debug) |
 | `/admin/device/register` | POST | — | Signature (`CareOtterFactorySig2026`) | BLE-driven provisioning: registers device MAC + admin/patient credentials |
-| `/initialize_iot` | POST | — | No | Fallback seed (creates default users + device `AA:BB:CC:DD:EE:FF`) |
+| `/api/device/vitals` | POST | — | `X-Device-MAC` + `X-Device-Hash` | Push endpoint — receives vitals from Pi's `cloud_uploader.py` |
+| `/api/device/alerts` | POST | — | `X-Device-MAC` + `X-Device-Hash` | Push endpoint — receives alert events from Pi |
+| `/api/devices/register-by-hash` | POST | — | JWT | Patient claims a device by entering its factory hash |
+| `/initialize_iot` | GET | — | No | Fallback seed (creates default users, no auto-device) |
 | `/hint` | GET | — | No | Out-of-scope hint endpoint (API-07) |
 
 > **Internal IGP command not exposed as HTTP:** `0x0D DEAUTHENTICATE` — invoked
@@ -88,7 +91,7 @@
 **HTML Pages (auth model):**
 | Path | Auth | Description |
 |------|------|-------------|
-| `/` | Cookie patient (`@web_patient_required`) | Real-time vitals monitor |
+| `/` | Cookie patient (`@web_patient_required`) | Latest stored vitals monitor |
 | `/history` | Cookie patient | Historical vitals table (device MAC + patient columns) |
 | `/patient/login` | Public | Patient login form (redirects to `/` on success) |
 | `/admin/login` | Public | Admin login form |
@@ -149,7 +152,7 @@ The database starts **empty**. Users and the default device only appear after on
 |-------|----------------------------------------|
 | users | `admin` / `CareOtter2026!` (admin) |
 | users | `patient` / `patient123` (patient) |
-| devices | `AA:BB:CC:DD:EE:FF` → patient, name=`CareOtter_HR` |
+| devices | *(none until Pi pushes data or patient registers by hash)* |
 
 > Older revisions of this document listed `admin123 / admin123` as a third seed
 > user. That entry **does not exist** in any current seed path — remove from any
@@ -369,7 +372,7 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 | API3:2023 | Broken Object Property Level Authorization | `/api/network` | `raw` field exposes WiFi config with PSK |
 | API5:2023 | Broken Function Level Authorization | `/api/services/restart` | JWT only, no role/ownership checks |
 | API6:2023 | Unrestricted Access to Business Flows | `/api/config/preferences` | No rate limiting on TLV config writes |
-| API7:2023 | Server Side Request Forgery | `/api/vitals` | Proxies to internal HTTP :8081 |
+| API7:2023 | Server Side Request Forgery | *(legacy — `/api/vitals` no longer proxies)* |
 | API8:2023 | Security Misconfiguration | Global | Debug mode, verbose error messages |
 | API9:2023 | Improper Inventory Management | `/api/health` | Exposes internal device address and WiFi IP |
 
@@ -414,8 +417,9 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 - [ ] Werkzeug debugger accessible at any error URL when `VULNERABLE=1`
 - [ ] DB migration runs on existing database (adds `device_mac` column if missing)
 - [ ] `device_events` and `device_config` tables exist after first boot
-- [ ] Background vitals collector thread inserts readings every ~10 s while a
-      provisioned device is reachable
+- [ ] Pi `cloud_uploader.py` pushes vitals every ~10 s via cron
+- [ ] `POST /api/device/vitals` with valid `X-Device-MAC` + `X-Device-Hash` stores data
+- [ ] Patient can register device via `/api/devices/register-by-hash` using factory hash
 
 ## References
 

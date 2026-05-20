@@ -36,10 +36,10 @@
 
     <div class="page-header">
         <h2>Dashboard</h2>
-        <p>Real-time status of the CareOtter device — <span id="device-addr">192.168.2.1</span></p>
+        <p>Latest stored status from the CareOtter device — <span id="device-addr">192.168.2.1</span></p>
     </div>
 
-    <!-- Real-time vitals -->
+    <!-- Latest stored vitals (read from DB, pushed by the device) -->
     <div class="grid-4" style="margin-bottom:20px">
         <div class="stat-card" id="card-bpm">
             <span class="stat-label">Heart Rate</span>
@@ -159,6 +159,17 @@
     async function loadVitals() {
         try {
             const res  = await fetch('/api/vitals');
+            if (res.status === 404) {
+                // No data pushed yet — show placeholders, not error
+                document.getElementById('val-bpm').textContent  = '—';
+                document.getElementById('val-spo2').textContent = '—';
+                document.getElementById('badge-source').textContent = 'waiting';
+                document.getElementById('badge-source').className   = 'badge badge-gray';
+                document.getElementById('badge-sensor').textContent = 'No data';
+                document.getElementById('badge-sensor').className   = 'badge badge-yellow';
+                document.getElementById('sub-source').textContent   = 'Device has not pushed data yet';
+                return;
+            }
             const data = await res.json();
 
             document.getElementById('val-bpm').textContent  = data.bpm  ?? '—';

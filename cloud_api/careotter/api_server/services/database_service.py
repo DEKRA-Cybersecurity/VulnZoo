@@ -76,6 +76,7 @@ class DatabaseService:
                     mac TEXT UNIQUE NOT NULL,
                     patient_username TEXT NOT NULL,
                     device_name TEXT,
+                    auth_hash TEXT,
                     registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (patient_username) REFERENCES users(username)
                 );
@@ -147,11 +148,11 @@ class DatabaseService:
     def _migrate_db(self):
         """Apply incremental schema migrations to existing databases."""
         with sqlite3.connect(self.db_path) as conn:
-            existing = {row[1] for row in
+            existing_vitals = {row[1] for row in
                         conn.execute('PRAGMA table_info(vitals_readings)').fetchall()}
 
             # Migration: add device_mac column if missing
-            if 'device_mac' not in existing:
+            if 'device_mac' not in existing_vitals:
                 logger.info("[DB] Migration: adding device_mac to vitals_readings")
                 default_mac = 'AA:BB:CC:DD:EE:FF'
                 # SQLite requires a literal constant default (no ? placeholder) for ALTER TABLE
@@ -169,6 +170,15 @@ class DatabaseService:
                 conn.commit()
                 n = conn.execute('SELECT COUNT(*) FROM vitals_readings').fetchone()[0]
                 logger.info(f"[DB] Migration: backfilled {n} rows with mac={default_mac}")
+
+            # Migration: add auth_hash to devices if missing
+            existing_devices = {row[1] for row in
+                        conn.execute('PRAGMA table_info(devices)').fetchall()}
+            if 'auth_hash' not in existing_devices:
+                logger.info("[DB] Migration: adding auth_hash to devices")
+                conn.execute("ALTER TABLE devices ADD COLUMN auth_hash TEXT")
+                conn.commit()
+                logger.info("[DB] Migration: auth_hash column added")
 
     # ── User management ───────────────────────────────────────────────────────
     
@@ -272,24 +282,54 @@ class DatabaseService:
     # ── Device management ─────────────────────────────────────────────────────
 
     def register_device(self, mac: str, patient_username: str,
-                        device_name: str = None) -> bool:
+                        device_name: str = None, auth_hash: str = None) -> bool:
         """Register a device MAC and associate it with a patient user."""
         mac = mac.upper()
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
-                    INSERT INTO devices (mac, patient_username, device_name)
-                    VALUES (?, ?, ?)
+                    INSERT INTO devices (mac, patient_username, device_name, auth_hash)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT(mac) DO UPDATE SET
                         patient_username = excluded.patient_username,
-                        device_name      = excluded.device_name
-                ''', (mac, patient_username, device_name))
+                        device_name      = excluded.device_name,
+                        auth_hash        = COALESCE(excluded.auth_hash, auth_hash)
+                ''', (mac, patient_username, device_name, auth_hash))
                 conn.commit()
                 logger.info(f"[DB] Device registered: {mac} → {patient_username}")
                 return True
         except Exception as e:
             logger.error(f"[DB] Error registering device: {e}")
             return False
+
+    def update_device_hash(self, mac: str, auth_hash: str) -> bool:
+        """Update the auth_hash for a device."""
+        mac = mac.upper()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'UPDATE devices SET auth_hash = ? WHERE mac = ?',
+                    (auth_hash, mac)
+                )
+                conn.commit()
+                logger.info(f"[DB] Updated auth_hash for {mac}")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error updating device hash: {e}")
+            return False
+
+    def get_device_by_hash(self, auth_hash: str) -> Optional[Dict]:
+        """Return the device whose auth_hash matches."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    'SELECT * FROM devices WHERE auth_hash = ?', (auth_hash,)
+                ).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching device by hash: {e}")
+            return None
 
     def get_device(self, mac: str) -> Optional[Dict]:
         """Return device info including the owning patient username."""
@@ -303,6 +343,34 @@ class DatabaseService:
                 return dict(row) if row else None
         except Exception as e:
             logger.error(f"[DB] Error fetching device: {e}")
+            return None
+
+    def get_device_by_mac(self, mac: str) -> Optional[Dict]:
+        """Alias for get_device."""
+        return self.get_device(mac)
+
+    def get_latest_vitals(self, device_mac: str = None) -> Optional[Dict]:
+        """Return the most recent vital reading for a device (or globally)."""
+        mac = device_mac.upper() if device_mac else None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                if mac:
+                    row = conn.execute('''
+                        SELECT * FROM vitals_readings
+                        WHERE device_mac = ?
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    ''', (mac,)).fetchone()
+                else:
+                    row = conn.execute('''
+                        SELECT * FROM vitals_readings
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    ''').fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching latest vitals: {e}")
             return None
 
     def get_device_by_patient(self, username: str) -> Optional[Dict]:
@@ -376,7 +444,7 @@ class DatabaseService:
             self.create_or_update_user(admin_username, admin_password, 'admin')
 
             # Register / update device association
-            self.register_device(mac, patient_username, device_name)
+            self.register_device(mac, patient_username, device_name, auth_hash=signature)
 
             # Store the device's WiFi IP for vitals polling
             self._set_config('device_ip', device_ip)
