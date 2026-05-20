@@ -201,7 +201,25 @@ bluetoothctl --timeout 8 scan le | grep CareOtter_HR
 /etc/init.d/careservice start
 ```
 
-### 2. Service Configuration
+### 2. Cloud Uploader (Push Architecture)
+
+The Pi now **pushes** vitals and alerts to the Cloud API instead of being polled.
+
+**Script**: `/opt/medical-sensor/cloud_uploader.py`
+- Reads local sensor at `127.0.0.1:8081/vitals` and `/alerts/history`
+- POSTs to Cloud API `/api/device/vitals` and `/api/device/alerts`
+- Authenticates with headers `X-Device-MAC` + `X-Device-Hash`
+- Runs every minute via cron (internal 10 s loop for ~60 s)
+
+**Cron entry** (`/etc/crontabs/root`):
+```
+* * * * * /usr/bin/env python3 /opt/medical-sensor/cloud_uploader.py >/dev/null 2>&1
+```
+
+**Init.d alternative** (`/etc/init.d/cloud-uploader`):
+- procd service with respawn, START=96
+
+### 3. Service Configuration
 
 **Medical Sensor** (`/opt/medical-sensor/config.json`):
 ```json
@@ -210,13 +228,14 @@ bluetoothctl --timeout 8 scan le | grep CareOtter_HR
   "bpm": 72,
   "spo2": 98,
   "http_port": 8081,
-  "sample_rate": 1
+  "sample_rate": 1,
+  "device_hash": "CareOtterFactorySig2026"
 }
 ```
 
 **CareService**: Compiled C binary with hardcoded port 9999
 
-### 3. Verification
+### 4. Verification
 
 **HTTP API Test**:
 ```bash
@@ -241,6 +260,7 @@ printf '\x47\x4F\x41\x54\x02\x00\x00\x0FOtterMobile2026' | nc 127.0.0.1 9999
 |----------|-----------|-------------|
 | HTTP API | `:8081` | Medical sensor REST API |
 | Vitals Endpoint | `:8081/vitals` | BPM/SpO2 JSON |
+| Cloud Uploader | cron / procd | Pushes data to Cloud API |
 | BLE GATT | hci0 | Heart Rate + Pulse Ox services |
 | Admin Service | `:9999` | CareService (vulnerable) |
 | Logs | `/tmp/medical-logs/` | Sensor data logs |
@@ -283,6 +303,7 @@ The Android app connects to both services:
 
 - [ ] HTTP API responds on port 8081
 - [ ] `/vitals` returns BPM/SpO2 data
+- [ ] `cloud_uploader.py` runs and POSTs to Cloud API successfully
 - [ ] BLE advertising as "CareOtter_HR"
 - [ ] CareService running on port 9999
 - [ ] SYS_INFO (0x01) returns kernel version

@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -51,6 +52,7 @@ public class BleWifiProvisioner {
     private BluetoothGatt gatt;
     private boolean scanning = false;
     private ScanCallback activeScanCallback;
+    private static final long SCAN_TIMEOUT_MS = 15000;
 
     private Callback callback;
     private String pendingSsid;
@@ -58,6 +60,14 @@ public class BleWifiProvisioner {
 
     private enum State { IDLE, SCANNING, CONNECTING, DISCOVERING, WRITING_PIN, WRITING_WIFI, DONE }
     private State state = State.IDLE;
+
+    private final Runnable scanTimeout = () -> {
+        if (state == State.SCANNING) {
+            stopScan();
+            reportComplete(false, "Timed out — " + DEVICE_NAME + " not found");
+            cleanup();
+        }
+    };
 
     public BleWifiProvisioner(Context context) {
         this.context = context.getApplicationContext();
@@ -111,8 +121,15 @@ public class BleWifiProvisioner {
             public void onScanResult(int callbackType, ScanResult result) {
                 if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) return;
                 BluetoothDevice device = result.getDevice();
-                String name = device.getName();
+                // Prefer the advertised name from the scan record: for a
+                // never-bonded LE device, device.getName() is usually null
+                // (the name lives in the scan response, not the device cache).
+                String name = null;
+                ScanRecord rec = result.getScanRecord();
+                if (rec != null) name = rec.getDeviceName();
+                if (name == null) name = device.getName();
                 if (DEVICE_NAME.equals(name)) {
+                    uiHandler.removeCallbacks(scanTimeout);
                     stopScan();
                     reportStatus("Found " + name + " [" + device.getAddress() + "]");
                     connect(device.getAddress());
@@ -121,11 +138,17 @@ public class BleWifiProvisioner {
 
             @Override
             public void onScanFailed(int errorCode) {
+                uiHandler.removeCallbacks(scanTimeout);
                 reportComplete(false, "Scan failed: error " + errorCode);
                 cleanup();
             }
         };
+        // Use the exact proven call that BleMonitorClient (the working patient
+        // monitor) uses on this hardware: the 1-arg startScan with default
+        // settings. The 3-arg form with SCAN_MODE_LOW_LATENCY did NOT deliver
+        // results on this Redmi/MIUI device.
         scanner.startScan(activeScanCallback);
+        uiHandler.postDelayed(scanTimeout, SCAN_TIMEOUT_MS);
     }
 
     private void stopScan() {
@@ -263,8 +286,11 @@ public class BleWifiProvisioner {
 
     private void reportStatus(String msg) {
         Log.d(TAG, msg);
-        if (callback != null) {
-            uiHandler.post(() -> callback.onStatus(msg));
+        Callback cb = callback;
+        // Snapshot the reference: the field can be nulled by reportComplete()
+        // before this posted runnable executes on the UI thread.
+        if (cb != null) {
+            uiHandler.post(() -> cb.onStatus(msg));
         }
     }
 
@@ -279,6 +305,7 @@ public class BleWifiProvisioner {
     }
 
     private void cleanup() {
+        uiHandler.removeCallbacks(scanTimeout);
         stopScan();
         closeGatt();
         state = State.IDLE;

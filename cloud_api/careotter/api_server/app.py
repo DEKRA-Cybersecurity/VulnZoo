@@ -24,13 +24,12 @@ import fcntl
 import struct
 import logging
 import requests as http_requests
-from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response
+from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response, g
 from config import Config
 from core.igp_client import IGPError
 from core.jwt_service import JWTService
-from core.decorators import token_required, web_login_required, web_admin_required, web_patient_required
+from core.decorators import token_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required
 from services.device_service import DeviceService
-from services.vitals_service import VitalsService
 from services.database_service import DatabaseService
 
 # Configure logging
@@ -92,7 +91,6 @@ vuln = Config.VULNERABLE
 
 # Service instances (stateless — thread-safe for Flask dev server)
 device = DeviceService()
-vitals = VitalsService()
 
 # Initialize database with error handling
 try:
@@ -218,10 +216,11 @@ def _refresh_device_ip_from_sensor(attempts: int = 8, delay: float = 1.5) -> str
     logger.warning(f"[set_wifi] wlan0 IP did not converge after {attempts} polls ({attempts*delay:.0f}s)")
     return None
 
-# ── Shared vitals cache ───────────────────────────────────────────────────────
-# The collector thread writes here every 30s after a successful sensor fetch.
-# All HTTP clients (web, mobile app) read this same dict so every client always
-# sees identical values — not independent snapshots of a constantly-changing sensor.
+# ── Shared vitals cache (PUSH architecture) ──────────────────────────────────
+# In the new push model the Pi sends vitals to POST /api/device/vitals.
+# The latest reading is read directly from SQLite via db.get_latest_vitals().
+# This dict is kept only for backward compatibility of any code that might
+# reference it; it is no longer populated by a background collector.
 _latest_vitals: dict = {}
 _latest_vitals_lock = threading.Lock()
 
@@ -286,6 +285,12 @@ def admin_logs():
 @app.route('/patient/login')
 def patient_login():
     return render_template('patient_login.html')
+
+@app.route('/caregiver/dashboard')
+@web_caregiver_required
+def caregiver_dashboard():
+    """Caregiver home page — Access patient vitals via BOLA endpoint."""
+    return render_template('caregiver_dashboard.html')
 
 @app.route('/history')
 @web_patient_required
@@ -428,6 +433,52 @@ def login_patient():
     return resp, 200
 
 
+@app.route('/api/auth/login/caregiver', methods=['POST'])
+def login_caregiver():
+    """
+    Caregiver login endpoint.
+
+    Same authentication flow as /api/auth/login/patient, but accepts the
+    'caregiver' role. Returns a JWT that can be used to access the caregiver
+    dashboard and (intentionally, due to BOLA) any patient's vitals endpoint.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    if not username:
+        return jsonify({'error': 'Field "username" required', 'code': 'MISSING_FIELD'}), 400
+    if not password:
+        return jsonify({'error': 'Field "password" required', 'code': 'MISSING_FIELD'}), 400
+
+    if db is None:
+        return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
+
+    user = db.verify_user(username, password)
+    if not user:
+        return jsonify({
+            'error': 'Invalid username or password',
+            'code':  'AUTH_FAIL'
+        }), 401
+
+    if user.get('role') != 'caregiver':
+        return jsonify({
+            'error': 'Access denied for this role',
+            'code':  'FORBIDDEN'
+        }), 403
+
+    jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'caregiver'))
+    resp = make_response(jsonify({
+        'token':      jwt_token,
+        'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
+        'type':       'Bearer',
+        'role':       user.get('role'),
+        'username':   username
+    }))
+    resp.set_cookie('careotter_token', jwt_token, httponly=True, samesite='Lax', max_age=3600*Config.JWT_EXPIRATION_HOURS)
+    return resp, 200
+
+
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
     """Deletes the JWT session cookie."""
@@ -548,39 +599,34 @@ def device_ping():
 @app.route('/api/vitals')
 def get_vitals():
     """
-    Current BPM and SpO2 — returns the last value fetched by the background
-    collector (updated every 30s). All clients receive the same snapshot so
-    the mobile app and web portal always display identical readings.
-    No authentication (monitoring data is public).
+    Latest BPM and SpO2 — reads the most recent row stored in SQLite by the
+    push endpoint (POST /api/device/vitals). No authentication.
     """
-    with _latest_vitals_lock:
-        cached = dict(_latest_vitals)
-
-    if not cached:
-        # Collector hasn't run yet (first 30s after startup) — fetch once directly
-        result = vitals.get_current()
-        if not result['success']:
-            logger.warning(f"[API] Sensor unavailable and no cached data: {result['error']}")
-            return jsonify({'error': result['error']}), 503
-        cached = result['data']
-        cached['timestamp'] = time.time()
-        cached['device_mac'] = DEVICE_MAC
-        with _latest_vitals_lock:
-            _latest_vitals.update(cached)
-
-    return jsonify(cached), 200
+    mac = DEVICE_MAC
+    latest = db.get_latest_vitals(device_mac=mac) if db else None
+    if not latest:
+        return jsonify({'error': 'No vitals received from device yet'}), 404
+    # Normalize to the same shape the frontend expects
+    return jsonify({
+        'bpm': latest.get('bpm'),
+        'spo2': latest.get('spo2'),
+        'ir_raw': latest.get('ir_raw'),
+        'red_raw': latest.get('red_raw'),
+        'timestamp': latest.get('timestamp'),
+        'source': latest.get('source', 'unknown'),
+        'device_mac': latest.get('device_mac', mac),
+    }), 200
 
 
 @app.route('/api/vitals/history')
 def get_vitals_history():
     """
-    History of vital summaries from device (circular buffer, up to 24h).
+    History of vital summaries from the database (push model).
     No authentication.
     """
-    result = vitals.get_history()
-    if not result['success']:
-        return jsonify({'error': result['error']}), 503
-    return jsonify({'history': result['history']}), 200
+    hours = request.args.get('hours', 24, type=int)
+    readings = db.get_vitals_history(hours=hours, device_mac=DEVICE_MAC) if db else []
+    return jsonify({'history': readings}), 200
 
 
 @app.route('/api/vitals/db/history')
@@ -630,6 +676,117 @@ def get_alerts_db_history():
         'count':      len(events),
         'device_mac': device_mac,
         'alerts':     events
+    }), 200
+
+
+# ── Device push endpoints (Pi → Cloud) ────────────────────────────────────────
+
+@app.route('/api/device/vitals', methods=['POST'])
+def device_push_vitals():
+    """Receive vital signs pushed by the bedside monitor.
+
+    Authenticated via X-Device-MAC + X-Device-Hash headers.
+    The Pi's cloud_uploader.py calls this every ~10 s.
+    """
+    mac = request.headers.get('X-Device-MAC', '').upper()
+    auth_hash = request.headers.get('X-Device-Hash', '')
+    data = request.get_json(force=True, silent=True) or {}
+
+    if not mac or not auth_hash:
+        return jsonify({'error': 'Missing X-Device-MAC or X-Device-Hash'}), 400
+
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    device = db.get_device_by_mac(mac)
+    if not device or device.get('auth_hash') != auth_hash:
+        return jsonify({'error': 'Invalid device credentials'}), 403
+
+    # Store the reading
+    data['timestamp'] = data.get('timestamp', time.time())
+    db.store_vitals(data, device_mac=mac)
+
+    # Update global active MAC so read endpoints know which device to query
+    global DEVICE_MAC
+    DEVICE_MAC = mac
+
+    # Also update in-memory cache for any legacy consumers
+    with _latest_vitals_lock:
+        _latest_vitals.update({
+            'bpm': data.get('bpm'),
+            'spo2': data.get('spo2'),
+            'ir_raw': data.get('ir_raw'),
+            'red_raw': data.get('red_raw'),
+            'timestamp': data['timestamp'],
+            'source': data.get('source', 'unknown'),
+            'device_mac': mac,
+        })
+
+    return jsonify({'status': 'ok', 'device_mac': mac}), 200
+
+
+@app.route('/api/device/alerts', methods=['POST'])
+def device_push_alerts():
+    """Receive alert events pushed by the bedside monitor."""
+    mac = request.headers.get('X-Device-MAC', '').upper()
+    auth_hash = request.headers.get('X-Device-Hash', '')
+    data = request.get_json(force=True, silent=True) or {}
+
+    if not mac or not auth_hash:
+        return jsonify({'error': 'Missing X-Device-MAC or X-Device-Hash'}), 400
+
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    device = db.get_device_by_mac(mac)
+    if not device or device.get('auth_hash') != auth_hash:
+        return jsonify({'error': 'Invalid device credentials'}), 403
+
+    for event in data.get('alerts', []):
+        db.store_alert(event, device_mac=mac)
+
+    global DEVICE_MAC
+    DEVICE_MAC = mac
+
+    return jsonify({'status': 'ok', 'stored': len(data.get('alerts', []))}), 200
+
+
+@app.route('/api/devices/register-by-hash', methods=['POST'])
+@token_required
+def register_device_by_hash():
+    """Allow a patient to claim a device by providing its factory hash.
+
+    The device hash is printed on the device label (e.g. CareOtterFactorySig2026).
+    Once claimed, the device is associated with the authenticated user.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    auth_hash = data.get('device_hash', '')
+
+    if not auth_hash:
+        return jsonify({'error': 'device_hash is required'}), 400
+
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    device = db.get_device_by_hash(auth_hash)
+    if not device:
+        return jsonify({'error': 'Invalid device hash'}), 404
+
+    username = g.current_user.get('sub') or g.current_user.get('username')
+    if not username:
+        return jsonify({'error': 'Token missing username claim'}), 401
+    db.register_device(
+        device['mac'], username, device.get('device_name', 'CareOtter_HR'), auth_hash=auth_hash
+    )
+
+    global DEVICE_MAC
+    DEVICE_MAC = device['mac']
+
+    return jsonify({
+        'status': 'registered',
+        'device_mac': device['mac'],
+        'device_name': device.get('device_name', 'CareOtter_HR'),
+        'patient_username': username,
     }), 200
 
 
@@ -721,6 +878,45 @@ def get_my_device():
         return jsonify({'error': 'No device assigned to this patient'}), 404
 
     return jsonify(device), 200
+
+
+# ── Caregiver endpoint (intentionally vulnerable to BOLA) ─────────────────────
+
+@app.route('/api/caregiver/patient/<username>/vitals', methods=['GET'])
+@token_required
+def caregiver_patient_vitals(username):
+    """Caregiver view of a patient's vitals, alerts, and device info.
+
+    VULNERABILITY (BOLA): The endpoint accepts *any* username in the URL
+    and does NOT verify that the authenticated user:
+      1. Has the 'caregiver' role
+      2. Is assigned to the requested patient
+    Any authenticated JWT (including patient, admin, or caregiver) can
+    substitute <username> with any existing user and exfiltrate their data.
+    """
+    hours = request.args.get('hours', 24, type=int)
+    limit = request.args.get('limit', 1000, type=int)
+
+    device = db.get_device_by_patient(username)
+    if not device:
+        return jsonify({
+            'error': f'No device found for patient "{username}"'
+        }), 404
+
+    readings = db.get_vitals_history(hours=hours, limit=limit,
+                                     device_mac=device.get('mac'))
+    alerts = db.get_alerts_history(hours=hours, limit=limit,
+                                   device_mac=device.get('mac'))
+
+    return jsonify({
+        'patient_username': username,
+        'device':           device,
+        'hours':            hours,
+        'readings_count':   len(readings),
+        'readings':         readings,
+        'alerts_count':     len(alerts),
+        'alerts':           alerts
+    }), 200
 
 
 # ── Network ───────────────────────────────────────────────────────────────────
@@ -994,7 +1190,7 @@ def device_register():
     if not ok:
         return jsonify({'error': 'Registration failed — invalid signature or DB error'}), 403
 
-    # Update runtime config so the vitals collector immediately starts polling WiFi
+    # Update runtime config so IGP calls target the correct IP
     Config.DEVICE_IP = device_ip
     global DEVICE_MAC
     DEVICE_MAC = mac
@@ -1033,10 +1229,10 @@ def initialize_iot():
     eth_ip = '192.168.2.1'
     device_ip = Config.DEVICE_IP or eth_ip
 
-    # Seed users + device, persist the Ethernet IP as fallback.
+    # Seed users (no device — device must be registered separately).
     db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
     db.create_or_update_user('patient', 'patient123', 'patient')
-    db.register_device('AA:BB:CC:DD:EE:FF', 'patient', 'CareOtter_HR')
+    db.create_or_update_user('caregiver', 'Caregiver2026!', 'caregiver')
     db._set_config('device_ip', device_ip)
     Config.DEVICE_IP = device_ip
 
@@ -1079,7 +1275,11 @@ def initialize_iot():
                      'For the real provisioning flow, discover the hidden BLE service (0xFF10).',
         'admin':     {'username': 'admin',   'password': 'CareOtter2026!'},
         'patient':   {'username': 'patient', 'password': 'patient123'},
+        'caregiver': {'username': 'caregiver', 'password': 'Caregiver2026!'},
         'device_ip': device_ip,
+        'device_registered': False,
+        'device_mac': None,
+        'message_device': 'In push mode the device registers itself via POST /api/device/vitals or the patient uses /api/devices/register-by-hash.',
         'wifi_provisioned': bool(wifi_ssid and wifi_psk and wifi_result and wifi_result.get('success')),
         'wifi_result': wifi_result
     }), 200
@@ -1087,89 +1287,12 @@ def initialize_iot():
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
-def _vitals_collector():
-    """Background thread: poll sensor every 10s and persist to DB.
-    Runs independently of HTTP clients — history is recorded even when no
-    browser or mobile app is connected.
-    Uses the global DEVICE_MAC and Config.DEVICE_IP (updated dynamically
-    after the device registers via /admin/device/register).
-    """
-    global _latest_vitals
-    INTERVAL = 10  # seconds — matches sensor_service SNAPSHOT_INTERVAL
-    logger.info(f"[Collector] Vitals collector started (interval={INTERVAL}s)")
-    while True:
-        try:
-            if not Config.DEVICE_IP:
-                logger.info("[Collector] Waiting for device registration — DEVICE_IP is empty")
-                time.sleep(INTERVAL)
-                continue
-
-            result = vitals.get_current()
-            if result['success']:
-                data = result['data']
-                data['timestamp'] = time.time()
-                data['device_mac'] = DEVICE_MAC
-                with _latest_vitals_lock:
-                    _latest_vitals = dict(data)
-                if db:
-                    db.store_vitals(data, device_mac=DEVICE_MAC)
-                    logger.debug(f"[Collector] BPM={data.get('bpm')} SpO2={data.get('spo2')} mac={DEVICE_MAC}")
-                # Sleep until sensor_timestamp + INTERVAL so next fetch aligns to the
-                # sensor's own snapshot boundary instead of drifting on a fixed timer
-                next_at = data['timestamp'] + INTERVAL
-                delay = max(0.0, next_at - time.time())
-                time.sleep(delay)
-                continue
-            else:
-                logger.warning(f"[Collector] Vitals fetch failed: {result.get('error')}")
-        except Exception as e:
-            logger.warning(f"[Collector] Error: {e}")
-        time.sleep(INTERVAL)
-
-
-def _alerts_collector():
-    """Background thread: pull edge-triggered alert events from sensor and persist.
-
-    Watermark = max(timestamp) already stored in the alerts table for this
-    device. The sensor returns only events with timestamp > since, so steady
-    state costs a single empty HTTP round-trip per interval.
-    """
-    INTERVAL = 5  # seconds — finer than vitals because alerts are sparse + latency-sensitive
-    logger.info(f"[AlertsCollector] Started (interval={INTERVAL}s)")
-    while True:
-        try:
-            if not Config.DEVICE_IP or not DEVICE_MAC:
-                time.sleep(INTERVAL)
-                continue
-
-            since = db.get_latest_alert_timestamp(device_mac=DEVICE_MAC) if db else 0.0
-            result = vitals.get_alerts(since=since)
-            if not result.get('success'):
-                logger.debug(f"[AlertsCollector] Pull failed: {result.get('error')}")
-                time.sleep(INTERVAL)
-                continue
-
-            for event in result.get('alerts', []):
-                if db and db.store_alert(event, device_mac=DEVICE_MAC):
-                    logger.info(
-                        f"[AlertsCollector] Stored {event.get('state')} "
-                        f"{event.get('type')}={event.get('value')} "
-                        f"(threshold={event.get('threshold')}, "
-                        f"severity={event.get('severity')})"
-                    )
-        except Exception as e:
-            logger.warning(f"[AlertsCollector] Error: {e}")
-        time.sleep(INTERVAL)
-
-
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5002))
 
-    collector = threading.Thread(target=_vitals_collector, daemon=True)
-    collector.start()
-
-    alerts_collector = threading.Thread(target=_alerts_collector, daemon=True)
-    alerts_collector.start()
+    # NOTE: Background collectors (_vitals_collector, _alerts_collector) have been
+    # removed. In the push architecture the Pi sends data via POST /api/device/vitals
+    # and POST /api/device/alerts, driven by cloud_uploader.py on the device.
 
     # ── Auto-initialize in vulnerable lab mode ──────────────────────────────────
     # When VULNERABLE=1 and the database has no users, automatically run

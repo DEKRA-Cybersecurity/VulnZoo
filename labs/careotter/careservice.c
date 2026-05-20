@@ -15,7 +15,8 @@
 
 #define PORT          9999
 #define MAGIC         0x43415245   /* "CARE" — IoT Gateway Protocol v4 */
-#define ADMIN_TOKEN   "OtterMobile2026"
+#define ADMIN_TOKEN       "OtterMobile2026"
+#define DEVICE_SIGNATURE  "CareOtterFactorySig2026"
 #define LOG_FILE      "/var/log/careservice.log"
 #define EVENTS_FILE   "/opt/careotter_events.log"
 #define THRESH_FILE   "/var/log/careotter.thresholds"
@@ -548,6 +549,21 @@ void handle_request(int c_fd) {
         case 0x0F: {
             send(c_fd, "PONG", 4, 0);
             log_event("PING: probe received");
+            break;
+        }
+
+        /* ── 0x10 GET_SIGNATURE — factory device signature ─────────────────── */
+        /* Requires auth. Returns the hardcoded device signature that the     */
+        /* installer/administrator must hand to the patient so they can       */
+        /* register the device in the Cloud API via /api/devices/register-by-hash */
+        case 0x10: {
+            if (!authenticated) {
+                send(c_fd, "RESTRICTED", 10, 0);
+                log_event("GET_SIGNATURE: access denied");
+                break;
+            }
+            send(c_fd, DEVICE_SIGNATURE, strlen(DEVICE_SIGNATURE), 0);
+            log_event("GET_SIGNATURE: signature sent to authenticated admin");
             break;
         }
 

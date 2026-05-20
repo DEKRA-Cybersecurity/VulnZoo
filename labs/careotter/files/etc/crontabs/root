@@ -6,3 +6,7 @@
 # L3 BLE keepalive — every minute, hard-recover if the L1 watchdog
 # heartbeat is stale or the ble-server process is missing.
 * * * * * /usr/local/sbin/careotter-ble-keepalive.sh >/dev/null 2>&1
+
+# Push vitals & alerts to Cloud API every minute.
+# The script internally loops every 10 s for ~60 s, then exits.
+* * * * * /usr/bin/env python3 /opt/medical-sensor/cloud_uploader.py >/dev/null 2>&1

@@ -76,6 +76,9 @@ Binary protocol over TCP port 9999. All commands share the same 8-byte header:
 | `0x0B` | DEFIBRILLATE | Yes | Simulated defibrillator discharge (log event) |
 | `0x0C` | EMERGENCY_ALERT  | Yes | Send alert via `curl` to configured endpoint |
 | `0x0D` | DEAUTHENTICATE   | No  | Reset `authenticated=0` — session close |
+| `0x0E` | GET_THRESHOLD    | No  | Read current clinical thresholds from file |
+| `0x0F` | PING             | No  | Connectivity probe — returns `PONG` |
+| `0x10` | GET_SIGNATURE    | Yes | Returns factory device signature for patient registration |
 
 ### CSCP v1 (CareOtter Secure Config Protocol)
 
@@ -419,6 +422,23 @@ print(igp(0x03))                 # b'RESTRICTED'
 > be used to "lock out" a legitimate session mid-execution. It only resets
 > the flag — the race window between the command connection and this connection
 > still exists for direct TCP attackers.
+
+---
+
+#### 0x10 GET_SIGNATURE (requires authentication)
+
+Returns the hardcoded factory device signature (e.g. `CareOtterFactorySig2026`).
+This value is what the installer/administrator must hand to the patient so they
+can register the device in the Cloud API via `POST /api/devices/register-by-hash`.
+
+```python
+igp(0x02, b'OtterMobile2026')   # AUTH_SUCCESS
+print(igp(0x10))                 # b'CareOtterFactorySig2026'
+```
+
+> **Security note:** This endpoint requires authentication, but the signature is
+> identical across all CareOtter devices. An attacker who captures it can register
+> a rogue device or replay it to a fake cloud.
 
 ---
 

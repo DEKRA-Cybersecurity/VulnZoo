@@ -148,6 +148,28 @@ curl -X POST http://localhost:5002/api/auth/login \
 
 > 🔒 **Note**: The old hardcoded device token login (`{"token": "OtterMobile2026"}`) has been removed from the web admin panel. The Admin Panel now exclusively uses database-backed username/password authentication with role enforcement.
 
+### Caregiver Login
+
+`POST /api/auth/login/caregiver`
+
+Authenticates against the local SQLite user database and **requires the user role to be `caregiver`**.
+
+```bash
+curl -X POST http://localhost:5002/api/auth/login/caregiver \
+  -H "Content-Type: application/json" \
+  -d '{"username": "caregiver", "password": "Caregiver2026!"}'
+```
+
+**Response (success):**
+```json
+{
+  "token": "<JWT>",
+  "expires_in": "8h",
+  "type": "Bearer",
+  "role": "caregiver"
+}
+```
+
 ### Programmatic User Verification
 
 The `DatabaseService.verify_user(username, password)` method is available for role-based authentication in custom scripts:
@@ -181,6 +203,7 @@ Authorization: Bearer <JWT>
 | GET | `/api/device/status` | 0x05 VERIFY_STATUS | Module diagnostics (vulnerable to format string) |
 | GET | `/api/vitals` | HTTP :8081 | Current BPM/SpO2 from sensor |
 | GET | `/api/vitals/history` | HTTP :8081 | Vitals history buffer |
+| POST | `/api/auth/login/caregiver` | — | Caregiver login → JWT |
 
 #### `/hint` — Device Provisioning Hint
 
@@ -305,6 +328,7 @@ curl -X POST http://localhost:5002/admin/device/register \
 | POST | `/api/config/thresholds` | 0x08 SET_THRESHOLD | Clinical alert thresholds |
 | POST | `/api/services/restart` | 0x09 REBOOT_SERVICE | Restart init.d services |
 | GET | `/api/logs` | 0x0A GET_LOG | Last 512 bytes of device log |
+| GET | `/api/caregiver/patient/<username>/vitals` | — | **VULN: BOLA** — caregiver vitals view lacks ownership check |
 
 ### Admin Panel (Web UI)
 
@@ -382,6 +406,7 @@ db.get_db_info()
 | 5 | WiFi PSK Disclosure | `device_service.py` | `raw` field in `/api/network` | API1: Broken Object Level Authorization | CWE-200 |
 | 6 | Info Leak | `app.py` | `/api/health` exposes device IP | API8: Security Misconfiguration | CWE-200 |
 | 7 | Shell Injection | `careservice.c` | `SET_WIFI` uses `system()` without escaping | API10: Unsafe Consumption of APIs | CWE-78 |
+| 8 | Cross-User Vitals Access | `app.py` | `/api/caregiver/patient/<username>/vitals` lacks ownership check | API1:2023 — Broken Object Level Authorization | CWE-639 / CWE-863 |
 
 ### Medium
 

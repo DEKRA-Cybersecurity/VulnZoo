@@ -47,6 +47,7 @@ public class IgpClient {
     public static final byte CMD_DEAUTHENTICATE  = 0x0D;
     public static final byte CMD_GET_THRESHOLD   = 0x0E;
     public static final byte CMD_PING            = 0x0F;
+    public static final byte CMD_GET_SIGNATURE   = 0x10;
 
     private final String host;
     private final int    port;
@@ -99,6 +100,18 @@ public class IgpClient {
     public String getThresholds()  throws IOException { return send(CMD_GET_THRESHOLD, null); }
     public String ping()           throws IOException { return send(CMD_PING, null); }
     public String defibrillate()   throws IOException { return send(CMD_DEFIBRILLATE, "TRIGGER".getBytes()); }
+
+    /**
+     * 0x10 GET_SIGNATURE — retrieves the factory device signature.
+     *
+     * Requires prior authentication ({@link #authenticate()}).
+     * The returned signature (e.g. "CareOtterFactorySig2026") is what the
+     * installer/administrator must provide to the patient so they can register
+     * the device in the Cloud API via POST /api/devices/register-by-hash.
+     */
+    public String getDeviceSignature() throws IOException {
+        return send(CMD_GET_SIGNATURE, null);
+    }
 
     /**
      * 0x0D DEAUTHENTICATE — resets authenticated=0 in the careservice process.

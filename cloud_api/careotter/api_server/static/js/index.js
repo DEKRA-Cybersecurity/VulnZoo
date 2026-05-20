@@ -40,16 +40,70 @@
                 if (el) el.textContent = state.deviceName;
                 const macEl = document.getElementById('device-mac');
                 if (macEl) macEl.textContent = state.deviceMac;
+            } else {
+                showNoDevice();
             }
         } catch (err) {
             console.error('Failed to resolve device:', err);
         }
     }
 
+    function showNoDevice() {
+        const container = document.getElementById('no-device-message');
+        if (container) container.style.display = 'block';
+        const vitalsSec = document.querySelector('.vitals-section');
+        if (vitalsSec) vitalsSec.style.display = 'none';
+        const histSec = document.querySelector('.history-link-section');
+        if (histSec) histSec.style.display = 'none';
+        updateStatus('no-device');
+        initRegisterByHash();
+    }
+
+    function initRegisterByHash() {
+        const btn = document.getElementById('btn-register-hash');
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
+            const input = document.getElementById('device-hash-input');
+            const errEl = document.getElementById('register-hash-error');
+            const hash = (input ? input.value : '').trim();
+            if (!hash) {
+                if (errEl) { errEl.textContent = 'Please enter a device hash.'; errEl.style.display = 'block'; }
+                return;
+            }
+            try {
+                const res = await fetch('/api/devices/register-by-hash', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + state.token
+                    },
+                    body: JSON.stringify({ device_hash: hash })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    if (errEl) {
+                        errEl.textContent = data.error || 'Registration failed. Check your code and try again.';
+                        errEl.style.display = 'block';
+                    }
+                }
+            } catch (e) {
+                if (errEl) { errEl.textContent = 'Network error. Please try again.'; errEl.style.display = 'block'; }
+            }
+        });
+    }
+
     // ── Vitals Fetching ───────────────────────────────────────────────────────
     async function fetchVitals() {
         try {
             const res = await fetch('/api/vitals');
+            if (res.status === 404) {
+                // No data yet from the device — return a sentinel so the UI
+                // shows the vitals grid with placeholders instead of treating
+                // it as a fatal error.
+                return { _noData: true };
+            }
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return await res.json();
         } catch (err) {
@@ -61,6 +115,7 @@
     // ── UI Updates ────────────────────────────────────────────────────────────
     function updateVitalsDisplay(data) {
         if (!data) { updateStatus('offline'); return; }
+        if (data._noData) { updateStatus('online'); return; }
 
         const bpm  = data.bpm  ?? null;
         const spo2 = data.spo2 ?? null;
@@ -122,8 +177,16 @@
     function updateStatus(status) {
         const el = document.getElementById('device-status');
         if (!el) return;
-        el.textContent = status === 'online' ? 'Connected' : 'Disconnected';
-        el.style.color  = status === 'online' ? 'var(--success)' : 'var(--danger)';
+        if (status === 'online') {
+            el.textContent = 'Connected';
+            el.style.color = 'var(--success)';
+        } else if (status === 'no-device') {
+            el.textContent = 'No device registered';
+            el.style.color = 'var(--warning, #f59e0b)';
+        } else {
+            el.textContent = 'Disconnected';
+            el.style.color = 'var(--danger)';
+        }
     }
 
     function updateLastUpdate() {
