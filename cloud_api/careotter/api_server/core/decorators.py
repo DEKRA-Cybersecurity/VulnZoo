@@ -108,3 +108,37 @@ def web_caregiver_required(f):
             return redirect(url_for('patient_login'))
         return f(*args, **kwargs)
     return decorated
+
+
+def api_caregiver_required(f):
+    """Requires a valid JWT with the 'caregiver' role. Returns JSON 403 for API routes."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Authorization token required',
+                'code': 'MISSING_TOKEN',
+                'detail': 'Include header: Authorization: Bearer <token>'
+            }), 401
+
+        token = auth_header.split(' ', 1)[1].strip()
+        result = JWTService.decode_token(token)
+
+        if not result['success']:
+            return jsonify({
+                'error': result['error'],
+                'code': 'INVALID_TOKEN',
+                'detail': result.get('hint', '')
+            }), 401
+
+        payload = result['payload']
+        if payload.get('role') != 'caregiver':
+            return jsonify({
+                'error': 'Caregiver access required',
+                'code': 'FORBIDDEN'
+            }), 403
+
+        g.current_user = payload
+        return f(*args, **kwargs)
+    return decorated

@@ -31,7 +31,7 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, m
 from config import Config
 from core.igp_client import IGPError
 from core.jwt_service import JWTService
-from core.decorators import token_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required
+from core.decorators import token_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required, api_caregiver_required
 from services.device_service import DeviceService
 from services.database_service import DatabaseService
 
@@ -262,6 +262,124 @@ def _register_record_fail(user_key: str) -> None:
         dq.append(time.time())
 
 
+# ── Cloud-side vitals simulator (alice_g67 + genuinebob49) ───────────────────
+# Two virtual CareOtter devices live entirely inside the Cloud API container.
+# They generate vitals with the same MAX30102Simulator model the bedside Pi
+# uses, but insert directly into the database (no HTTP round-trip, no auth
+# headers — those are for real devices). MAC prefix 02:CE:01:00:00:0X is in
+# the locally-administered IEEE range (bit 1 of first octet = 1) so the
+# address is syntactically valid but not assigned to any manufacturer.
+#
+# Aggregation + retention thread runs alongside: every minute it rolls up
+# completed minute buckets into ``vitals_minute_agg``, every hour it folds
+# minutes into ``vitals_hour_agg``, and every hour it prunes raw rows older
+# than 24h and minute aggs older than 30d.
+
+import math
+import random
+
+_CLOUD_SIM_DEVICES = [
+    {
+        'mac':              '02:CE:01:00:00:01',
+        'patient_username': 'alice_g67',
+        'device_name':      'CareOtter_HR (cloud-sim:alice)',
+        'baseline_bpm':     74,
+        'baseline_spo2':    98,
+    },
+    {
+        'mac':              '02:CE:01:00:00:02',
+        'patient_username': 'genuinebob49',
+        'device_name':      'CareOtter_HR (cloud-sim:bob)',
+        'baseline_bpm':     68,
+        'baseline_spo2':    97,
+    },
+]
+CLOUD_SIM_INTERVAL = 10   # seconds between inserts (matches Pi cron cadence)
+AGGREGATOR_INTERVAL = 60  # seconds between rollup passes
+PRUNE_INTERVAL = 3600     # seconds between retention sweeps
+
+
+def _cloud_simulator_tick(device_cfg: dict, t0: float) -> dict:
+    """Generate one (bpm, spo2) sample for a virtual device.
+    Uses the same sinusoidal PPG + gaussian noise model as
+    labs/careotter/files/opt/medical-sensor/simulator.py, but only outputs
+    derived BPM/SpO2 since the cloud no longer stores raw ADC values.
+    """
+    bpm_base = device_cfg['baseline_bpm']
+    spo2_base = device_cfg['baseline_spo2']
+    t = time.time() - t0
+    # Slow breathing-rate-style drift around the baseline
+    drift = 2.0 * math.sin(2 * math.pi * t / 90.0)
+    bpm = int(max(50, min(110, bpm_base + drift + random.gauss(0, 1.2))))
+    spo2 = int(max(94, min(100, spo2_base + random.gauss(0, 0.4))))
+    return {'bpm': bpm, 'spo2': spo2}
+
+
+def _cloud_simulator_loop():
+    """Background loop that inserts vitals for every entry in
+    ``_CLOUD_SIM_DEVICES`` every ``CLOUD_SIM_INTERVAL`` seconds."""
+    if not db:
+        logger.warning("[CloudSim] DB unavailable — simulator thread exiting")
+        return
+    t0 = time.time()
+    logger.info(f"[CloudSim] Starting virtual devices: "
+                f"{[d['mac'] for d in _CLOUD_SIM_DEVICES]}")
+    while True:
+        for dev in _CLOUD_SIM_DEVICES:
+            try:
+                sample = _cloud_simulator_tick(dev, t0)
+                payload = {
+                    'timestamp': time.time(),
+                    'bpm': sample['bpm'],
+                    'spo2': sample['spo2'],
+                    'source': 'cloud-simulator',
+                }
+                db.store_vitals(payload, device_mac=dev['mac'])
+            except Exception as e:
+                logger.error(f"[CloudSim] tick failed for {dev['mac']}: {e}")
+        time.sleep(CLOUD_SIM_INTERVAL)
+
+
+def _vitals_aggregator_loop():
+    """Background loop that maintains the warm/cold tiers and prunes the hot
+    tier. One thread handles both because the operations are cheap and run
+    on different cadences (rollups every minute, prune every hour)."""
+    if not db:
+        logger.warning("[Aggregator] DB unavailable — aggregator thread exiting")
+        return
+    last_prune = 0.0
+    logger.info("[Aggregator] Started (rollup 60s, prune 3600s)")
+    while True:
+        try:
+            db.rollup_minute_aggregates()
+            db.rollup_hour_aggregates()
+            now = time.time()
+            if now - last_prune >= PRUNE_INTERVAL:
+                db.prune_vitals_tiers()
+                last_prune = now
+        except Exception as e:
+            logger.error(f"[Aggregator] loop iteration failed: {e}")
+        time.sleep(AGGREGATOR_INTERVAL)
+
+
+def _ensure_cloud_sim_devices() -> None:
+    """Seed the patient users + virtual device rows the simulator depends on.
+    Idempotent — called once at startup right before launching the threads."""
+    if not db:
+        return
+    db.create_or_update_user('alice_g67', 'Aliceisthebest!', 'patient')
+    db.create_or_update_user('genuinebob49', 'spongebob1', 'patient')
+    for d in _CLOUD_SIM_DEVICES:
+        db.register_device(
+            d['mac'], d['patient_username'], d['device_name'],
+            auth_hash=None,  # virtual: no factory signature
+        )
+        # Enforce single-device-per-patient — drop any legacy demo row that
+        # earlier seeds left behind so the patient dashboard never shows two
+        # competing devices for the same user.
+        db.delete_other_devices_for_patient(d['patient_username'], keep_mac=d['mac'])
+
+
 # ── Global error handling ──────────────────────────────────────────────────────
 
 @app.errorhandler(Exception)
@@ -470,6 +588,65 @@ def login_patient():
     return resp, 200
 
 
+# ── Patient caregiver management ──────────────────────────────────────────────
+
+@app.route('/api/patient/caregivers', methods=['POST'])
+@token_required
+def add_patient_caregiver():
+    """Patient adds a caregiver to their account.
+
+    Body JSON: {"caregiver_username": "care_john"}
+    """
+    current = g.current_user
+    patient_username = current.get('sub') or current.get('username', '')
+    if current.get('role') not in ('patient', 'admin'):
+        return jsonify({'error': 'Only patients can manage caregivers', 'code': 'FORBIDDEN'}), 403
+
+    data = request.get_json(force=True, silent=True) or {}
+    caregiver_username = data.get('caregiver_username', '').strip()
+    if not caregiver_username:
+        return jsonify({'error': 'caregiver_username is required'}), 400
+
+    caregiver = db.get_user_by_username(caregiver_username) if db else None
+    if not caregiver:
+        return jsonify({'error': f'User "{caregiver_username}" not found'}), 404
+    if caregiver.get('role') != 'caregiver':
+        return jsonify({'error': f'User "{caregiver_username}" is not a caregiver'}), 400
+
+    ok = db.add_caregiver_assignment(patient_username, caregiver_username)
+    if not ok:
+        return jsonify({'error': 'Failed to add caregiver assignment'}), 500
+    return jsonify({'status': 'assigned', 'caregiver_username': caregiver_username}), 200
+
+
+@app.route('/api/patient/caregivers', methods=['GET'])
+@token_required
+def list_patient_caregivers():
+    """Return caregivers assigned to the authenticated patient."""
+    current = g.current_user
+    patient_username = current.get('sub') or current.get('username', '')
+    if current.get('role') not in ('patient', 'admin'):
+        return jsonify({'error': 'Only patients can view their caregivers', 'code': 'FORBIDDEN'}), 403
+
+    caregivers = db.get_caregivers_for_patient(patient_username) if db else []
+    return jsonify({'caregivers': caregivers, 'patient_username': patient_username}), 200
+
+
+@app.route('/api/patient/caregivers/<caregiver_username>', methods=['DELETE'])
+@token_required
+def remove_patient_caregiver(caregiver_username):
+    """Patient removes a caregiver from their account."""
+    current = g.current_user
+    patient_username = current.get('sub') or current.get('username', '')
+    if current.get('role') not in ('patient', 'admin'):
+        return jsonify({'error': 'Only patients can manage caregivers', 'code': 'FORBIDDEN'}), 403
+
+    ok = db.remove_caregiver_assignment(patient_username, caregiver_username) if db else False
+    if not ok:
+        return jsonify({'error': 'Assignment not found'}), 404
+    return jsonify({'status': 'removed', 'caregiver_username': caregiver_username}), 200
+
+
 @app.route('/api/auth/login/caregiver', methods=['POST'])
 def login_caregiver():
     """
@@ -643,12 +820,12 @@ def get_vitals():
     latest = db.get_latest_vitals(device_mac=mac) if db else None
     if not latest:
         return jsonify({'error': 'No vitals received from device yet'}), 404
-    # Normalize to the same shape the frontend expects
+    # Normalize to the same shape the frontend expects.
+    # ir_raw/red_raw removed in the tiered-storage refactor — those are local
+    # ADC waveform values not used by any cloud consumer.
     return jsonify({
         'bpm': latest.get('bpm'),
         'spo2': latest.get('spo2'),
-        'ir_raw': latest.get('ir_raw'),
-        'red_raw': latest.get('red_raw'),
         'timestamp': latest.get('timestamp'),
         'source': latest.get('source', 'unknown'),
         'device_mac': latest.get('device_mac', mac),
@@ -657,13 +834,21 @@ def get_vitals():
 
 @app.route('/api/vitals/history')
 def get_vitals_history():
-    """
-    History of vital summaries from the database (push model).
-    No authentication.
+    """History of vital summaries — picks the storage tier from the requested
+    range: ≤2h raw, ≤30d minute aggregates, otherwise hour aggregates.
+
+    The ``tier`` field in the response tells the frontend which fields to
+    expect (raw rows expose ``bpm``/``spo2``; aggregate rows expose
+    ``bpm_avg``/``bpm_min``/``bpm_max`` plus the SpO2 counterparts).
     """
     hours = request.args.get('hours', 24, type=int)
-    readings = db.get_vitals_history(hours=hours, device_mac=DEVICE_MAC) if db else []
-    return jsonify({'history': readings}), 200
+    if not db:
+        return jsonify({'tier': 'raw', 'history': []}), 200
+    result = db.get_vitals_history_tiered(hours=hours, device_mac=DEVICE_MAC)
+    return jsonify({
+        'tier':    result.get('tier', 'raw'),
+        'history': result.get('readings', []),
+    }), 200
 
 
 @app.route('/api/vitals/db/history')
@@ -768,8 +953,6 @@ def device_push_vitals():
         _latest_vitals.update({
             'bpm': data.get('bpm'),
             'spo2': data.get('spo2'),
-            'ir_raw': data.get('ir_raw'),
-            'red_raw': data.get('red_raw'),
             'timestamp': data['timestamp'],
             'source': data.get('source', 'unknown'),
             'device_mac': mac,
@@ -1002,7 +1185,39 @@ def get_my_device():
     return jsonify(device), 200
 
 
-# ── Caregiver endpoint (intentionally vulnerable to BOLA) ─────────────────────
+@app.route('/api/devices/me', methods=['DELETE'])
+@token_required
+def delete_my_device():
+    """Unregister the device associated with the authenticated patient."""
+    current = g.current_user
+    username = current.get('sub') or current.get('username', '')
+    if current.get('role') not in ('patient', 'admin'):
+        return jsonify({'error': 'Only patients can unregister their device', 'code': 'FORBIDDEN'}), 403
+
+    ok = db.delete_device_for_patient(username) if db else False
+    if not ok:
+        return jsonify({'error': 'No device assigned to this patient'}), 404
+    return jsonify({'status': 'unregistered', 'patient_username': username}), 200
+
+
+# ── Caregiver endpoints ───────────────────────────────────────────────────────
+
+@app.route('/api/caregiver/patients', methods=['GET'])
+@api_caregiver_required
+def caregiver_patients():
+    """Return the patients assigned to the authenticated caregiver.
+
+    Includes device info (mac, device_name) joined from the devices table.
+    """
+    caregiver_username = g.current_user.get('sub') or g.current_user.get('username', '')
+    patients = db.get_patients_for_caregiver(caregiver_username) if db else []
+    return jsonify({
+        'caregiver_username': caregiver_username,
+        'patients': patients
+    }), 200
+
+
+# ── Caregiver endpoint (INTENTIONALLY VULNERABLE to BOLA — do NOT add assignment checks) ──
 
 @app.route('/api/caregiver/patient/<username>/vitals', methods=['GET'])
 @token_required
@@ -1239,8 +1454,6 @@ def test_db_store():
         'timestamp': __import__('time').time(),
         'bpm': 72,
         'spo2': 98,
-        'ir_raw': 50000,
-        'red_raw': 50000,
         'source': 'test'
     }
     
@@ -1359,41 +1572,13 @@ def initialize_iot():
     db._set_config('device_ip', device_ip)
     Config.DEVICE_IP = device_ip
 
-    # ── Seed 3 demo devices ───────────────────────────────────────────────────
-    # Two synthetic devices with randomized fields (already owned by demo
-    # patients), plus the real Pi left unclaimed so the "patient" user can
-    # bind it by entering the factory signature in the dashboard.
-    def _rand_mac() -> str:
-        return ':'.join(f"{secrets.randbits(8):02X}" for _ in range(6))
-
-    def _rand_sig() -> str:
-        # 12 hex chars (48 bits). No prefix — the registration code IS the hash.
-        return secrets.token_hex(6).upper()
-
-    # Owners for the randomized devices
-    db.create_or_update_user('alice_g67', 'Aliceisthebest!', 'patient')
-    db.create_or_update_user('genuinebob49',   'spongebob1', 'patient')
-
-    demo_devices = [
-        {
-            'mac':              _rand_mac(),
-            'auth_hash':        _rand_sig(),
-            'device_name':      'CareOtter_HR (demo-alice)',
-            'patient_username': 'alice_g67',
-            'ip':               f"192.168.10.{40 + secrets.randbelow(15)}",
-        },
-        {
-            'mac':              _rand_mac(),
-            'auth_hash':        _rand_sig(),
-            'device_name':      'CareOtter_HR (demo-bob)',
-            'patient_username': 'genuinebob49',
-            'ip':               f"192.168.10.{60 + secrets.randbelow(15)}",
-        },
-    ]
-
-    # Third device = the real Pi. Best-effort MAC lookup from /health; if the
-    # Pi is offline at init time, store a placeholder that
-    # device_push_vitals() replaces atomically on the first upload that
+    # ── Seed the real Pi device ───────────────────────────────────────────────
+    # alice_g67 and genuinebob49 are seeded by ``_ensure_cloud_sim_devices``
+    # at startup, each bound to its virtual cloud-sim device (single device
+    # per patient — no duplicate "demo" placeholders).
+    # The Pi is the only real-hardware seed here. Best-effort MAC lookup from
+    # /health; if the Pi is offline at init time, store a placeholder that
+    # ``device_push_vitals`` replaces atomically on the first upload that
     # presents the canonical signature.
     pi_mac = '00:00:00:00:00:00'
     try:
@@ -1410,22 +1595,22 @@ def initialize_iot():
         'mac':              pi_mac,
         'auth_hash':        db.EXPECTED_DEVICE_SIGNATURE,  # "9C0C306DEF2A"
         'device_name':      'CareOtter_HR',
-        'patient_username': '',          # unclaimed — bound via /api/devices/register-by-hash
+        'patient_username': 'john_doe',
         'ip':               eth_ip,
     }
 
     seeded = []
-    for d in demo_devices + [pi_device]:
-        ok = db.register_device(
-            d['mac'], d['patient_username'], d['device_name'], auth_hash=d['auth_hash']
-        )
-        seeded.append({
-            'mac':              d['mac'],
-            'ip':               d['ip'],
-            'patient_username': d['patient_username'] or None,
-            'auth_hash':        d['auth_hash'],
-            'stored':           ok,
-        })
+    ok = db.register_device(
+        pi_device['mac'], pi_device['patient_username'],
+        pi_device['device_name'], auth_hash=pi_device['auth_hash']
+    )
+    seeded.append({
+        'mac':              pi_device['mac'],
+        'ip':               pi_device['ip'],
+        'patient_username': pi_device['patient_username'],
+        'auth_hash':        pi_device['auth_hash'],
+        'stored':           ok,
+    })
 
     # ── Optional auto-provision WiFi over Ethernet ─────────────────────────────
     wifi_ssid = os.getenv('WIFI_SSID', '').strip()
@@ -1503,6 +1688,20 @@ if __name__ == '__main__':
             logger.info(f"[App] Auto-initialize result: {result[1]}")
         except Exception as e:
             logger.error(f"[App] Auto-initialize failed: {e}")
+
+    # ── Cloud-side virtual devices + tiered storage threads ────────────────────
+    # Spawn the simulator (alice_g67, genuinebob49) and the aggregator/pruner
+    # AFTER initialize_iot may have created the users, so the FK on
+    # devices.patient_username resolves immediately on the first insert.
+    if db:
+        try:
+            _ensure_cloud_sim_devices()
+            threading.Thread(target=_cloud_simulator_loop, daemon=True,
+                             name='cloud-vitals-sim').start()
+            threading.Thread(target=_vitals_aggregator_loop, daemon=True,
+                             name='vitals-aggregator').start()
+        except Exception as e:
+            logger.error(f"[App] Failed to start cloud simulator/aggregator: {e}")
 
     # VULNERABILITY (vuln=1): debug=True activates Werkzeug interactive debugger
     # which allows arbitrary code execution on the server if the PIN is obtained

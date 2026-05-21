@@ -72,9 +72,16 @@
 | `/api/devices` | POST | — | JWT | Register/update device MAC → patient |
 | `/api/devices/<mac>` | GET | — | JWT | Get device + patient info by MAC |
 | `/api/devices/me` | GET | — | JWT (patient) | Authenticated patient's own device |
+| `/api/devices/me` | DELETE | — | JWT (patient) | Patient unregisters their own device |
 | `/api/user/devices` | GET | — | JWT | Devices owned by the authenticated user |
 | `/api/auth/login/patient` | POST | — | No | Patient-only login (rejects role≠patient) |
+| `/api/auth/login/caregiver` | POST | — | No | Caregiver-only login (rejects role≠caregiver) |
 | `/api/auth/logout` | POST | — | No | Clears `careotter_token` cookie |
+| `/api/caregiver/patients` | GET | — | JWT (caregiver) | Patients assigned to authenticated caregiver |
+| `/api/caregiver/patient/<username>/vitals` | GET | — | JWT | **BOLA** — caregiver vitals view (no ownership check) |
+| `/api/patient/caregivers` | POST | — | JWT (patient) | Patient adds a caregiver |
+| `/api/patient/caregivers` | GET | — | JWT (patient) | List patient's caregivers |
+| `/api/patient/caregivers/<username>` | DELETE | — | JWT (patient) | Patient removes a caregiver |
 | `/api/db/info` | GET | — | No | Database debug info |
 | `/api/db/test` | GET | — | No | Inserts a dummy vitals reading (debug) |
 | `/admin/device/register` | POST | — | Signature (`9C0C306DEF2A`) | BLE-driven provisioning: registers device MAC + admin/patient credentials |
@@ -91,9 +98,10 @@
 **HTML Pages (auth model):**
 | Path | Auth | Description |
 |------|------|-------------|
-| `/` | Cookie patient (`@web_patient_required`) | Latest stored vitals monitor |
+| `/` | Cookie patient (`@web_patient_required`) | Latest stored vitals monitor + caregiver management |
 | `/history` | Cookie patient | Historical vitals table (device MAC + patient columns) |
 | `/patient/login` | Public | Patient login form (redirects to `/` on success) |
+| `/caregiver/dashboard` | Cookie caregiver (`@web_caregiver_required`) | Caregiver dashboard — patient dropdown + vitals |
 | `/admin/login` | Public | Admin login form |
 | `/admin/dashboard` | Cookie admin (`@web_admin_required`) | Admin dashboard |
 | `/admin/network` | Cookie admin | Network configuration |
@@ -121,23 +129,32 @@ users                           devices
 id                              id
 username (UNIQUE)               mac (UNIQUE)  ← BLE MAC address
 password_hash (SHA-256, no salt)patient_username → users.username
-role (admin | patient)          device_name
+role (admin | patient | caregiver) device_name
 created_at                      registered_at
+                                auth_hash
 
 vitals_readings                 device_events
 ─────────────────────────────   ──────────────────────────────
 id                              id
 device_mac → devices.mac        device_mac → devices.mac
 timestamp (Unix float)          event_type
-bpm, spo2, ir_raw, red_raw      payload (JSON)
-source                          created_at
+bpm, spo2, source               payload (JSON)
+created_at                      created_at
+
+caregiver_assignments           device_config
+────────────────────────────────────────────────
+id                              key (PK)
+caregiver_username → users.username  value
+patient_username → users.username    updated_at
 created_at
 
-device_config
-──────────────────────────────
-key (PK)
-value
-updated_at
+vitals_minute_agg               vitals_hour_agg
+────────────────────────────────────────────────
+device_mac (PK)                 device_mac (PK)
+bucket_ts (PK)                  bucket_ts (PK)
+bpm_avg, bpm_min, bpm_max       bpm_avg, bpm_min, bpm_max
+spo2_avg, spo2_min, spo2_max    spo2_avg, spo2_min, spo2_max
+samples                         samples
 ```
 
 **Default seed data:**
@@ -151,8 +168,9 @@ The database starts **empty**. Users and the default device only appear after on
 | Table | Entry (after fallback or provisioning) |
 |-------|----------------------------------------|
 | users | `admin` / `CareOtter2026!` (admin) |
-| users | `patient` / `patient123` (patient) |
-| devices | *(none until Pi pushes data or patient registers by hash)* |
+| users | `john_doe` / `johnny123` (patient) |
+| users | `care_john` / `Caregiver2026!` (caregiver) |
+| devices | Pi placeholder (unclaimed until patient registers by hash or pushes vitals) |
 
 > Older revisions of this document listed `admin123 / admin123` as a third seed
 > user. That entry **does not exist** in any current seed path — remove from any
@@ -368,6 +386,7 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 
 | ID | Vulnerability | Endpoint | Evidence |
 |----|---------------|----------|----------|
+| API1:2023 | Broken Object Level Authorization (BOLA) | `/api/caregiver/patient/<username>/vitals` | No ownership check against `caregiver_assignments`; any authenticated JWT can access any patient's vitals |
 | API2:2023 | Broken Authentication | `/api/auth/login` | Weak JWT secret, unsalted SHA-256 passwords |
 | API3:2023 | Broken Object Property Level Authorization | `/api/network` | `raw` field exposes WiFi config with PSK |
 | API5:2023 | Broken Function Level Authorization | `/api/services/restart` | JWT only, no role/ownership checks |

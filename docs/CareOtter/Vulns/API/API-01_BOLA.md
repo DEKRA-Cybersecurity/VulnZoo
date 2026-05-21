@@ -1,5 +1,5 @@
 ---
-id: API-07
+id: API-01
 title: "Broken Object Level Authorization (BOLA) via Cross-User Vitals Access"
 category: API
 status: COMPLETADA
@@ -7,7 +7,7 @@ severity: High
 owasp: "API1:2023 — Broken Object Level Authorization"
 cwe: "CWE-639 (Authorization Bypass Through User-Controlled Key) / CWE-863"
 source_docs:
-  - "CareOtter_Test_Suite.md §API-07"
+  - "CareOtter_Test_Suite.md §API-01"
   - "CareOtter_API.md Vulnerability Surface"
 affected_components:
   - "cloud_api/careotter/api_server/app.py"
@@ -15,10 +15,10 @@ affected_components:
 verified_date: "2026-05-18"
 ---
 
-# API-07 — Broken Object Level Authorization (BOLA) via Cross-User Vitals Access
+# API-01 — Broken Object Level Authorization (BOLA) via Cross-User Vitals Access
 
 > **Status:** ✅ DONE  
-> **Source docs:** `CareOtter_Test_Suite.md` §API-07, `CareOtter_API.md` Vulnerability Surface  
+> **Source docs:** `CareOtter_Test_Suite.md` §API-01, `CareOtter_API.md` Vulnerability Surface  
 > **OWASP:** API1:2023 — Broken Object Level Authorization  
 > **CWE:** CWE-639 (Authorization Bypass Through User-Controlled Key) / CWE-863  
 > **Severity:** High
@@ -75,13 +75,13 @@ def caregiver_patient_vitals(username):
 - No verification that the requested `username` is assigned to the authenticated caregiver
 - No deny-by-default fallback — any valid JWT passes through
 
-### 2. Absence of a caregiver↔patient assignment table
+### 2. Caregiver↔patient assignment table exists but is not enforced
 
-The database schema (`database_service.py`) has no table, column, or relationship that links a caregiver to their assigned patients. Because there is no assignment data to query, the endpoint has nothing to validate against. The vulnerability is structural: the feature was designed as if caregiver assignment existed, but the authorization layer was never implemented.
+The database schema now includes a `caregiver_assignments` table that links caregivers to their assigned patients, and the caregiver dashboard populates its patient dropdown from this table (`GET /api/caregiver/patients`). However, the BOLA endpoint (`/api/caregiver/patient/<username>/vitals`) **does not query this table**. The frontend appears secure (caregivers only see assigned patients in the UI), but the backend remains vulnerable to direct API manipulation. This creates a pedagogically useful discrepancy: the UI is "secure by design," while the API is "vulnerable by implementation."
 
 ### 3. Authentication-only decorator
 
-Like the BFLA vulnerability (API-06), this endpoint uses `@token_required`, which only validates the JWT signature and expiration. It does not extract or inspect the `role` claim, nor does it extract the authenticated username for an ownership check.
+Like the BFLA vulnerability (API-06), this endpoint uses `@token_required`, which only validates the JWT signature and expiration. It does not extract or inspect the `role` claim, nor does it extract the authenticated username for an ownership check against `caregiver_assignments`.
 
 ---
 
@@ -222,10 +222,12 @@ def caregiver_patient_vitals_fixed(username):
 
 ### Architectural improvements
 
-1. **Assignment table**: Add a `caregiver_assignments` table linking `caregiver_username → patient_username`.
-2. **Deny-by-default**: Return `403` if the assignment check fails or if the table is missing.
+1. **Assignment check**: Query `caregiver_assignments` in the endpoint to verify `caregiver_username → patient_username` before returning data.
+2. **Deny-by-default**: Return `403` if the assignment check fails.
 3. **Scope the query**: Even if the caregiver is assigned, restrict the query to the assigned patient's device only — do not accept arbitrary `device_mac` parameters that could bypass the username check.
 4. **Audit logging**: Log every cross-patient access with `caregiver`, `target_patient`, `endpoint`, and `source_ip`.
+
+> **Note for lab operators:** The `caregiver_assignments` table is already present in the schema and populated via `POST /api/patient/caregivers`. The BOLA endpoint intentionally bypasses it to preserve the vulnerability for training purposes.
 
 ---
 
@@ -255,7 +257,7 @@ def caregiver_patient_vitals_fixed(username):
 
 ## References
 
-- `CareOtter_Test_Suite.md` §API-07
+- `CareOtter_Test_Suite.md` §API-01
 - `CareOtter_API.md` Vulnerability Surface
 - `cloud_api/careotter/api_server/app.py` (`caregiver_patient_vitals`)
 - `cloud_api/careotter/api_server/services/database_service.py`

@@ -31,20 +31,20 @@
 .form-group label {
     font-size: 0.8rem;
     font-weight: 500;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
 }
 .form-group input {
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 0.5rem;
-    background: var(--surface, #fff);
-    color: var(--text, #111827);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     font-size: 0.95rem;
     outline: none;
     transition: border-color 0.15s;
 }
 .form-group input:focus {
-    border-color: var(--primary, #2563eb);
+    border-color: var(--accent-primary);
 }
 
 /* ── Table ─────────────────────────────────────────────────────────────────── */
@@ -59,15 +59,15 @@
 .data-table thead th {
     text-align: left;
     padding: 0.6rem 0.75rem;
-    border-bottom: 2px solid var(--border, #e5e7eb);
-    color: var(--text-secondary, #6b7280);
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-secondary);
     font-weight: 600;
     white-space: nowrap;
 }
 .data-table tbody td {
     padding: 0.55rem 0.75rem;
-    border-bottom: 1px solid var(--border, #e5e7eb);
-    color: var(--text, #111827);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
 }
 .data-table tbody tr:hover {
     background: rgba(0, 0, 0, 0.02);

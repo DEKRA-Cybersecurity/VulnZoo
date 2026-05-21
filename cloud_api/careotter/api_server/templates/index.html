@@ -53,6 +53,22 @@
         </div>
     </div>
 
+    <!-- Device Management -->
+    <div id="device-management" style="margin: 1.5rem 0;">
+        <div class="card" style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 1rem 1.25rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; color: var(--accent-primary);"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+                <div>
+                    <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-primary);">Current Device</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);"><span id="mgmt-device-name">—</span> &nbsp;<span id="mgmt-device-mac" style="font-family: monospace;"></span></div>
+                </div>
+            </div>
+            <button id="btn-unregister-device" class="btn btn-ghost btn-sm" style="border-color: var(--danger); color: var(--danger);">
+                Unregister Device
+            </button>
+        </div>
+    </div>
+
     <!-- No Device Message -->
     <div id="no-device-message" style="display: none; margin: 2rem 0; text-align: center;">
         <div class="card" style="padding: 2rem;">
@@ -120,33 +136,6 @@
                 </div>
             </div>
 
-            <!-- Raw IR -->
-            <div class="vital-card vital-card-secondary" id="card-ir">
-                <div class="vital-header">
-                    <div class="vital-icon vital-icon-signal">
-                        <svg viewBox="0 0 24 24"><path d="M2 12h4M6 8v8M10 12h4M14 8v8M18 12h4"/></svg>
-                    </div>
-                </div>
-                <div class="vital-value">
-                    <span class="value value-sm" id="val-ir">—</span>
-                </div>
-                <div class="vital-label">IR Raw Signal</div>
-                <div class="vital-meta" id="meta-ir">ADC value</div>
-            </div>
-
-            <!-- Raw Red -->
-            <div class="vital-card vital-card-secondary" id="card-red">
-                <div class="vital-header">
-                    <div class="vital-icon vital-icon-signal">
-                        <svg viewBox="0 0 24 24"><path d="M2 12h4M6 8v8M10 12h4M14 8v8M18 12h4"/></svg>
-                    </div>
-                </div>
-                <div class="vital-value">
-                    <span class="value value-sm" id="val-red">—</span>
-                </div>
-                <div class="vital-label">Red Raw Signal</div>
-                <div class="vital-meta" id="meta-red">ADC value</div>
-            </div>
         </div>
     </section>
 
@@ -165,6 +154,31 @@
                     <svg viewBox="0 0 24 24"><polyline points="1,4 1,10 7,10"/><polyline points="23,20 23,14 17,14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
                     View Full History
                 </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- My Caregivers Section -->
+    <section class="history-link-section">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    My Caregivers
+                </h3>
+            </div>
+            <div style="padding: 1rem;">
+                <div id="caregivers-list" style="margin-bottom: 1rem;">
+                    <p style="color: var(--text-secondary); font-size: 0.875rem;">No caregivers assigned yet.</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                    <div style="flex: 1;">
+                        <label for="add-caregiver-input" style="display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.25rem; color: var(--text-secondary);">Caregiver Username</label>
+                        <input id="add-caregiver-input" type="text" placeholder="e.g. care_john" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.5rem; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.95rem;">
+                    </div>
+                    <button id="btn-add-caregiver" class="btn btn-primary">Add Caregiver</button>
+                </div>
+                <p id="caregiver-msg" style="font-size: 0.875rem; margin-top: 0.5rem; display: none;"></p>
             </div>
         </div>
     </section>

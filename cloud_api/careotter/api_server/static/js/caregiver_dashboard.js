@@ -9,8 +9,8 @@
     };
 
     // ── DOM refs ────────────────────────────────────────────────────────────────
-    const patientInput = document.getElementById('patient-username');
-    const loadBtn      = document.getElementById('btn-load-patient');
+    const patientSelect = document.getElementById('patient-select');
+    const loadBtn       = document.getElementById('btn-load-patient');
     const alertErr     = document.getElementById('alert-error');
     const statusBar    = document.getElementById('patient-status-bar');
     const vitalsSec    = document.getElementById('vitals-section');
@@ -70,12 +70,47 @@
         if (el) el.style.width = Math.max(0, Math.min(100, pct)) + '%';
     }
 
+    // ── Load Assigned Patients ──────────────────────────────────────────────────
+    async function loadAssignedPatients() {
+        try {
+            const res = await fetch('/api/caregiver/patients', {
+                headers: { 'Authorization': 'Bearer ' + state.token }
+            });
+            if (!res.ok) {
+                console.warn('Failed to load assigned patients:', res.status);
+                patientSelect.innerHTML = '<option value="">-- Unable to load patients --</option>';
+                patientSelect.disabled = true;
+                return;
+            }
+            const data = await res.json();
+            const patients = data.patients || [];
+            if (patients.length === 0) {
+                patientSelect.innerHTML = '<option value="">-- No assigned patients --</option>';
+                patientSelect.disabled = true;
+                return;
+            }
+            patientSelect.innerHTML = '<option value="">-- Select a patient --</option>';
+            patients.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.patient_username;
+                const deviceLabel = p.device_name || p.device_mac || 'No device';
+                opt.textContent = `${p.patient_username}  (${deviceLabel})`;
+                patientSelect.appendChild(opt);
+            });
+            patientSelect.disabled = false;
+        } catch (err) {
+            console.error('Error loading assigned patients:', err);
+            patientSelect.innerHTML = '<option value="">-- Error loading patients --</option>';
+            patientSelect.disabled = true;
+        }
+    }
+
     // ── Load Patient Data ───────────────────────────────────────────────────────
     async function loadPatient(username) {
         hideError();
         if (!username) {
-            showError('Enter a patient username.');
-            patientInput.focus();
+            showError('Select a patient from the dropdown.');
+            patientSelect.focus();
             return;
         }
 
@@ -151,8 +186,6 @@
                 <td>${r.timestamp ? fmtDate(r.timestamp) : '—'}</td>
                 <td>${r.bpm ?? '—'}</td>
                 <td>${r.spo2 ?? '—'}</td>
-                <td>${r.ir_raw ?? '—'}</td>
-                <td>${r.red_raw ?? '—'}</td>
             </tr>
         `).join('');
 
@@ -180,13 +213,13 @@
     }
 
     // ── Event wiring ────────────────────────────────────────────────────────────
-    loadBtn.addEventListener('click', () => loadPatient(patientInput.value.trim()));
-    patientInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') loadPatient(patientInput.value.trim());
+    loadBtn.addEventListener('click', () => loadPatient(patientSelect.value));
+    patientSelect.addEventListener('change', () => {
+        if (patientSelect.value) loadPatient(patientSelect.value);
     });
 
     // ── Init ────────────────────────────────────────────────────────────────────
     initThemeToggle();
     initLogout();
-    patientInput.focus();
+    loadAssignedPatients();
 })();

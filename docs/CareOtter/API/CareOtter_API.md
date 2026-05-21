@@ -83,7 +83,31 @@ Key-value store for persistent settings.
 | `value` | TEXT | Setting value |
 | `updated_at` | TIMESTAMP | Last modification |
 
-#### `users` *(new)*
+#### `devices`
+Each physical device (identified by BLE MAC) is owned by one patient user.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `mac` | TEXT UNIQUE | BLE MAC address |
+| `patient_username` | TEXT FK → users.username | Owning patient |
+| `device_name` | TEXT | Human-readable name |
+| `auth_hash` | TEXT | 12-hex factory signature |
+| `registered_at` | TIMESTAMP | Registration time |
+
+#### `caregiver_assignments`
+Links caregivers to the patients they are authorized to monitor.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `caregiver_username` | TEXT FK → users.username | Caregiver user |
+| `patient_username` | TEXT FK → users.username | Patient user |
+| `created_at` | TIMESTAMP | Assignment time |
+
+> **Note:** The `caregiver_assignments` table exists in the schema and is used by the UI to populate the caregiver dashboard dropdown. However, the BOLA-vulnerable endpoint (`/api/caregiver/patient/<username>/vitals`) does **not** query this table, so the vulnerability remains exploitable.
+
+#### `users`
 User accounts with role-based access control.
 
 | Column          | Type        | Description                             |
@@ -91,7 +115,7 @@ User accounts with role-based access control.
 | `id`            | INTEGER PK  | Auto-increment                          |
 | `username`      | TEXT UNIQUE | Login name                              |
 | `password_hash` | TEXT        | SHA-256 hash of password                |
-| `role`          | TEXT        | `admin`, `user`, `operator`, `readonly` |
+| `role`          | TEXT        | `admin`, `patient`, `caregiver` |
 | `created_at`    | TIMESTAMP   | Account creation time                   |
 
 ### Default User
@@ -101,6 +125,8 @@ On first startup, the API automatically creates:
 | Username | Password         | Role    |
 | -------- | ---------------- | ------- |
 | `admin`  | `CareOtter2026!` | `admin` |
+| `patient` | `johnny123` | `patient` |
+| `caregiver` | `Caregiver2026!` | `caregiver` |
 
 > ⚠️ **Intentional vulnerability**: Passwords are stored with simple SHA-256 hashing (no salt, no bcrypt/Argon2), making them susceptible to rainbow table attacks if the database is exfiltrated.
 
@@ -203,6 +229,7 @@ Authorization: Bearer <JWT>
 | GET | `/api/device/status` | 0x05 VERIFY_STATUS | Module diagnostics (vulnerable to format string) |
 | GET | `/api/vitals` | HTTP :8081 | Current BPM/SpO2 from sensor |
 | GET | `/api/vitals/history` | HTTP :8081 | Vitals history buffer |
+| POST | `/api/auth/login/patient` | — | Patient login → JWT |
 | POST | `/api/auth/login/caregiver` | — | Caregiver login → JWT |
 
 #### `/hint` — Device Provisioning Hint
@@ -429,6 +456,26 @@ The patient types the 12-hex code printed on the device sticker. The cloud looks
 | POST | `/api/services/restart` | 0x09 REBOOT_SERVICE | Restart init.d services |
 | GET | `/api/logs` | 0x0A GET_LOG | Last 512 bytes of device log |
 | GET | `/api/caregiver/patient/<username>/vitals` | — | **VULN: BOLA** — caregiver vitals view lacks ownership check |
+| GET | `/api/caregiver/patients` | — | List patients assigned to the authenticated caregiver |
+| POST | `/api/patient/caregivers` | — | Patient adds a caregiver to their account |
+| GET | `/api/patient/caregivers` | — | List caregivers assigned to the authenticated patient |
+| DELETE | `/api/patient/caregivers/<username>` | — | Patient removes a caregiver |
+| DELETE | `/api/devices/me` | — | Patient unregisters their own device |
+
+### Web UI Pages
+
+| URL | Auth | Page |
+|-----|------|------|
+| `/` | Cookie patient | Patient monitor — live vitals + caregiver management |
+| `/patient/login` | Public | Patient login form |
+| `/history` | Cookie patient | Historical vitals table |
+| `/caregiver/dashboard` | Cookie caregiver | Caregiver dashboard — patient dropdown + vitals |
+| `/admin/login` | Public | Admin login form |
+| `/admin/dashboard` | Cookie admin | Admin dashboard |
+| `/admin/network` | Cookie admin | WiFi configuration |
+| `/admin/config` | Cookie admin | Clinical thresholds + TLV preferences |
+| `/admin/services` | Cookie admin | Restart init.d services |
+| `/admin/logs` | Cookie admin | Device log viewer |
 
 ### Admin Panel (Web UI)
 

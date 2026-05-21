@@ -40,6 +40,7 @@
                 if (el) el.textContent = state.deviceName;
                 const macEl = document.getElementById('device-mac');
                 if (macEl) macEl.textContent = state.deviceMac;
+                showDeviceManagement();
             } else {
                 showNoDevice();
             }
@@ -48,13 +49,30 @@
         }
     }
 
+    function showDeviceManagement() {
+        const mgmt = document.getElementById('device-management');
+        if (mgmt) mgmt.style.display = 'block';
+        const noDev = document.getElementById('no-device-message');
+        if (noDev) noDev.style.display = 'none';
+        const vitalsSec = document.querySelector('.vitals-section');
+        if (vitalsSec) vitalsSec.style.display = 'block';
+        const histSec = document.querySelectorAll('.history-link-section');
+        histSec.forEach(s => s.style.display = 'block');
+        const nameEl = document.getElementById('mgmt-device-name');
+        const macEl = document.getElementById('mgmt-device-mac');
+        if (nameEl) nameEl.textContent = state.deviceName || '—';
+        if (macEl) macEl.textContent = state.deviceMac || '';
+    }
+
     function showNoDevice() {
+        const mgmt = document.getElementById('device-management');
+        if (mgmt) mgmt.style.display = 'none';
         const container = document.getElementById('no-device-message');
         if (container) container.style.display = 'block';
         const vitalsSec = document.querySelector('.vitals-section');
         if (vitalsSec) vitalsSec.style.display = 'none';
-        const histSec = document.querySelector('.history-link-section');
-        if (histSec) histSec.style.display = 'none';
+        const histSec = document.querySelectorAll('.history-link-section');
+        histSec.forEach(s => s.style.display = 'none');
         updateStatus('no-device');
         initRegisterByHash();
     }
@@ -119,8 +137,6 @@
 
         const bpm  = data.bpm  ?? null;
         const spo2 = data.spo2 ?? null;
-        const irRaw   = data.ir_raw  ?? null;
-        const redRaw  = data.red_raw ?? null;
         const timestamp = data.timestamp ?? Date.now() / 1000;
 
         // BPM
@@ -157,17 +173,6 @@
             }
             if (spo2Bar) spo2Bar.style.width = spo2 + '%';
         }
-
-        // Raw signals
-        const irEl   = document.getElementById('val-ir');
-        const metaIr = document.getElementById('meta-ir');
-        if (irEl) irEl.textContent = irRaw !== null ? irRaw.toLocaleString() : '—';
-        if (metaIr && irRaw !== null) metaIr.textContent = `Signal strength: ${(irRaw / 65535 * 100).toFixed(1)}%`;
-
-        const redEl   = document.getElementById('val-red');
-        const metaRed = document.getElementById('meta-red');
-        if (redEl) redEl.textContent = redRaw !== null ? redRaw.toLocaleString() : '—';
-        if (metaRed && redRaw !== null) metaRed.textContent = `Signal strength: ${(redRaw / 65535 * 100).toFixed(1)}%`;
 
         state.lastUpdate = new Date(timestamp * 1000);
         updateLastUpdate();
@@ -212,12 +217,126 @@
     }
     window.refreshVitals = refreshVitals;
 
+    // ── Caregiver Management ──────────────────────────────────────────────────
+    async function loadCaregivers() {
+        const listEl = document.getElementById('caregivers-list');
+        const msgEl = document.getElementById('caregiver-msg');
+        if (!listEl) return;
+        try {
+            const res = await fetch('/api/patient/caregivers', {
+                headers: { 'Authorization': 'Bearer ' + state.token }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const caregivers = data.caregivers || [];
+            if (caregivers.length === 0) {
+                listEl.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No caregivers assigned yet.</p>';
+                return;
+            }
+            listEl.innerHTML = '<table class="data-table" style="font-size: 0.875rem;"><thead><tr><th>Username</th><th>Assigned</th><th></th></tr></thead><tbody>' +
+                caregivers.map(c => `
+                    <tr data-cg="${c.caregiver_username}">
+                        <td>${c.caregiver_username}</td>
+                        <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                        <td><button class="btn btn-ghost btn-sm btn-remove-cg" data-cg="${c.caregiver_username}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; color: var(--danger);">Remove</button></td>
+                    </tr>
+                `).join('') +
+                '</tbody></table>';
+            listEl.querySelectorAll('.btn-remove-cg').forEach(btn => {
+                btn.addEventListener('click', () => removeCaregiver(btn.dataset.cg));
+            });
+        } catch (err) {
+            console.error('Failed to load caregivers:', err);
+        }
+    }
+
+    async function addCaregiver() {
+        const input = document.getElementById('add-caregiver-input');
+        const msgEl = document.getElementById('caregiver-msg');
+        const username = (input ? input.value : '').trim();
+        if (!username) {
+            if (msgEl) { msgEl.textContent = 'Please enter a caregiver username.'; msgEl.style.color = 'var(--danger)'; msgEl.style.display = 'block'; }
+            return;
+        }
+        try {
+            const res = await fetch('/api/patient/caregivers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + state.token
+                },
+                body: JSON.stringify({ caregiver_username: username })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (input) input.value = '';
+                if (msgEl) { msgEl.textContent = 'Caregiver added successfully.'; msgEl.style.color = 'var(--success)'; msgEl.style.display = 'block'; }
+                loadCaregivers();
+            } else {
+                if (msgEl) { msgEl.textContent = data.error || 'Failed to add caregiver.'; msgEl.style.color = 'var(--danger)'; msgEl.style.display = 'block'; }
+            }
+        } catch (e) {
+            if (msgEl) { msgEl.textContent = 'Network error. Please try again.'; msgEl.style.color = 'var(--danger)'; msgEl.style.display = 'block'; }
+        }
+    }
+
+    async function removeCaregiver(caregiverUsername) {
+        const msgEl = document.getElementById('caregiver-msg');
+        try {
+            const res = await fetch('/api/patient/caregivers/' + encodeURIComponent(caregiverUsername), {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + state.token }
+            });
+            if (res.ok) {
+                if (msgEl) { msgEl.textContent = 'Caregiver removed.'; msgEl.style.color = 'var(--success)'; msgEl.style.display = 'block'; }
+                loadCaregivers();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                if (msgEl) { msgEl.textContent = data.error || 'Failed to remove caregiver.'; msgEl.style.color = 'var(--danger)'; msgEl.style.display = 'block'; }
+            }
+        } catch (e) {
+            if (msgEl) { msgEl.textContent = 'Network error.'; msgEl.style.color = 'var(--danger)'; msgEl.style.display = 'block'; }
+        }
+    }
+
+    function initDeviceManagement() {
+        const btn = document.getElementById('btn-unregister-device');
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to unregister this device? You will need to enter a new registration code to link another device.')) return;
+            try {
+                const res = await fetch('/api/devices/me', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + state.token }
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    alert(data.error || 'Failed to unregister device.');
+                }
+            } catch (e) {
+                alert('Network error. Please try again.');
+            }
+        });
+    }
+
+    function initCaregiverManagement() {
+        const btn = document.getElementById('btn-add-caregiver');
+        const input = document.getElementById('add-caregiver-input');
+        if (btn) btn.addEventListener('click', addCaregiver);
+        if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCaregiver(); });
+    }
+
     // ── Init ──────────────────────────────────────────────────────────────────
     async function init() {
         initThemeToggle();
         initLogout();
+        initDeviceManagement();
+        initCaregiverManagement();
         await resolveDevice();
         refreshVitals();
+        loadCaregivers();
         setInterval(refreshVitals, CONFIG.refreshInterval);
         setInterval(updateLastUpdate, 10000);
     }
