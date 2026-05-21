@@ -219,7 +219,7 @@
         await resolveDevice();
         refreshVitals();
         setInterval(refreshVitals, CONFIG.refreshInterval);
-        setInterval(updateLastUpdate, 1000);
+        setInterval(updateLastUpdate, 10000);
     }
 
     if (document.readyState === 'loading') {

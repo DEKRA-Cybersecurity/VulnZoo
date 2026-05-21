@@ -511,3 +511,144 @@ The correct fix is in `careservice.c`: scoping `authenticated` to the connection
 descriptor (local variable in `handle_request()`) rather than the process.
 
 **References:** CWE-362 · CWE-613 · OWASP IoT Top 10 — I7 · `docs/CareOtter/IoT/CareOtter_IoT.md` §IoT:I7.2
+
+---
+
+## Operator UX & Diagnostic Hardening
+
+> **Changed:** 2026-05-20. These are not vulnerability fixes — they're UX
+> improvements that turned a class of "doesn't work and I can't tell why"
+> into observable, recoverable flows. Documented here so operators reproducing
+> the lab know what to expect.
+
+### LoginActivity — Password Visibility Toggle
+
+The patient/admin login (`LoginActivity.java` + `activity_login.xml`) now
+has an eye-icon toggle next to the password field. Default state is hidden
+(`inputType=textPassword`); tap to reveal, tap again to hide.
+
+| Element | Resource | Notes |
+|---|---|---|
+| Show drawable | `res/drawable/ic_password_show.png` | Open eye, shown when password is visible |
+| Hide drawable | `res/drawable/ic_password_hide.png` | Closed eye (lashes), default state |
+| Container | `LinearLayout` wrapping `etPassword` + `ImageView` | Same `@drawable/input_background` as the rest of the form so the toggle sits *inside* the field |
+| Logic | `LoginActivity.btnTogglePassword.setOnClickListener` | Swaps `TransformationMethod` + `setImageResource` + `contentDescription` |
+
+Cursor position is preserved across the toggle (`setSelection(sel)` after
+the transformation method changes) so users don't lose their place. The
+`ImageView` is fixed at 44dp × 48dp; the visual size of the icon never
+changes between states — only the drawable swaps.
+
+### AdminActivity — BLE Wi-Fi Provisioning Scan UI
+
+The "Set WiFi via BLE" feature in the admin panel previously auto-scanned
+and auto-connected to the first device named `CareOtter_HR`. When the scan
+failed on this hardware (Redmi/MIUI), the UI stuck on "Scanning for
+CareOtter_HR…" with no recourse. Refactored into a two-phase, observable
+flow.
+
+#### Two-Phase API
+
+`BleWifiProvisioner.java` exposes:
+
+```java
+public void startScan(Callback cb)                      // phase 1: discovery
+public void stopScan()                                  // manual abort
+public void provision(String mac, String ssid,
+                      String psk, Callback cb)          // phase 2: connect+PIN+write
+```
+
+The `Callback` interface emits five distinct events:
+
+| Method | When |
+|---|---|
+| `onLog(msg)` | Every observable step (scan start, each device found, PIN write enqueued, etc.) — mirrored to the IGP output console in `tvAdminOutput` |
+| `onDeviceFound(name, addr, rssi)` | One row per distinct MAC matching the `CareOtter_HR` name filter |
+| `onScanStopped(reason)` | Timeout (20s) / manual / scan-error — UI re-enables the Scan button |
+| `onStatus(msg)` | Short status for the small label `tvBleWifiStatus` |
+| `onComplete(success, msg)` | Terminal — provisioning attempt finished |
+
+#### UI Layout (`activity_admin.xml` BLE WiFi card)
+
+```
+┌─────────────────────────────────────────────┐
+│ BLE Wi-Fi Provisioning              [BLE]   │
+│ Hidden GATT service — factory installer     │
+│                                             │
+│ [ Scan BLE ]            [ Stop ]            │  ← btnBleScan / btnBleStopScan
+│                                             │
+│ Selected: CareOtter_HR  B8:27:EB:79:53:C3   │  ← tvBleSelected
+│                         -45dBm              │
+│                                             │
+│ ┌─────────────────────────────────────────┐ │
+│ │ CareOtter_HR  B8:27:EB:79:53:C3  -45dBm │ │  ← llBleDevices (populated
+│ └─────────────────────────────────────────┘ │     dynamically; tap to pick)
+│                                             │
+│ [SSID            ] [Password           ]    │
+│ [        Set WiFi via BLE         ]         │  ← disabled until a device picked
+│ Scanning… tap a device to pick it           │  ← tvBleWifiStatus
+└─────────────────────────────────────────────┘
+```
+
+#### Hardening Applied to the BLE State Machine
+
+Empirically, the admin scan failed cold (only worked after the patient app
+had performed a connect+disconnect cycle on the same phone). Root-caused as
+three issues:
+
+1. **`state != IDLE` rejected new scans** — if a previous `connectGatt`
+   never delivered `STATE_DISCONNECTED`, state was stuck at `CONNECTING`
+   and every subsequent tap returned "Busy" without even calling
+   `BluetoothLeScanner.startScan`. Fixed by forcing
+   `gatt.close()` + `state = IDLE` at the top of `startScan` and
+   `provision` instead of refusing.
+2. **15s connect timeout closed the GATT** while the Cypress BCM43430 was
+   still establishing — the patient client has no such timeout and works.
+   Removed.
+3. **`callback = null` in `reportComplete` raced with `onScanStopped`** —
+   the UI button never flipped back to "Scan". Fixed by snapshotting
+   `callback` into a local before `post()`.
+4. **`state` written from 3 threads** (UI / binder / Handler) without
+   `volatile` — made the read in the IDLE check observe stale values.
+   Marked `volatile`.
+
+`AdminActivity` also now requests `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT` in
+`onCreate` (same pattern as `MainActivity`), not lazily on first tap.
+Empirically the first scan after the permission dialog races the OS
+permission grant on Android 12+ and delivers zero `onScanResult` callbacks.
+
+#### Filtering
+
+`onScanResult` only emits the row if the advertised name equals exactly
+`CareOtter_HR` (read first from `device.getName()`, fallback to
+`ScanRecord.getDeviceName()`). The list shows nothing if no Pi is in
+range — by design — and the 20s scan timeout reports
+`"Scan finished (timeout)"` so the operator doesn't sit forever.
+
+#### Verification
+
+```sh
+# Watch every BLE step live (filter to the app + crash class)
+adb logcat -v time BleWifiProvisioner:V AdminActivity:V AndroidRuntime:E "*:S"
+```
+
+Expected sequence on a successful provisioning:
+
+```
+[BLE] Starting BLE scan — emitting every device for 20s
+[BLE] Device found: CareOtter_HR  B8:27:EB:79:53:C3  rssi=-45dBm
+[BLE] Selected B8:27:EB:79:53:C3
+[BLE] === Provisioning B8:27:EB:79:53:C3 ===
+[BLE] connectGatt() issued
+[BLE] GATT state status=0 newState=2
+[BLE] Services discovered status=0
+[BLE] PIN write enqueued=true
+[BLE] onCharacteristicWrite 0000ff12-… status=0
+[BLE] Writing WiFi config: {"cmd":"wifi_set","ssid":"…","psk":"***"}
+[BLE] WiFi write enqueued=true
+[BLE] onCharacteristicWrite 0000ff11-… status=0
+[BLE-WiFi] OK — WiFi configured: SSID=…
+```
+
+The PSK is masked as `***` in the log line; the actual write to GATT
+0xFF11 still carries the plaintext PSK (P5 — see `IoT:I7`).

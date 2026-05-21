@@ -74,7 +74,7 @@ def _upload_vitals(cfg: dict, mac: str) -> bool:
         return False
 
     api_key = cfg.get("api_key", "careotter-2024-lab")
-    device_hash = cfg.get("device_hash", "CareOtterFactorySig2026")
+    device_hash = cfg.get("device_hash", "9C0C306DEF2A")
 
     try:
         data = _sensor_get("/vitals", api_key)
@@ -111,7 +111,7 @@ def _upload_alerts(cfg: dict, mac: str) -> bool:
         return False
 
     api_key = cfg.get("api_key", "careotter-2024-lab")
-    device_hash = cfg.get("device_hash", "CareOtterFactorySig2026")
+    device_hash = cfg.get("device_hash", "9C0C306DEF2A")
 
     since = _read_alert_watermark()
     try:

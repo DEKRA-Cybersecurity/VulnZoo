@@ -70,7 +70,7 @@ CLOUD_API_URL = os.getenv("CLOUD_API_URL", "")
 # Sent to the Cloud API during registration so the backend can verify
 # the device is genuine. VULNERABILITY: any attacker who captures this
 # signature can register a rogue device or replay it to a fake cloud.
-DEVICE_SIGNATURE = "CareOtterFactorySig2026"
+DEVICE_SIGNATURE = "9C0C306DEF2A"
 
 # Persisted provisioning state file — survives BLE server restarts.
 _PROVISION_FILE = "/tmp/careotter-provision.json"

@@ -105,7 +105,7 @@ public class IgpClient {
      * 0x10 GET_SIGNATURE — retrieves the factory device signature.
      *
      * Requires prior authentication ({@link #authenticate()}).
-     * The returned signature (e.g. "CareOtterFactorySig2026") is what the
+     * The returned signature (12 hex chars, e.g. "9C0C306DEF2A") is what the
      * installer/administrator must provide to the patient so they can register
      * the device in the Cloud API via POST /api/devices/register-by-hash.
      */

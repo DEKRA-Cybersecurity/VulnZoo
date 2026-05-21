@@ -21,6 +21,22 @@ log_message() {
 
 log_message "Configuring cron and logrotate for careotter"
 
+# Drop cron log level so job executions show up in logread.
+# Default in OpenWRT is 8 (silent — only daemon start/stop). Level 0
+# emits a "USER root pid X cmd Y" line on every dispatch, which is
+# what you want when debugging.
+uci set system.@system[0].cronloglevel='0'
+uci commit system
+
+# Normalize crontab ownership and mode. Busybox crond silently
+# ignores crontabs not owned by root or that are group/other writable;
+# scp from a dev box leaves the file as uid 1000:1000 mode 0664 and
+# zero jobs fire. (Root-caused on the live Pi 2026-05-19.)
+if [ -f /etc/crontabs/root ]; then
+    chown root:root /etc/crontabs/root
+    chmod 600 /etc/crontabs/root
+fi
+
 # Enable and start cron service
 /etc/init.d/cron enable
 /etc/init.d/cron restart
@@ -34,9 +50,13 @@ else
     log_message "Logrotate cron entry already exists"
 fi
 
+# Re-normalize perms in case the append created the file with wrong mode.
+chown root:root /etc/crontabs/root 2>/dev/null
+chmod 600       /etc/crontabs/root 2>/dev/null
+
 # Reload cron to apply changes
 /etc/init.d/cron reload 2>/dev/null || /etc/init.d/cron restart
 
-log_message "Cron configuration completed"
+log_message "Cron configuration completed (loglevel=0, root:root 0600)"
 
 exit 0

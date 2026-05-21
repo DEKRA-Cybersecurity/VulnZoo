@@ -281,10 +281,37 @@ class DatabaseService:
     
     # ── Device management ─────────────────────────────────────────────────────
 
+    # Device registration codes are 12 lowercase/uppercase hex characters.
+    # ``HASH_PREFIX`` is retained as a defensive normalization layer: if any
+    # legacy client still sends the older "CareOtter<hex>" form,
+    # ``canonical_hash`` strips it so the row matches. New code paths,
+    # device labels and seeded values never emit the prefix.
+    HASH_PREFIX = "CareOtter"
+
+    @classmethod
+    def canonical_hash(cls, raw: str) -> str:
+        """Return the storage form: prefix stripped, lowercased, trimmed.
+        Idempotent — safe to call on values already in canonical form."""
+        if not raw:
+            return ""
+        h = raw.strip()
+        if h.startswith(cls.HASH_PREFIX):
+            h = h[len(cls.HASH_PREFIX):]
+        return h
+
+    @classmethod
+    def display_hash(cls, stored: str) -> str:
+        """Prepend the prefix back for UI / device-label rendering."""
+        if not stored:
+            return ""
+        return stored if stored.startswith(cls.HASH_PREFIX) else cls.HASH_PREFIX + stored
+
     def register_device(self, mac: str, patient_username: str,
                         device_name: str = None, auth_hash: str = None) -> bool:
-        """Register a device MAC and associate it with a patient user."""
+        """Register a device MAC and associate it with a patient user.
+        ``auth_hash`` is normalized via :meth:`canonical_hash` before insert."""
         mac = mac.upper()
+        stored_hash = self.canonical_hash(auth_hash) if auth_hash else None
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
@@ -294,7 +321,7 @@ class DatabaseService:
                         patient_username = excluded.patient_username,
                         device_name      = excluded.device_name,
                         auth_hash        = COALESCE(excluded.auth_hash, auth_hash)
-                ''', (mac, patient_username, device_name, auth_hash))
+                ''', (mac, patient_username, device_name, stored_hash))
                 conn.commit()
                 logger.info(f"[DB] Device registered: {mac} → {patient_username}")
                 return True
@@ -302,14 +329,38 @@ class DatabaseService:
             logger.error(f"[DB] Error registering device: {e}")
             return False
 
+    def adopt_mac_for_signature(self, signature: str, new_mac: str) -> bool:
+        """Replace a placeholder MAC with the real one for the device that
+        owns ``signature`` (compared after :meth:`canonical_hash`)."""
+        new_mac = new_mac.upper()
+        sig = self.canonical_hash(signature)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    '''UPDATE devices
+                       SET mac = ?
+                       WHERE auth_hash = ?
+                         AND mac IN ('00:00:00:00:00:00', '', '0')''',
+                    (new_mac, sig),
+                )
+                conn.commit()
+                if cur.rowcount > 0:
+                    logger.info(f"[DB] Adopted MAC {new_mac} for signature …{sig[-6:]}")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[DB] adopt_mac_for_signature failed: {e}")
+            return False
+
     def update_device_hash(self, mac: str, auth_hash: str) -> bool:
-        """Update the auth_hash for a device."""
+        """Update the auth_hash for a device (canonicalised before write)."""
         mac = mac.upper()
+        stored = self.canonical_hash(auth_hash)
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
                     'UPDATE devices SET auth_hash = ? WHERE mac = ?',
-                    (auth_hash, mac)
+                    (stored, mac)
                 )
                 conn.commit()
                 logger.info(f"[DB] Updated auth_hash for {mac}")
@@ -319,12 +370,16 @@ class DatabaseService:
             return False
 
     def get_device_by_hash(self, auth_hash: str) -> Optional[Dict]:
-        """Return the device whose auth_hash matches."""
+        """Return the device whose auth_hash matches (compared after
+        :meth:`canonical_hash`)."""
+        stored = self.canonical_hash(auth_hash)
+        if not stored:
+            return None
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
-                    'SELECT * FROM devices WHERE auth_hash = ?', (auth_hash,)
+                    'SELECT * FROM devices WHERE auth_hash = ?', (stored,)
                 ).fetchone()
                 return dict(row) if row else None
         except Exception as e:
@@ -421,7 +476,7 @@ class DatabaseService:
 
     # ── Signature-based device registration (WiFi-first provisioning) ────────
 
-    EXPECTED_DEVICE_SIGNATURE = "CareOtterFactorySig2026"
+    EXPECTED_DEVICE_SIGNATURE = "9C0C306DEF2A"
 
     def register_device_with_signature(
         self, mac: str, signature: str,
@@ -435,7 +490,13 @@ class DatabaseService:
         VULNERABILITY: the signature is hardcoded and identical across all devices,
         so any attacker who captures it can register a rogue device.
         """
-        if signature != self.EXPECTED_DEVICE_SIGNATURE:
+        # Compare in canonical form: codes are 12 hex chars; the legacy
+        # "CareOtter<hex>" form is still accepted via canonical_hash.
+        import hmac as _hmac
+        if not _hmac.compare_digest(
+            self.canonical_hash(signature),
+            self.canonical_hash(self.EXPECTED_DEVICE_SIGNATURE),
+        ):
             logger.warning(f"[DB] Device registration rejected: invalid signature from {mac}")
             return False
         try:

