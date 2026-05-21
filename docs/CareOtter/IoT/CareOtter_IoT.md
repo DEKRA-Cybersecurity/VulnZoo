@@ -427,18 +427,30 @@ print(igp(0x03))                 # b'RESTRICTED'
 
 #### 0x10 GET_SIGNATURE (requires authentication)
 
-Returns the hardcoded factory device signature (e.g. `CareOtterFactorySig2026`).
-This value is what the installer/administrator must hand to the patient so they
-can register the device in the Cloud API via `POST /api/devices/register-by-hash`.
+Returns the hardcoded factory device signature: **12 hexadecimal characters**
+(e.g. `9C0C306DEF2A`). This value is what the installer/administrator must hand
+to the patient so they can register the device in the Cloud API via
+`POST /api/devices/register-by-hash`.
 
 ```python
 igp(0x02, b'OtterMobile2026')   # AUTH_SUCCESS
-print(igp(0x10))                 # b'CareOtterFactorySig2026'
+print(igp(0x10))                 # b'9C0C306DEF2A'
 ```
+
+> **Format change (2026-05-20):** The previous wire format was
+> `CareOtter<hex>` (e.g. `9C0C306DEF2A`, 21 chars). The prefix was
+> constant for every device and added zero entropy, so it was dropped from
+> the device label, from `careservice.c::DEVICE_SIGNATURE`, from the Pi's
+> `config.json::device_hash`, and from the cloud's `EXPECTED_DEVICE_SIGNATURE`.
+> The cloud still accepts the legacy prefixed form transparently via
+> `DatabaseService.canonical_hash` for backward compatibility.
 
 > **Security note:** This endpoint requires authentication, but the signature is
 > identical across all CareOtter devices. An attacker who captures it can register
-> a rogue device or replay it to a fake cloud.
+> a rogue device or replay it to a fake cloud. The cloud-side
+> `/api/devices/register-by-hash` is now hardened with format guard, per-user
+> rate limiting (5 / 15 min), `hmac.compare_digest`, and audit logging — see
+> `docs/CareOtter/API/CareOtter_API.md` for the full contract.
 
 ---
 
@@ -539,6 +551,154 @@ curl -s http://192.168.2.1:8081/alerts | python3 -m json.tool
 ```
 
 > ⏳ **Status:** Pending test on physical device.
+
+---
+
+## Push Architecture & Cron Hardening
+
+> **Changed:** 2026-05-20 — inverted the data direction so the device is the
+> initiator. Documented here for operators who diagnose data flow.
+
+### Direction of Traffic
+
+```
+                       cloud_uploader.py (Pi cron, every 60s)
+                       loops internally every 10s for the full minute
+                                       │
+                                       ▼
+sensor_service.py ── /vitals  ─►  cloud_uploader  ── POST /api/device/vitals ─►  Cloud (SQLite)
+(127.0.0.1:8081)    loopback           │           HTTPS plaintext over WiFi
+                                       └────────── POST /api/device/alerts  ─►  Cloud (SQLite)
+```
+
+The Cloud no longer polls the Pi. The only request the cloud still issues to
+the Pi is a periodic `/health` for MAC/WiFi-IP resolution
+(`app.py::_fetch_device_mac` background thread, 60s interval).
+
+### `cloud_uploader.py` Contract
+
+`labs/careotter/files/opt/medical-sensor/cloud_uploader.py` runs as a
+60-second cron job. Inside each run it loops 6 × 10s, so the cloud receives a
+fresh row every 10s without the Pi keeping a long-running daemon (cheaper on
+the BCM2837 + simpler to restart on failure).
+
+Each iteration:
+
+1. `_sensor_get("/vitals", api_key)` — GET loopback HTTP on `127.0.0.1:8081`.
+2. `_sensor_get("/alerts/history?since=<watermark>", api_key)` — only events
+   newer than `/tmp/careotter_alert_watermark`.
+3. POST both to `{cloud_endpoint}/api/device/vitals` and `…/alerts` with
+   headers `X-Device-MAC` (eth0 MAC) + `X-Device-Hash` (12-hex factory code).
+4. On success, advance the alert watermark to the newest sent timestamp.
+
+Configuration source: `/opt/medical-sensor/config.json::cloud_endpoint`. The
+script appends `/api/device/...` itself — do NOT include that suffix in
+`cloud_endpoint`. Valid examples:
+
+```json
+"cloud_endpoint" : "http://192.168.2.2:5002"     // PC over Ethernet
+"cloud_endpoint" : "http://192.168.1.50:5002"    // PC over WiFi
+```
+
+### Cron Hardening — `60-cron.sh`
+
+Busybox crond on OpenWRT has two silent failure modes that hit us during
+the 2026-05-19 lab session:
+
+1. **`cronloglevel` defaults to 8** → only daemon start/stop appears in
+   `logread`, dispatch lines (`USER root pid X cmd Y`) are suppressed.
+   Indistinguishable from "cron not firing" without instrumentation.
+2. **Wrong file ownership/mode on `/etc/crontabs/root`** → busybox crond
+   *silently ignores* crontabs not owned by root or that are
+   group/other-writable. SCP-ing the overlay from a dev box leaves the file
+   as uid 1000:1000 mode 0664 → zero jobs ever fire, no log line.
+
+`labs/careotter/files/usr/lib/vulnzoo-hooks/profile-init.d/60-cron.sh` now
+normalises both at every device profile load:
+
+```sh
+uci set system.@system[0].cronloglevel='0'
+uci commit system
+
+chown root:root /etc/crontabs/root
+chmod 600       /etc/crontabs/root
+
+/etc/init.d/cron enable && /etc/init.d/cron restart
+```
+
+After this, every job dispatch shows up in `logread`:
+
+```
+cron.info crond[…]: USER root pid X cmd /usr/bin/env python3 /opt/medical-sensor/cloud_uploader.py >/dev/null 2>&1
+```
+
+### Cloud-Authoritative Timestamps (RPi has no RTC)
+
+The Raspberry Pi 3B+ has no battery-backed clock. After a cold boot it
+returns whatever epoch its filesystem was last updated with (often days or
+weeks in the past) until NTP kicks in. The Pi `cloud_uploader` sends rows
+tagged with `time.time()` from the Pi → if the Pi clock is 26h behind, every
+row falls outside the Cloud's "last 24h" filter and the dashboard shows
+empty graphs.
+
+Fixed in `app.py::device_push_vitals` and `device_push_alerts`:
+
+```python
+# Cloud clock is authoritative — overwrite the Pi-supplied timestamp.
+data['timestamp'] = time.time()
+db.store_vitals(data, device_mac=mac)
+
+# Same for alerts:
+now_ts = time.time()
+for event in data.get('alerts', []):
+    event['timestamp'] = now_ts
+    db.store_alert(event, device_mac=mac)
+```
+
+Loses real measurement precision (≤10s scatter due to push cadence) in
+exchange for graphs that always render. If sub-10s precision matters
+clinically, replace with NTP sync on the Pi instead.
+
+### Placeholder-MAC Adoption
+
+`initialize_iot` seeds the Pi's row at lab boot. If `/health` is unreachable
+at seed time, the MAC is stored as `00:00:00:00:00:00`. On the Pi's first
+real push, `device_push_vitals` looks up by `X-Device-MAC` → 404, then
+falls back to lookup by `X-Device-Hash`. If a placeholder row matches,
+`DatabaseService.adopt_mac_for_signature` atomically rewrites that row's MAC
+in-place so subsequent pushes take the fast path:
+
+```python
+device = db.get_device_by_mac(mac)
+if not device:
+    if db.adopt_mac_for_signature(auth_hash, mac):
+        device = db.get_device_by_mac(mac)
+```
+
+This makes the order of operations (cloud seed vs Pi first boot)
+irrelevant.
+
+### Verification Recipes
+
+```sh
+# Cron is firing
+ssh root@192.168.2.1 'logread | grep "cmd /usr/bin/env python3"'
+
+# Outbound POSTs leaving the Pi
+ssh root@192.168.2.1 'tcpdump -i any -nn "tcp port 5002" -c 4'
+
+# Manual single run (skip the wait for cron)
+ssh root@192.168.2.1 'python3 /opt/medical-sensor/cloud_uploader.py'
+# expect: [Uploader] Vitals pushed → 200
+
+# Cloud-side ingest visible
+docker logs careotter-api 2>&1 | grep -E 'POST /api/device/(vitals|alerts)' | tail -5
+
+# Rows landing with current timestamp
+docker exec careotter-api sqlite3 /app/data/careotter.db \
+  "SELECT datetime(timestamp,'unixepoch'), device_mac, bpm, spo2
+     FROM vitals_readings ORDER BY id DESC LIMIT 5;"
+```
 
 ---
 

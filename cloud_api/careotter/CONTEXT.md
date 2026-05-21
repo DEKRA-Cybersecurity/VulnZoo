@@ -77,7 +77,7 @@
 | `/api/auth/logout` | POST | — | No | Clears `careotter_token` cookie |
 | `/api/db/info` | GET | — | No | Database debug info |
 | `/api/db/test` | GET | — | No | Inserts a dummy vitals reading (debug) |
-| `/admin/device/register` | POST | — | Signature (`CareOtterFactorySig2026`) | BLE-driven provisioning: registers device MAC + admin/patient credentials |
+| `/admin/device/register` | POST | — | Signature (`9C0C306DEF2A`) | BLE-driven provisioning: registers device MAC + admin/patient credentials |
 | `/api/device/vitals` | POST | — | `X-Device-MAC` + `X-Device-Hash` | Push endpoint — receives vitals from Pi's `cloud_uploader.py` |
 | `/api/device/alerts` | POST | — | `X-Device-MAC` + `X-Device-Hash` | Push endpoint — receives alert events from Pi |
 | `/api/devices/register-by-hash` | POST | — | JWT | Patient claims a device by entering its factory hash |
@@ -164,7 +164,7 @@ The database starts **empty**. Users and the default device only appear after on
 |----------|-------|----------|
 | `JWT_SECRET` (default) | `careotter_jwt_2026` | `config.py` |
 | `_ADMIN_TOKEN` (IGP) | `OtterMobile2026` | `services/device_service.py` |
-| `EXPECTED_DEVICE_SIGNATURE` | `CareOtterFactorySig2026` | `services/database_service.py` |
+| `EXPECTED_DEVICE_SIGNATURE` | `9C0C306DEF2A` | `services/database_service.py` |
 
 ### 3. Apply Vulnerability Configuration
 
@@ -217,7 +217,7 @@ BLE provisioning channel (hidden service 0xFF10):
        { "cmd":"patient_set", ... }
        { "cmd":"admin_set",   ... }
    ble_server.py then POSTs to <cloud_url>/admin/device/register with
-   signature "CareOtterFactorySig2026", which makes the Cloud API:
+   signature "9C0C306DEF2A", which makes the Cloud API:
      • upsert the device MAC into devices.
      • create patient/admin users with the supplied credentials.
      • update Config.DEVICE_IP at runtime so subsequent IGP calls reach the Pi.
@@ -329,7 +329,7 @@ Execute arbitrary Python on the API server
 
 ### Chain 4: BLE Provisioning Replay → Rogue Device Registration
 ```
-Attacker captures (or knows) the factory signature "CareOtterFactorySig2026".
+Attacker captures (or knows) the factory signature "9C0C306DEF2A".
   ↓
 Crafts a POST /admin/device/register with an attacker-chosen MAC + arbitrary
 admin/patient credentials, signing it with the static factory signature.

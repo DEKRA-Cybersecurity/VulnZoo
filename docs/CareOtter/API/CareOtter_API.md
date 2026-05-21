@@ -268,9 +268,25 @@ curl http://localhost:5002/initialize_iot
 {
   "status": "initialized",
   "message": "Default users created. For the real provisioning flow, discover the hidden BLE service (0xFF10).",
-  "admin": {"username": "admin", "password": "CareOtter2026!"},
-  "patient": {"username": "patient", "password": "patient123"},
-  "device_ip": "192.168.2.1"
+  "admin":     {"username": "admin",     "password": "CareOtter2026!"},
+  "patient":   {"username": "patient",   "password": "patient123"},
+  "caregiver": {"username": "caregiver", "password": "Caregiver2026!"},
+  "device_ip": "192.168.2.1",
+  "device_registered": false,
+  "device_mac": null,
+  "wifi_provisioned": false,
+  "wifi_result": null,
+  "devices_seeded": [
+    {"mac": "AA:BB:CC:11:22:33", "ip": "192.168.10.47",
+     "patient_username": "patient_alice",
+     "auth_hash": "A1B2C3D4E5F6", "stored": true},
+    {"mac": "DD:EE:FF:44:55:66", "ip": "192.168.10.63",
+     "patient_username": "patient_bob",
+     "auth_hash": "0F1E2D3C4B5A", "stored": true},
+    {"mac": "B8:27:EB:79:53:C3", "ip": "192.168.2.1",
+     "patient_username": null,
+     "auth_hash": "9C0C306DEF2A", "stored": true}
+  ]
 }
 ```
 
@@ -281,6 +297,40 @@ curl http://localhost:5002/initialize_iot
 
 **Purpose (playability only):** Ensures the lab remains playable if the attacker never discovers the BLE provisioning vector. Creates default accounts and falls back to Ethernet polling (`192.168.2.1`). This is **not a vulnerability** to be tested or reported; it exists solely to prevent a dead-end lab state.
 
+##### Seeded Devices (3) — what `/initialize_iot` writes to SQLite
+
+Since 2026-05-20, `initialize_iot` populates the `devices` table with three
+rows so the patient self-service flow has something to bind to without
+manual operator setup:
+
+| # | Source | MAC | `auth_hash` (12 hex) | `patient_username` | `device_name` |
+|---|---|---|---|---|---|
+| 1 | Demo (randomised) | `secrets`-generated `AA:BB:CC:..` | `secrets.token_hex(6).upper()` | `patient_alice` (auto-created with random password) | `CareOtter_HR (demo-alice)` |
+| 2 | Demo (randomised) | `secrets`-generated | `secrets.token_hex(6).upper()` | `patient_bob` (auto-created) | `CareOtter_HR (demo-bob)` |
+| 3 | **Real Pi** | resolved from `http://192.168.2.1:8081/health` at seed time; falls back to `00:00:00:00:00:00` if the Pi is unreachable | `DatabaseService.EXPECTED_DEVICE_SIGNATURE` → `9C0C306DEF2A` (matches `careservice.c::DEVICE_SIGNATURE` and `cloud_uploader.py::device_hash`) | empty string `''` — **intentionally unclaimed**; the patient claims via `POST /api/devices/register-by-hash` | `CareOtter_HR` |
+
+The two demo rows exist so `GET /api/devices` and the admin dashboard show
+realistic-looking fleet data immediately after `/initialize_iot`. They use
+random MACs/hashes so they can't be confused with the real Pi and are
+already bound to demo patients so they don't compete for the `patient`
+account.
+
+The Pi row uses the canonical 12-hex factory code so two flows converge on
+the same row:
+- The **patient** logs in as `patient`, types `9C0C306DEF2A` in the
+  Device Registration Code input → `POST /api/devices/register-by-hash`
+  updates row #3 `patient_username` from `''` to `patient`.
+- The **Pi** pushes vitals via `cloud_uploader.py` with
+  `X-Device-Hash: 9C0C306DEF2A` → `device_push_vitals` matches the row
+  by MAC; if seeded with placeholder MAC, `adopt_mac_for_signature` rewrites
+  the row's MAC in-place on the first push (see
+  `docs/CareOtter/IoT/CareOtter_IoT.md` § Push Architecture).
+
+Schema constraint `patient_username TEXT NOT NULL` is honoured by storing
+the empty string `''` as the "unclaimed" sentinel. `get_devices_for_patient`
+filters by exact match, so an unclaimed row never leaks to any logged-in
+user.
+
 ---
 
 #### `/admin/device/register` — Signature-Based Device Registration
@@ -289,7 +339,7 @@ curl http://localhost:5002/initialize_iot
 curl -X POST http://localhost:5002/admin/device/register \
   -H "Content-Type: application/json" \
   -d '{
-    "signature": "CareOtterFactorySig2026",
+    "signature": "9C0C306DEF2A",
     "mac": "B8:27:EB:XX:XX:XX",
     "patient": {"username":"alice","password":"secret1"},
     "admin": {"username":"dr_bob","password":"secret2"},
@@ -315,6 +365,56 @@ curl -X POST http://localhost:5002/admin/device/register \
 5. Switches the vitals collector from idle/Ethernet to WiFi polling.
 
 **Vulnerability:** The signature is hardcoded and identical across all devices. An attacker who intercepts this POST (by owning the `cloud_url` via BLE `cloud_set`) captures the signature and can replay it to register a rogue device or overwrite the real admin credentials.
+
+---
+
+#### `/api/devices/register-by-hash` — Patient self-service device binding
+
+```bash
+curl -X POST http://localhost:5002/api/devices/register-by-hash \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <patient JWT>" \
+  -d '{"device_hash":"9C0C306DEF2A"}'
+```
+
+The patient types the 12-hex code printed on the device sticker. The cloud looks up the row in `devices` by `auth_hash`, then updates `patient_username` from the placeholder (empty string) to the patient's username from the JWT.
+
+**Code format (since 2026-05-20):**
+- **12 hexadecimal characters**, case-insensitive (`[0-9A-Fa-f]{12}`).
+- Stored in SQLite as-is (no `CareOtter` prefix anymore — strip happens at the boundary via `DatabaseService.canonical_hash` for any legacy client that still sends the prefixed form).
+- 48 bits of entropy per device; randomized per row in `/initialize_iot` for demo devices.
+
+**Hardening on the endpoint:**
+
+| Layer | What it does |
+|---|---|
+| Format guard | `len == 12` and hex-only — rejects with **400** before the DB lookup, does not count against rate limit (user typos shouldn't burn budget) |
+| Rate limit | Per-user sliding window: **5 failures / 15 min**. Returns **429** with `Retry-After` header when exceeded. Successful registrations don't consume budget |
+| Constant-time compare | `hmac.compare_digest` over canonicalised inputs — no timing oracle distinguishing "wrong hash" from "no such hash" |
+| Uniform error | All failures return **404 "Invalid device hash"**, so an attacker can't enumerate which hashes exist vs. which exist-but-belong-to-someone-else |
+| Audit log | Each failure: `[register-by-hash] FAIL user=<jwt-sub> ip=<remote_addr> hash_len=<n>`. Each rate-limit hit: `[register-by-hash] RATE_LIMITED user=<jwt-sub> ip=<…> retry_after=<n>s` |
+
+**Response (200):**
+```json
+{"status":"registered","device_mac":"B8:27:EB:79:53:C3",
+ "device_name":"CareOtter_HR","patient_username":"patient"}
+```
+
+**Response (400) — wrong format:**
+```json
+{"error":"Device hash must be 12 hexadecimal characters"}
+```
+
+**Response (404) — unknown / not owned (indistinguishable on purpose):**
+```json
+{"error":"Invalid device hash"}
+```
+
+**Response (429) — rate limited:**
+```json
+{"error":"Too many registration attempts. Try again later.",
+ "retry_after_seconds": 873}
+```
 
 ---
 

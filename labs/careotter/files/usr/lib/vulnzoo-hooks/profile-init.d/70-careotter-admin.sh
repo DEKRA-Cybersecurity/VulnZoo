@@ -33,26 +33,27 @@ log_message "Starting CareOtter Admin Service hook..."
 # ============================================================================
 # IDEMPOTENCY CHECK: Verify if the service is already running
 # ============================================================================
-if [ -f "$PID_FILE" ]; then
-    existing_pid=$(cat "$PID_FILE" 2>/dev/null)
-    if kill -0 "$existing_pid" 2>/dev/null; then
-        log_message "Admin service already running (PID: $existing_pid) - skipping"
-        logger -t careotter-admin "Service already active on port $CARESERVICE_PORT"
-        exit 0
-    else
-        log_message "Stale PID file found, removing..."
-        rm -f "$PID_FILE"
-    fi
+# Use pidof on the binary path as the source of truth — NOT the pidfile.
+# procd writes /var/run/careservice.pid asynchronously (and sometimes not at
+# all under USE_PROCD=1), so trusting the pidfile here races with rc.d which
+# may have already started careservice via /etc/rc.d/S70careservice. If we
+# kill that rc.d-spawned instance and then start a new one, procd ends up
+# with a stale pidfile from the first attempt while the second instance
+# runs fine — the hook then mis-reports "process is dead".
+existing_pid=$(pidof "$CARESERVICE_BIN" 2>/dev/null | awk '{print $1}')
+if [ -n "$existing_pid" ]; then
+    log_message "Admin service already running (PID: $existing_pid) - skipping"
+    logger -t careotter-admin "Service already active on port $CARESERVICE_PORT"
+    # Re-sync the pidfile in case procd never wrote it — keeps later
+    # stop/restart paths (which DO read $PID_FILE) reliable.
+    echo "$existing_pid" > "$PID_FILE"
+    exit 0
 fi
 
-# Check for other careservice processes running (without PID file)
-existing_procs=$(ps | grep "[c]areservice" | grep -v grep | awk '{print $1}')
-if [ -n "$existing_procs" ]; then
-    log_message "Found existing careservice processes: $existing_procs - stopping them"
-    for pid in $existing_procs; do
-        kill -9 "$pid" 2>/dev/null
-    done
-    sleep 1
+# No live instance: any pidfile is stale.
+if [ -f "$PID_FILE" ]; then
+    log_message "Stale PID file found (no live process), removing..."
+    rm -f "$PID_FILE"
 fi
 
 # ============================================================================
@@ -119,20 +120,39 @@ log_message "Starting careservice on port $CARESERVICE_PORT via init script..."
 logger -t careotter-admin "Starting admin service (IGP protocol, port $CARESERVICE_PORT)"
 
 if /etc/init.d/careservice start; then
-    sleep 2
-    # Verify it started
-    if [ -f /var/run/careservice.pid ]; then
-        service_pid=$(cat /var/run/careservice.pid 2>/dev/null)
-        if kill -0 "$service_pid" 2>/dev/null; then
-            log_message "Admin service started successfully (PID: $service_pid)"
-            logger -t careotter-admin "Service active - Commands: 0x01=INFO, 0x02=AUTH, 0x03=WIFI, 0x04=PREFS, 0x05=STATUS"
-            logger -t careotter-admin "Vulnerabilities: Format String, Integer Underflow, Hardcoded Token"
-        else
-            log_message "ERROR: careservice PID file exists but process is dead"
-            exit 1
-        fi
+    # Post-start verification — pidof, not the pidfile.
+    # procd's pidfile write is asynchronous; checking it at a fixed sleep
+    # has caused false-negative "process is dead" reports even when the
+    # service was running. Retry pidof for up to 5s, then fall back to a
+    # full restart if still not detected.
+    service_pid=""
+    for attempt in 1 2 3 4 5; do
+        sleep 1
+        service_pid=$(pidof "$CARESERVICE_BIN" 2>/dev/null | awk '{print $1}')
+        [ -n "$service_pid" ] && break
+    done
+
+    if [ -z "$service_pid" ]; then
+        log_message "WARNING: careservice not detected after start (5s) — forcing restart"
+        /etc/init.d/careservice restart >/dev/null 2>&1
+        for attempt in 1 2 3 4 5; do
+            sleep 1
+            service_pid=$(pidof "$CARESERVICE_BIN" 2>/dev/null | awk '{print $1}')
+            [ -n "$service_pid" ] && break
+        done
+    fi
+
+    if [ -n "$service_pid" ]; then
+        # Always sync the pidfile to the real PID — operators and stop_service
+        # downstream rely on $PID_FILE pointing at a live process.
+        echo "$service_pid" > "$PID_FILE"
+        log_message "Admin service started successfully (PID: $service_pid)"
+        logger -t careotter-admin "Service active - Commands: 0x01=INFO, 0x02=AUTH, 0x03=WIFI, 0x04=PREFS, 0x05=STATUS"
+        logger -t careotter-admin "Vulnerabilities: Format String, Integer Underflow, Hardcoded Token"
     else
-        log_message "WARNING: careservice PID file not found after start — checking procd status"
+        log_message "ERROR: careservice still not running after start + restart attempts"
+        logger -t careotter-admin "ERROR: Service failed - check /var/log/careservice.log"
+        exit 1
     fi
 else
     log_message "ERROR: careservice init script failed to start"

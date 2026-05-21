@@ -179,6 +179,9 @@ public class AdminActivity extends AppCompatActivity {
 
         btnAdminLogout.setOnClickListener(v -> logout());
 
+        Button btnClearLog = findViewById(R.id.btnClearLog);
+        btnClearLog.setOnClickListener(v -> tvOutput.setText(""));
+
         // ── Public commands (no auth required) ─────────────────────────────
 
         btnSysInfo.setOnClickListener(v ->

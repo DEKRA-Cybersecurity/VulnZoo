@@ -229,7 +229,7 @@ The Pi now **pushes** vitals and alerts to the Cloud API instead of being polled
   "spo2": 98,
   "http_port": 8081,
   "sample_rate": 1,
-  "device_hash": "CareOtterFactorySig2026"
+  "device_hash": "9C0C306DEF2A"
 }
 ```
 
