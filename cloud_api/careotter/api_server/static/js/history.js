@@ -205,8 +205,6 @@
                 <td><code>${reading.device_mac || '—'}</code></td>
                 <td>${reading.bpm ?? '—'}</td>
                 <td>${reading.spo2 ?? '—'}%</td>
-                <td>${reading.ir_raw?.toLocaleString() ?? '—'}</td>
-                <td>${reading.red_raw?.toLocaleString() ?? '—'}</td>
                 <td><span class="source-badge">${reading.source || 'unknown'}</span></td>
                 <td>${getStatusBadge(reading.bpm, reading.spo2)}</td>
             `;
@@ -466,15 +464,13 @@
             return;
         }
 
-        const headers = ['Timestamp', 'Patient', 'Device MAC', 'BPM', 'SpO2', 'IR Raw', 'Red Raw', 'Source'];
+        const headers = ['Timestamp', 'Patient', 'Device MAC', 'BPM', 'SpO2', 'Source'];
         const rows = state.filteredReadings.map(r => [
             formatTimestamp(r.timestamp),
             r.patient_username || '',
             r.device_mac || '',
             r.bpm ?? '',
             r.spo2 ?? '',
-            r.ir_raw ?? '',
-            r.red_raw ?? '',
             r.source || 'unknown'
         ]);
 

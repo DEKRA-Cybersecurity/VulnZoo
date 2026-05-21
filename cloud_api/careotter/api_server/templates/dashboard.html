@@ -182,8 +182,8 @@
             bpmCard.className  = 'stat-card ' + (data.bpm < 60 || data.bpm > 100 ? 'stat-warn' : 'stat-ok');
             spo2Card.className = 'stat-card ' + (data.spo2 < 95 ? 'stat-crit' : 'stat-ok');
 
-            document.getElementById('sub-bpm').textContent  = `Raw IR: ${data.ir_raw ?? '—'}`;
-            document.getElementById('sub-spo2').textContent = `Raw R: ${data.red_raw ?? '—'}`;
+            document.getElementById('sub-bpm').textContent  = 'beats per minute';
+            document.getElementById('sub-spo2').textContent = 'blood oxygen %';
 
             const src = data.source ?? 'unknown';
             const badge = document.getElementById('badge-source');
@@ -254,10 +254,5 @@
     loadVitals();
     setInterval(loadVitals, 3000);
 </script>
-
-<footer class="footer">
-    CareOtter Medical Device Monitor
-</footer>
-
 </body>
 </html>

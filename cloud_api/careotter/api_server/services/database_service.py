@@ -87,14 +87,19 @@ class DatabaseService:
                 CREATE INDEX IF NOT EXISTS idx_devices_patient
                     ON devices(patient_username);
 
+                -- Tiered storage (medical-grade pattern):
+                --   vitals_readings   = hot tier, raw 10s samples, retention 24h
+                --   vitals_minute_agg = warm tier, 1min averages, retention 30d
+                --   vitals_hour_agg   = cold tier, 1h averages, retention indefinite
+                -- ir_raw / red_raw are NOT stored in the cloud: they are local
+                -- waveform ADC values that the bedside monitor uses for BPM
+                -- derivation and are never queried by any cloud consumer.
                 CREATE TABLE IF NOT EXISTS vitals_readings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     device_mac TEXT NOT NULL,
                     timestamp REAL NOT NULL,
                     bpm INTEGER,
                     spo2 INTEGER,
-                    ir_raw INTEGER,
-                    red_raw INTEGER,
                     source TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (device_mac) REFERENCES devices(mac)
@@ -102,6 +107,40 @@ class DatabaseService:
 
                 CREATE INDEX IF NOT EXISTS idx_vitals_timestamp
                     ON vitals_readings(timestamp);
+
+                CREATE TABLE IF NOT EXISTS vitals_minute_agg (
+                    device_mac TEXT NOT NULL,
+                    bucket_ts  REAL NOT NULL,        -- minute floor, seconds since epoch
+                    bpm_avg    REAL,
+                    bpm_min    INTEGER,
+                    bpm_max    INTEGER,
+                    spo2_avg   REAL,
+                    spo2_min   INTEGER,
+                    spo2_max   INTEGER,
+                    samples    INTEGER NOT NULL,
+                    PRIMARY KEY (device_mac, bucket_ts),
+                    FOREIGN KEY (device_mac) REFERENCES devices(mac)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_min_agg_ts
+                    ON vitals_minute_agg(bucket_ts);
+
+                CREATE TABLE IF NOT EXISTS vitals_hour_agg (
+                    device_mac TEXT NOT NULL,
+                    bucket_ts  REAL NOT NULL,        -- hour floor, seconds since epoch
+                    bpm_avg    REAL,
+                    bpm_min    INTEGER,
+                    bpm_max    INTEGER,
+                    spo2_avg   REAL,
+                    spo2_min   INTEGER,
+                    spo2_max   INTEGER,
+                    samples    INTEGER NOT NULL,
+                    PRIMARY KEY (device_mac, bucket_ts),
+                    FOREIGN KEY (device_mac) REFERENCES devices(mac)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_hour_agg_ts
+                    ON vitals_hour_agg(bucket_ts);
 
                 CREATE TABLE IF NOT EXISTS device_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +152,22 @@ class DatabaseService:
 
                 CREATE INDEX IF NOT EXISTS idx_events_timestamp
                     ON device_events(timestamp);
+
+                CREATE TABLE IF NOT EXISTS caregiver_assignments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    caregiver_username TEXT NOT NULL,
+                    patient_username TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(caregiver_username, patient_username),
+                    FOREIGN KEY (caregiver_username) REFERENCES users(username),
+                    FOREIGN KEY (patient_username) REFERENCES users(username)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_cg_assign_caregiver
+                    ON caregiver_assignments(caregiver_username);
+
+                CREATE INDEX IF NOT EXISTS idx_cg_assign_patient
+                    ON caregiver_assignments(patient_username);
 
                 CREATE TABLE IF NOT EXISTS device_config (
                     key TEXT PRIMARY KEY,
@@ -179,6 +234,27 @@ class DatabaseService:
                 conn.execute("ALTER TABLE devices ADD COLUMN auth_hash TEXT")
                 conn.commit()
                 logger.info("[DB] Migration: auth_hash column added")
+
+            # Migration: create caregiver_assignments if missing
+            existing_tables = {row[0] for row in
+                        conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            if 'caregiver_assignments' not in existing_tables:
+                logger.info("[DB] Migration: creating caregiver_assignments table")
+                conn.executescript('''
+                    CREATE TABLE caregiver_assignments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        caregiver_username TEXT NOT NULL,
+                        patient_username TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(caregiver_username, patient_username),
+                        FOREIGN KEY (caregiver_username) REFERENCES users(username),
+                        FOREIGN KEY (patient_username) REFERENCES users(username)
+                    );
+                    CREATE INDEX idx_cg_assign_caregiver ON caregiver_assignments(caregiver_username);
+                    CREATE INDEX idx_cg_assign_patient ON caregiver_assignments(patient_username);
+                ''')
+                conn.commit()
+                logger.info("[DB] Migration: caregiver_assignments table created")
 
     # ── User management ───────────────────────────────────────────────────────
     
@@ -328,6 +404,53 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error registering device: {e}")
             return False
+
+    def delete_device_for_patient(self, patient_username: str) -> bool:
+        """Delete the device associated with a patient."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    'DELETE FROM devices WHERE patient_username = ?',
+                    (patient_username,)
+                )
+                conn.commit()
+                if cur.rowcount > 0:
+                    logger.info(f"[DB] Deleted device for patient: {patient_username}")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[DB] Error deleting device for patient: {e}")
+            return False
+
+    def delete_other_devices_for_patient(self, patient_username: str,
+                                         keep_mac: str) -> int:
+        """Enforce single-device-per-patient: delete every device row owned by
+        ``patient_username`` whose MAC differs from ``keep_mac``. Returns the
+        number of rows deleted.
+
+        Used by the cloud simulator bootstrap to clean up legacy demo rows from
+        earlier seeds (where alice_g67 and genuinebob49 had a placeholder
+        "demo-*" device alongside the real cloud-sim one).
+        """
+        keep_mac = keep_mac.upper()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    '''DELETE FROM devices
+                       WHERE patient_username = ? AND UPPER(mac) != ?''',
+                    (patient_username, keep_mac),
+                )
+                deleted = cur.rowcount
+                conn.commit()
+                if deleted:
+                    logger.info(
+                        f"[DB] Pruned {deleted} stray device row(s) for "
+                        f"{patient_username} (kept {keep_mac})"
+                    )
+                return deleted
+        except Exception as e:
+            logger.error(f"[DB] delete_other_devices_for_patient failed: {e}")
+            return 0
 
     def adopt_mac_for_signature(self, signature: str, new_mac: str) -> bool:
         """Replace a placeholder MAC with the real one for the device that
@@ -625,6 +748,77 @@ class DatabaseService:
             logger.error(f"[DB] Error deleting user: {e}")
             return False
 
+    # ── Caregiver assignments ───────────────────────────────────────────────────
+
+    def add_caregiver_assignment(self, patient_username: str, caregiver_username: str) -> bool:
+        """Link a caregiver to a patient. The patient initiates this."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute('''
+                    INSERT INTO caregiver_assignments (caregiver_username, patient_username)
+                    VALUES (?, ?)
+                    ON CONFLICT(caregiver_username, patient_username) DO NOTHING
+                ''', (caregiver_username, patient_username))
+                conn.commit()
+                logger.info(f"[DB] Caregiver assignment: {caregiver_username} → {patient_username}")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error adding caregiver assignment: {e}")
+            return False
+
+    def remove_caregiver_assignment(self, patient_username: str, caregiver_username: str) -> bool:
+        """Remove a caregiver→patient link."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute('''
+                    DELETE FROM caregiver_assignments
+                    WHERE caregiver_username = ? AND patient_username = ?
+                ''', (caregiver_username, patient_username))
+                conn.commit()
+                if cursor.rowcount > 0:
+                    logger.info(f"[DB] Removed caregiver assignment: {caregiver_username} → {patient_username}")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[DB] Error removing caregiver assignment: {e}")
+            return False
+
+    def get_caregivers_for_patient(self, patient_username: str) -> List[Dict]:
+        """Return all caregivers assigned to a patient."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute('''
+                    SELECT ca.id, ca.caregiver_username, ca.patient_username, ca.created_at,
+                           u.role
+                    FROM caregiver_assignments ca
+                    JOIN users u ON ca.caregiver_username = u.username
+                    WHERE ca.patient_username = ?
+                    ORDER BY ca.created_at DESC
+                ''', (patient_username,)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] Error fetching caregivers for patient: {e}")
+            return []
+
+    def get_patients_for_caregiver(self, caregiver_username: str) -> List[Dict]:
+        """Return all patients assigned to a caregiver, with device info."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute('''
+                    SELECT ca.id, ca.caregiver_username, ca.patient_username, ca.created_at,
+                           d.mac AS device_mac, d.device_name
+                    FROM caregiver_assignments ca
+                    LEFT JOIN devices d ON ca.patient_username = d.patient_username
+                    WHERE ca.caregiver_username = ?
+                    ORDER BY ca.created_at DESC
+                ''', (caregiver_username,)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] Error fetching patients for caregiver: {e}")
+            return []
+
     def store_vitals(self, data: dict, device_mac: str = None) -> bool:
         """Stores a vital reading associated with the device MAC.
 
@@ -643,15 +837,13 @@ class DatabaseService:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
                     INSERT INTO vitals_readings
-                    (device_mac, timestamp, bpm, spo2, ir_raw, red_raw, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (device_mac, timestamp, bpm, spo2, source)
+                    VALUES (?, ?, ?, ?, ?)
                 ''', (
                     mac,
                     data.get('timestamp'),
                     data.get('bpm'),
                     data.get('spo2'),
-                    data.get('ir_raw'),
-                    data.get('red_raw'),
                     data.get('source', 'unknown')
                 ))
                 conn.commit()
@@ -671,7 +863,7 @@ class DatabaseService:
                 if mac:
                     rows = conn.execute('''
                         SELECT v.id, v.device_mac, v.timestamp, v.bpm, v.spo2,
-                               v.ir_raw, v.red_raw, v.source, v.created_at,
+                               v.source, v.created_at,
                                d.patient_username, d.device_name
                         FROM vitals_readings v
                         LEFT JOIN devices d ON v.device_mac = d.mac
@@ -682,7 +874,7 @@ class DatabaseService:
                 else:
                     rows = conn.execute('''
                         SELECT v.id, v.device_mac, v.timestamp, v.bpm, v.spo2,
-                               v.ir_raw, v.red_raw, v.source, v.created_at,
+                               v.source, v.created_at,
                                d.patient_username, d.device_name
                         FROM vitals_readings v
                         LEFT JOIN devices d ON v.device_mac = d.mac
@@ -949,6 +1141,222 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error fetching latest alert timestamp: {e}")
             return 0.0
+
+    # ── Tiered vitals retention ─────────────────────────────────────────────
+    #
+    # Three tables hold vitals at different resolutions:
+    #   - vitals_readings   (raw 10s samples)  → retain RAW_RETENTION_HOURS
+    #   - vitals_minute_agg (1 row per minute) → retain MINUTE_RETENTION_DAYS
+    #   - vitals_hour_agg   (1 row per hour)   → retain forever (clinical trend)
+    #
+    # The aggregator thread in app.py wakes once a minute and calls
+    # ``rollup_minute_aggregates`` + ``rollup_hour_aggregates`` to advance
+    # both warm and cold tiers, then ``prune_vitals_tiers`` drops anything
+    # outside its retention window.
+    RAW_RETENTION_HOURS   = 24
+    MINUTE_RETENTION_DAYS = 30
+
+    @staticmethod
+    def _floor(ts: float, bucket_seconds: int) -> float:
+        return float(int(ts) // bucket_seconds * bucket_seconds)
+
+    def rollup_minute_aggregates(self) -> int:
+        """Collapse every minute bucket that already has a NEXT bucket of raw
+        readings — guarantees the minute is complete before aggregating, so
+        steady-state inserts do not produce a partial row that we'd later
+        have to overwrite. Returns rows written.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Latest already-aggregated minute per device
+                last = {
+                    row[0]: row[1] for row in conn.execute(
+                        'SELECT device_mac, MAX(bucket_ts) FROM vitals_minute_agg GROUP BY device_mac'
+                    ).fetchall()
+                }
+                # Read raw readings that fall in COMPLETED minute buckets only
+                # (timestamp < current_minute_floor).
+                now_minute = self._floor(datetime.now().timestamp(), 60)
+                rows = conn.execute('''
+                    SELECT device_mac,
+                           CAST(timestamp / 60 AS INTEGER) * 60 AS bucket_ts,
+                           AVG(bpm), MIN(bpm), MAX(bpm),
+                           AVG(spo2), MIN(spo2), MAX(spo2),
+                           COUNT(*)
+                    FROM vitals_readings
+                    WHERE timestamp < ?
+                    GROUP BY device_mac, bucket_ts
+                ''', (now_minute,)).fetchall()
+                inserted = 0
+                for r in rows:
+                    mac, bucket = r[0], float(r[1])
+                    if bucket <= last.get(mac, 0):
+                        continue
+                    conn.execute('''
+                        INSERT OR REPLACE INTO vitals_minute_agg
+                        (device_mac, bucket_ts, bpm_avg, bpm_min, bpm_max,
+                         spo2_avg, spo2_min, spo2_max, samples)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (mac, bucket, r[2], r[3], r[4], r[5], r[6], r[7], r[8]))
+                    inserted += 1
+                conn.commit()
+                if inserted:
+                    logger.info(f"[DB] Rolled up {inserted} minute aggregate rows")
+                return inserted
+        except Exception as e:
+            logger.error(f"[DB] rollup_minute_aggregates failed: {e}")
+            return 0
+
+    def rollup_hour_aggregates(self) -> int:
+        """Same pattern but folds completed-minute aggregates into hour buckets.
+        Reads from vitals_minute_agg, not raw — avoids re-scanning samples that
+        are already summarised.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                last = {
+                    row[0]: row[1] for row in conn.execute(
+                        'SELECT device_mac, MAX(bucket_ts) FROM vitals_hour_agg GROUP BY device_mac'
+                    ).fetchall()
+                }
+                now_hour = self._floor(datetime.now().timestamp(), 3600)
+                rows = conn.execute('''
+                    SELECT device_mac,
+                           CAST(bucket_ts / 3600 AS INTEGER) * 3600 AS bucket_ts,
+                           AVG(bpm_avg),
+                           MIN(bpm_min),
+                           MAX(bpm_max),
+                           AVG(spo2_avg),
+                           MIN(spo2_min),
+                           MAX(spo2_max),
+                           SUM(samples)
+                    FROM vitals_minute_agg
+                    WHERE bucket_ts < ?
+                    GROUP BY device_mac, bucket_ts
+                ''', (now_hour,)).fetchall()
+                inserted = 0
+                for r in rows:
+                    mac, bucket = r[0], float(r[1])
+                    if bucket <= last.get(mac, 0):
+                        continue
+                    conn.execute('''
+                        INSERT OR REPLACE INTO vitals_hour_agg
+                        (device_mac, bucket_ts, bpm_avg, bpm_min, bpm_max,
+                         spo2_avg, spo2_min, spo2_max, samples)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (mac, bucket, r[2], r[3], r[4], r[5], r[6], r[7], r[8]))
+                    inserted += 1
+                conn.commit()
+                if inserted:
+                    logger.info(f"[DB] Rolled up {inserted} hour aggregate rows")
+                return inserted
+        except Exception as e:
+            logger.error(f"[DB] rollup_hour_aggregates failed: {e}")
+            return 0
+
+    def prune_vitals_tiers(self) -> dict:
+        """Drop raw rows > RAW_RETENTION_HOURS and minute aggs > MINUTE_RETENTION_DAYS.
+        Hour aggregates are NEVER pruned automatically — they are the clinical
+        long-term trend and tiny (~8.7k rows/year/device).
+        """
+        now = datetime.now().timestamp()
+        raw_cutoff   = now - self.RAW_RETENTION_HOURS * 3600
+        minute_cutoff = now - self.MINUTE_RETENTION_DAYS * 86400
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                raw_deleted = conn.execute(
+                    'DELETE FROM vitals_readings WHERE timestamp < ?', (raw_cutoff,)
+                ).rowcount
+                min_deleted = conn.execute(
+                    'DELETE FROM vitals_minute_agg WHERE bucket_ts < ?', (minute_cutoff,)
+                ).rowcount
+                conn.commit()
+                if raw_deleted or min_deleted:
+                    logger.info(
+                        f"[DB] Prune: raw={raw_deleted}, minute_agg={min_deleted}"
+                    )
+                return {'raw': raw_deleted, 'minute': min_deleted}
+        except Exception as e:
+            logger.error(f"[DB] prune_vitals_tiers failed: {e}")
+            return {'raw': 0, 'minute': 0}
+
+    def get_vitals_history_tiered(self, hours: int = 24, limit: int = 5000,
+                                  device_mac: str = None) -> dict:
+        """Tier-selecting history query — the endpoint that should be used by
+        any new UI code. Picks the granularity from the requested time span:
+
+          ≤ 2h   → raw 10s readings
+          ≤ 30d  → minute aggregates
+          > 30d  → hour aggregates
+
+        Returns a dict with ``tier`` so the frontend knows what fields are
+        present (raw rows have bpm/spo2; aggregate rows have bpm_avg/min/max).
+        """
+        since = (datetime.now() - timedelta(hours=hours)).timestamp()
+        mac = device_mac.upper() if device_mac else None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                if hours <= 2:
+                    tier = 'raw'
+                    if mac:
+                        rows = conn.execute('''
+                            SELECT v.device_mac, v.timestamp, v.bpm, v.spo2,
+                                   v.source, d.patient_username, d.device_name
+                            FROM vitals_readings v
+                            LEFT JOIN devices d ON v.device_mac = d.mac
+                            WHERE v.timestamp >= ? AND v.device_mac = ?
+                            ORDER BY v.timestamp DESC LIMIT ?
+                        ''', (since, mac, limit)).fetchall()
+                    else:
+                        rows = conn.execute('''
+                            SELECT v.device_mac, v.timestamp, v.bpm, v.spo2,
+                                   v.source, d.patient_username, d.device_name
+                            FROM vitals_readings v
+                            LEFT JOIN devices d ON v.device_mac = d.mac
+                            WHERE v.timestamp >= ?
+                            ORDER BY v.timestamp DESC LIMIT ?
+                        ''', (since, limit)).fetchall()
+                elif hours <= 24 * 30:
+                    tier = 'minute'
+                    table_select = '''
+                        SELECT a.device_mac, a.bucket_ts AS timestamp,
+                               a.bpm_avg, a.bpm_min, a.bpm_max,
+                               a.spo2_avg, a.spo2_min, a.spo2_max, a.samples,
+                               d.patient_username, d.device_name
+                        FROM vitals_minute_agg a
+                        LEFT JOIN devices d ON a.device_mac = d.mac
+                        WHERE a.bucket_ts >= ?'''
+                    if mac:
+                        rows = conn.execute(
+                            table_select + ' AND a.device_mac = ? ORDER BY a.bucket_ts DESC LIMIT ?',
+                            (since, mac, limit)).fetchall()
+                    else:
+                        rows = conn.execute(
+                            table_select + ' ORDER BY a.bucket_ts DESC LIMIT ?',
+                            (since, limit)).fetchall()
+                else:
+                    tier = 'hour'
+                    table_select = '''
+                        SELECT a.device_mac, a.bucket_ts AS timestamp,
+                               a.bpm_avg, a.bpm_min, a.bpm_max,
+                               a.spo2_avg, a.spo2_min, a.spo2_max, a.samples,
+                               d.patient_username, d.device_name
+                        FROM vitals_hour_agg a
+                        LEFT JOIN devices d ON a.device_mac = d.mac
+                        WHERE a.bucket_ts >= ?'''
+                    if mac:
+                        rows = conn.execute(
+                            table_select + ' AND a.device_mac = ? ORDER BY a.bucket_ts DESC LIMIT ?',
+                            (since, mac, limit)).fetchall()
+                    else:
+                        rows = conn.execute(
+                            table_select + ' ORDER BY a.bucket_ts DESC LIMIT ?',
+                            (since, limit)).fetchall()
+                return {'tier': tier, 'readings': [dict(r) for r in rows]}
+        except Exception as e:
+            logger.error(f"[DB] get_vitals_history_tiered failed: {e}")
+            return {'tier': 'raw', 'readings': []}
 
     def cleanup_old_data(self, days: int = 30) -> int:
         """
