@@ -314,7 +314,7 @@ void handle_request(int c_fd) {
             snprintf(cmd, sizeof(cmd),
                      "uci set wireless.@wifi-iface[0].ssid='%s' && "
                      "uci set wireless.@wifi-iface[0].key='%s' && "
-                     "uci commit wireless && wifi reload",
+                     "uci commit wireless && wifi reload && /etc/init.d/sysntpd start",
                      ssid, psk);
 
             int r = system(cmd);

@@ -66,3 +66,10 @@ else
     log_message "Pre-flight check PASSED"
     exit 0
 fi
+
+if [ $(/etc/init.d/sysntpd status) -ne 0 ]; then
+    log_message "WARNING: sysntpd service is not running"
+    /etc/init.d/sysntpd start 2>/dev/null || log_message "ERROR: Failed to start sysntpd service"
+else
+    log_message "sysntpd service is running"
+fi

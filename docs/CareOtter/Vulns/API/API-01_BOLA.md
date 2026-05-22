@@ -14,7 +14,7 @@ affected_components:
   - "cloud_api/careotter/api_server/services/database_service.py"
 verified_date: "2026-05-18"
 ---
-
+****
 # API-01 — Broken Object Level Authorization (BOLA) via Cross-User Vitals Access
 
 > **Status:** ✅ DONE  
@@ -102,18 +102,22 @@ Like the BFLA vulnerability (API-06), this endpoint uses `@token_required`, whic
 
 ## Steps to Reproduce
 
-**Precondition:** The system must be initialized (users exist). If the database is empty, run:
+**Precondition:** The system must be initialized (users exist). If the database is empty, run. If Cloud API configuration is set as VULNERABLE=1, this function will be executed by default.
 
 ```bash
 curl http://localhost:5002/initialize_iot
 ```
 
+You may also want to register  'care_john' user as a caregiver for user 'john_doe'. Initiate with 'johnny123' password and register 'care_john'.
+![[care_john_registered.png]]
 ### Step 1 — Obtain a valid caregiver JWT
+
+![[care_john_jwt.png]]
 
 ```bash
 JWT_CAREGIVER=$(curl -s -X POST http://localhost:5002/api/auth/login/caregiver \
   -H "Content-Type: application/json" \
-  -d '{"username":"caregiver","password":"Caregiver2026!"}' \
+  -d '{"username":"care_john","password":"Caregiver2026!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 echo "$JWT_CAREGIVER"
@@ -128,7 +132,7 @@ echo -n "$JWT_CAREGIVER" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json
 Expected output:
 ```json
 {
-  "username": "caregiver",
+  "username": "care_john",
   "role": "caregiver",
   "exp": 1750000000,
   "iat": 1749996400
@@ -136,6 +140,14 @@ Expected output:
 ```
 
 ### Step 3 — Access another patient's vitals with the caregiver token
+
+Intercept your patient data reading requets.
+![[intercept_caregiver_read.png]]
+
+API endpoint for reading patient data requires JWT token used in the "Authorization: Bearer" Header.
+![[missing_token_caregiver_read.png]]
+
+![[caregiver_reads_other_pacient_data.png]]
 
 **3A. Read the `patient` user's vitals and device info:**
 
