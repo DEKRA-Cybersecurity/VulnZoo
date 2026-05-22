@@ -752,8 +752,8 @@ def device_ping():
     Returns diagnostic hints when the Cloud API container cannot reach the Pi
     (common with Docker bridge mode + WiFi subnets).
     """
-    host = Config.DEVICE_IP
-    port = Config.IGP_PORT
+    host = request.args.get('host', Config.DEVICE_IP).strip() or Config.DEVICE_IP
+    port = request.args.get('port', Config.IGP_PORT, type=int) or Config.IGP_PORT
     timeout = 3
 
     if not host:
