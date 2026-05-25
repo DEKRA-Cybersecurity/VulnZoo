@@ -1,0 +1,150 @@
+/* profile.css — CareOtter patient profile / account settings
+   Layered on top of index.css (reuses --vars, .card, .btn, .main-content). */
+
+.page-header {
+    margin: 1.5rem 0 1rem;
+}
+.page-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+.page-header p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0.25rem 0 0;
+}
+
+.profile-section {
+    margin-bottom: 1.25rem;
+}
+
+/* ── Identity card ─────────────────────────────────────────────────────────── */
+.profile-identity {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.avatar-wrap {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    flex-shrink: 0;
+}
+.avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid var(--border-color);
+    background: var(--bg-primary);
+}
+.avatar-edit {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    transition: transform 0.15s;
+}
+.avatar-edit:hover { transform: scale(1.08); }
+.avatar-edit svg {
+    width: 15px;
+    height: 15px;
+    stroke: #fff;
+    fill: none;
+    stroke-width: 2;
+}
+
+.identity-meta { display: flex; flex-direction: column; gap: 2px; }
+.identity-meta h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.identity-username {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+.role-pill {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+}
+.identity-since {
+    margin: 6px 0 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* ── Forms ─────────────────────────────────────────────────────────────────── */
+.form-body { padding: 1rem 1.25rem 1.25rem; }
+.form-body label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0.5rem 0 0.3rem;
+}
+.form-body input[type="text"],
+.form-body input[type="password"] {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+.form-body input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.inline-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+.inline-form input { flex: 1; }
+.inline-form .btn { white-space: nowrap; }
+
+.form-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: 0.5rem 0 0;
+}
+.form-msg {
+    font-size: 0.82rem;
+    margin: 0.6rem 0 0;
+    min-height: 1em;
+}
+.form-msg.ok  { color: var(--success); }
+.form-msg.err { color: var(--danger); }
+
+@media (max-width: 520px) {
+    .inline-form { flex-direction: column; }
+    .profile-identity { justify-content: center; text-align: center; }
+}
