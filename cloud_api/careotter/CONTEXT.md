@@ -387,7 +387,7 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 | ID | Vulnerability | Endpoint | Evidence |
 |----|---------------|----------|----------|
 | API1:2023 | Broken Object Level Authorization (BOLA) | `/api/caregiver/patient/<username>/vitals` | No ownership check against `caregiver_assignments`; any authenticated JWT can access any patient's vitals |
-| API2:2023 | Broken Authentication | `/api/auth/login` | Weak JWT secret, unsalted SHA-256 passwords |
+| API2:2023 | Broken Authentication | `/api/auth/login`, `/admin/device/register` | No rate limiting on login (brute force); unsalted SHA-256 passwords; hardcoded JWT secret (`careotter_jwt_2026`); unauthenticated device registration with hardcoded signature; sensitive operations without password confirmation; `/initialize_iot` exposes plaintext credentials |
 | API3:2023 | Broken Object Property Level Authorization | `/api/network` | `raw` field exposes WiFi config with PSK |
 | API5:2023 | Broken Function Level Authorization | `/api/services/restart` | JWT only, no role/ownership checks |
 | API6:2023 | Unrestricted Access to Business Flows | `/api/config/preferences` | No rate limiting on TLV config writes |

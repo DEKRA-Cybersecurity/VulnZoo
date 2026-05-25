@@ -63,6 +63,8 @@ class DatabaseService:
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL DEFAULT 'user',
+                    display_name TEXT,
+                    profile_photo TEXT,            -- base64 data URI
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -234,6 +236,20 @@ class DatabaseService:
                 conn.execute("ALTER TABLE devices ADD COLUMN auth_hash TEXT")
                 conn.commit()
                 logger.info("[DB] Migration: auth_hash column added")
+
+            # Migration: add profile_photo + display_name to users if missing
+            existing_users = {row[1] for row in
+                        conn.execute('PRAGMA table_info(users)').fetchall()}
+            if 'profile_photo' not in existing_users:
+                logger.info("[DB] Migration: adding profile_photo to users")
+                # Stored as a base64 data URI (data:image/png;base64,…) so the
+                # lab doesn't need a writable upload directory inside the container.
+                conn.execute("ALTER TABLE users ADD COLUMN profile_photo TEXT")
+                conn.commit()
+            if 'display_name' not in existing_users:
+                logger.info("[DB] Migration: adding display_name to users")
+                conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+                conn.commit()
 
             # Migration: create caregiver_assignments if missing
             existing_tables = {row[0] for row in
@@ -818,6 +834,111 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error fetching patients for caregiver: {e}")
             return []
+
+    # ── Self-service profile management ───────────────────────────────────────
+
+    def get_user_profile(self, username: str) -> Optional[Dict]:
+        """Return public profile fields for a user (never the password hash)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    '''SELECT username, role, display_name, profile_photo, created_at
+                       FROM users WHERE username = ?''',
+                    (username,)
+                ).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching profile: {e}")
+            return None
+
+    def update_password(self, username: str, new_password: str) -> bool:
+        """Set a new password hash for the given user."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    'UPDATE users SET password_hash = ? WHERE username = ?',
+                    (self._hash_password(new_password), username)
+                )
+                conn.commit()
+                if cur.rowcount > 0:
+                    logger.info(f"[DB] Password updated for {username}")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[DB] Error updating password: {e}")
+            return False
+
+    def set_display_name(self, username: str, display_name: str) -> bool:
+        """Set the friendly display name shown in the UI (distinct from the
+        login username)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    'UPDATE users SET display_name = ? WHERE username = ?',
+                    (display_name, username)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            logger.error(f"[DB] Error setting display_name: {e}")
+            return False
+
+    def set_profile_photo(self, username: str, data_uri: str) -> bool:
+        """Store the profile photo as a base64 data URI on the user row."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute(
+                    'UPDATE users SET profile_photo = ? WHERE username = ?',
+                    (data_uri, username)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            logger.error(f"[DB] Error setting profile photo: {e}")
+            return False
+
+    def rename_user(self, old_username: str, new_username: str) -> bool:
+        """Rename a user, cascading the change to every table that references
+        the username as a natural key (devices, caregiver_assignments).
+
+        Username is a natural foreign key throughout the schema, so all
+        references are updated inside a single transaction. Returns False if
+        ``new_username`` already exists or the source user is missing.
+        """
+        if not new_username or new_username == old_username:
+            return False
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Reject collision with an existing account
+                exists = conn.execute(
+                    'SELECT 1 FROM users WHERE username = ?', (new_username,)
+                ).fetchone()
+                if exists:
+                    logger.warning(f"[DB] rename_user: {new_username} already taken")
+                    return False
+                src = conn.execute(
+                    'SELECT 1 FROM users WHERE username = ?', (old_username,)
+                ).fetchone()
+                if not src:
+                    logger.warning(f"[DB] rename_user: {old_username} not found")
+                    return False
+
+                # Cascade across the natural-key references in one transaction
+                conn.execute('UPDATE users SET username = ? WHERE username = ?',
+                             (new_username, old_username))
+                conn.execute('UPDATE devices SET patient_username = ? WHERE patient_username = ?',
+                             (new_username, old_username))
+                conn.execute('UPDATE caregiver_assignments SET caregiver_username = ? WHERE caregiver_username = ?',
+                             (new_username, old_username))
+                conn.execute('UPDATE caregiver_assignments SET patient_username = ? WHERE patient_username = ?',
+                             (new_username, old_username))
+                conn.commit()
+                logger.info(f"[DB] Renamed user {old_username} → {new_username} (cascaded)")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] rename_user failed: {e}")
+            return False
 
     def store_vitals(self, data: dict, device_mac: str = None) -> bool:
         """Stores a vital reading associated with the device MAC.

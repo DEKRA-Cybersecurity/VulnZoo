@@ -52,7 +52,7 @@
       <div class="content-section">
         <h2>What is this environment?</h2>
         <p><strong>CareOtter</strong> is a vulnerable cardiac device ecosystem simulator for security testing and learning. It reproduces a realistic modern cardiac remote-monitoring deployment composed of two layers:</p>
-        <p><strong>1. DAI/ICD Implant</strong> — a simulated cardiac implant (Implantable Cardioverter-Defibrillator) represented by a <strong>MAX30102 pulse-oximeter sensor</strong> connected via I2C to the bedside monitor. It generates continuous cardiac telemetry (BPM / SpO₂) and accepts therapeutic commands such as defibrillation simulation and threshold configuration.</p>
+        <p><strong>1. ICD Implant</strong> — a simulated cardiac implant (Implantable Cardioverter-Defibrillator) represented by a <strong>MAX30102 pulse-oximeter sensor</strong> connected via I2C to the bedside monitor. It generates continuous cardiac telemetry (BPM / SpO₂) and accepts therapeutic commands such as defibrillation simulation and threshold configuration.</p>
         <p><strong>2. Bedside Monitor / Home Monitor</strong> — a <strong>Raspberry Pi 3B+ running OpenWRT</strong> that acts as the clinical gateway. It reads vitals from the implant over I2C, exposes them via BLE for bedside/mobile review, streams them over HTTP to the hospital cloud, and provides device administration through a legacy binary protocol (IGP v4).</p>
         <p><strong>VulnZoo WWW interface</strong> — device management, loading/resetting the CareOtter simulator, and project administration.</p>
         <p><strong>CareOtter device interface</strong> — the bedside monitor and its vulnerable services (BLE, HTTP, IGP v4). This is where you perform penetration testing against a realistic medical IoT gateway.</p>
@@ -78,7 +78,7 @@
       <div class="content-section">
         <h2>Device architecture</h2>
         <ul>
-          <li><strong>DAI/ICD Implant (MAX30102)</strong> — I2C-connected pulse-oximeter sensor simulating the cardiac implant. Provides BPM / SpO₂ telemetry and receives therapeutic commands.</li>
+          <li><strong>ICD Implant (MAX30102)</strong> — I2C-connected pulse-oximeter sensor simulating the cardiac implant. Provides BPM / SpO₂ telemetry and receives therapeutic commands.</li>
           <li><strong>Bedside Monitor (Raspberry Pi)</strong> — OpenWRT gateway that reads I2C data from the implant, runs BLE, HTTP, and IGP v4 services.</li>
           <li><strong>BLE</strong> — GATT services exposed by the bedside monitor for continuous heart rate and SpO₂ monitoring, interacting with mobile apps and wearables.</li>
           <li><strong>Cloud API</strong> — backend gateway (Flask) bridging the bedside monitor's IGP v4 admin protocol to REST, enabling remote monitoring and clinician dashboards.</li>

@@ -468,6 +468,13 @@ def history_page():
     return render_template('history.html', thresholds=thresholds)
 
 
+@app.route('/profile')
+@web_patient_required
+def profile_page():
+    """Patient self-service profile page — change photo, password, username."""
+    return render_template('profile.html')
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.route('/api/health')
@@ -480,8 +487,8 @@ def api_health():
         'status':   'ok',
         'service':  'careotter-api',
         'version':  '1.0.0',
-        'device':   f"{Config.DEVICE_IP}:{Config.IGP_PORT}",
-        'wifi_ip':  _get_wifi_ip(),
+        'raspberry_pi_ip':   f"{Config.DEVICE_IP}:{Config.IGP_PORT}",
+        'api_ip':  _get_wifi_ip(),
         'api_port': int(os.getenv('PORT', 5002)),
     })
 
@@ -645,6 +652,134 @@ def remove_patient_caregiver(caregiver_username):
     if not ok:
         return jsonify({'error': 'Assignment not found'}), 404
     return jsonify({'status': 'removed', 'caregiver_username': caregiver_username}), 200
+
+
+# ── Patient profile self-service ──────────────────────────────────────────────
+
+# Max accepted profile photo size (base64 data URI). 2 MB of raw image →
+# ~2.7 MB base64; cap at 4 MB of encoded text to leave headroom.
+_MAX_PHOTO_DATA_URI = 4 * 1024 * 1024
+
+
+@app.route('/api/user/profile', methods=['GET'])
+@token_required
+def get_user_profile():
+    """Return the authenticated user's profile (no password hash)."""
+    current = g.current_user
+    username = current.get('sub') or current.get('username', '')
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+    profile = db.get_user_profile(username)
+    if not profile:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify({'profile': profile}), 200
+
+
+@app.route('/api/user/profile/password', methods=['POST'])
+@token_required
+def change_user_password():
+    """Change the authenticated user's password.
+
+    Requires the current password for confirmation. Body JSON:
+    {"current_password": "...", "new_password": "..."}
+    """
+    current = g.current_user
+    username = current.get('sub') or current.get('username', '')
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    current_pw = data.get('current_password', '')
+    new_pw     = data.get('new_password', '')
+
+    if not new_pw or len(new_pw) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters'}), 400
+    if not db.verify_user(username, current_pw):
+        return jsonify({'error': 'Current password is incorrect'}), 403
+
+    if not db.update_password(username, new_pw):
+        return jsonify({'error': 'Failed to update password'}), 500
+    db.log_event('password_change', details=username, ip_address=request.remote_addr)
+    return jsonify({'status': 'password_updated'}), 200
+
+
+@app.route('/api/user/profile/username', methods=['POST'])
+@token_required
+def change_username():
+    """Rename the authenticated user. Username is a natural key throughout the
+    schema, so the DB layer cascades the change. Because the JWT 'sub' claim
+    embeds the username, a fresh token is issued and the session cookie is
+    rotated — otherwise the old token would point at a user that no longer
+    exists.
+
+    Body JSON: {"new_username": "..."}
+    """
+    current = g.current_user
+    old_username = current.get('sub') or current.get('username', '')
+    role = current.get('role', 'patient')
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_username = (data.get('new_username') or '').strip()
+
+    if not new_username or len(new_username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters'}), 400
+    if new_username == old_username:
+        return jsonify({'error': 'New username matches the current one'}), 400
+    if db.get_user_by_username(new_username):
+        return jsonify({'error': 'That username is already taken'}), 409
+
+    if not db.rename_user(old_username, new_username):
+        return jsonify({'error': 'Failed to rename user'}), 500
+
+    # Rotate the session: issue a token bound to the new username.
+    new_token = JWTService.generate_token(username=new_username, role=role)
+    resp = make_response(jsonify({
+        'status':       'username_updated',
+        'username':     new_username,
+        'token':        new_token,
+    }))
+    resp.set_cookie('careotter_token', new_token, httponly=True, samesite='Lax',
+                    max_age=3600 * Config.JWT_EXPIRATION_HOURS)
+    db.log_event('username_change', details=f"{old_username} -> {new_username}",
+                 ip_address=request.remote_addr)
+    return resp, 200
+
+
+@app.route('/api/user/profile/photo', methods=['POST'])
+@token_required
+def upload_profile_photo():
+    """Store a profile photo for the authenticated user.
+
+    Body JSON: {"photo": "data:image/png;base64,…"}
+    The image is stored inline as a base64 data URI on the user row.
+    Also accepts {"display_name": "..."} in the same call for convenience.
+    """
+    current = g.current_user
+    username = current.get('sub') or current.get('username', '')
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    photo = data.get('photo')
+    display_name = data.get('display_name')
+
+    updated = []
+    if photo is not None:
+        if not isinstance(photo, str) or not photo.startswith('data:image/'):
+            return jsonify({'error': 'photo must be a data:image/* base64 URI'}), 400
+        if len(photo) > _MAX_PHOTO_DATA_URI:
+            return jsonify({'error': 'Image too large (max ~3 MB)'}), 413
+        if db.set_profile_photo(username, photo):
+            updated.append('photo')
+    if display_name is not None:
+        if db.set_display_name(username, display_name.strip()):
+            updated.append('display_name')
+
+    if not updated:
+        return jsonify({'error': 'Nothing to update'}), 400
+    return jsonify({'status': 'profile_updated', 'updated': updated}), 200
 
 
 @app.route('/api/auth/login/caregiver', methods=['POST'])
@@ -1576,10 +1711,6 @@ def initialize_iot():
     # alice_g67 and genuinebob49 are seeded by ``_ensure_cloud_sim_devices``
     # at startup, each bound to its virtual cloud-sim device (single device
     # per patient — no duplicate "demo" placeholders).
-    # The Pi is the only real-hardware seed here. Best-effort MAC lookup from
-    # /health; if the Pi is offline at init time, store a placeholder that
-    # ``device_push_vitals`` replaces atomically on the first upload that
-    # presents the canonical signature.
     pi_mac = '00:00:00:00:00:00'
     try:
         h = http_requests.get(f"http://{eth_ip}:{Config.HTTP_PORT}/health", timeout=2)
@@ -1595,7 +1726,7 @@ def initialize_iot():
         'mac':              pi_mac,
         'auth_hash':        db.EXPECTED_DEVICE_SIGNATURE,  # "9C0C306DEF2A"
         'device_name':      'CareOtter_HR',
-        'patient_username': 'john_doe',
+        'patient_username': '',
         'ip':               eth_ip,
     }
 
