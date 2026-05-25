@@ -128,8 +128,12 @@ One of the objectives of the platform was to rely on widely available and low-co
 
 ### RoutCoon: vulnerable router administration interface
 
-![RoutCoon interface](docs/Images/readme/routcoon_interface.png)
+![RoutCoon interface](docs/Images/readme/routcoon_api.png)
 
 ### OwlCam: Camera's API
 
 ![OwlCam API](docs/Images/readme/owlcam_api.png)
+
+### CareOtter: ICDs API
+
+![CareOtter API](docs/Images/readme/careotter_api.png)
