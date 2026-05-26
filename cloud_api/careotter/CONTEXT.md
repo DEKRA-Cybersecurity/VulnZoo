@@ -392,7 +392,7 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 | API5:2023 | Broken Function Level Authorization | `/api/services/restart` | JWT only, no role/ownership checks |
 | API6:2023 | Unrestricted Access to Business Flows | `/api/config/preferences` | No rate limiting on TLV config writes |
 | API7:2023 | Server Side Request Forgery | *(legacy — `/api/vitals` no longer proxies)* |
-| API8:2023 | Security Misconfiguration | Global | Debug mode, verbose error messages |
+| API8:2023 | Security Misconfiguration | Global | Debug mode, verbose error messages, Werkzeug dev server (mitigated by Gunicorn in container) |
 | API9:2023 | Improper Inventory Management | `/api/health` | Exposes internal device address and WiFi IP |
 
 ## IoT Vulnerabilities (OWASP IoT Top 10 2018)
