@@ -87,10 +87,10 @@
 
         </form>
 
-        <!-- Info -->
-        <div class="login-info">
-            💓 Access your vitals and device status.<br>
-            VULN=1 SCOPE: user 'john_doe' with password 'johnny123' can log into the patient portal. <br>
+        <!-- Account recovery -->
+        <div class="forgot-links">
+            <button type="button" class="link-btn" id="forgot-username">Forgot username?</button>
+            <button type="button" class="link-btn" id="forgot-password">Forgot password?</button>
         </div>
 
         <!-- Footer -->
@@ -98,6 +98,20 @@
             CareOtter Patient Portal &nbsp;·&nbsp; VulnZoo IoT Security Lab
         </div>
 
+    </div>
+</div>
+
+<!-- Recovery modal — used by both Forgot username / Forgot password flows.
+     VULN=1 INTENTIONAL: leaks credentials of the seeded patient account so
+     the lab is self-discoverable without external hints. -->
+<div class="recovery-overlay" id="recovery-overlay" hidden>
+    <div class="recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+        <h3 id="recovery-title">Account Recovery</h3>
+        <p id="recovery-body">…</p>
+        <div class="recovery-actions" id="recovery-actions">
+            <button type="button" class="btn-secondary" id="recovery-cancel">Cancel</button>
+            <button type="button" class="btn-primary"   id="recovery-accept">Accept</button>
+        </div>
     </div>
 </div>
 
