@@ -30,7 +30,7 @@ class Config:
 
     # ── JWT ─────────────────────────────────────────────────────────────────
     # Weak default secret — intentional vulnerability for the lab
-    JWT_SECRET           = os.getenv('JWT_SECRET', 'careotter_jwt_2026')
+    JWT_SECRET           = os.environ['JWT_SECRET']
     JWT_ALGORITHM        = 'HS256'
     JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS', '8'))
 

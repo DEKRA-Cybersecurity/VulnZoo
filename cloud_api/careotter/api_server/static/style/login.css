@@ -226,18 +226,90 @@ body {
 
 .alert svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.5; flex-shrink: 0; }
 
-/* ── Info badge ────────────────────────────────────────────────────────────── */
-.login-info {
-    margin-top: 24px;
-    padding: 12px 14px;
-    background: #f0f9ff;
-    border: 1px solid #bae6fd;
-    border-radius: 8px;
-    font-size: 0.8rem;
+/* ── Forgot username / password links ──────────────────────────────────────── */
+.forgot-links {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-top: 18px;
+}
+.link-btn {
+    background: none;
+    border: none;
+    padding: 4px 8px;
     color: #0369a1;
-    text-align: center;
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.link-btn:hover { color: #075985; }
+
+/* ── Recovery modal ────────────────────────────────────────────────────────── */
+.recovery-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+}
+.recovery-overlay[hidden] { display: none; }
+.recovery-modal {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 22px 24px 20px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+}
+.recovery-modal h3 {
+    margin: 0 0 10px;
+    font-size: 1.05rem;
+    color: #0f172a;
+}
+.recovery-modal p {
+    margin: 0 0 18px;
+    font-size: 0.9rem;
+    color: #475569;
     line-height: 1.5;
 }
+.recovery-modal code.leaked-cred {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 3px 8px;
+    background: #f1f5f9;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #0f172a;
+}
+.recovery-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.recovery-actions button {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.recovery-actions .btn-secondary {
+    background: #f1f5f9;
+    color: #334155;
+    border-color: #e2e8f0;
+}
+.recovery-actions .btn-secondary:hover { background: #e2e8f0; }
+.recovery-actions .btn-primary {
+    background: linear-gradient(135deg, #0891b2, #0d9488);
+    color: #ffffff;
+}
+.recovery-actions .btn-primary:hover { filter: brightness(1.05); }
 
 /* ── Footer ────────────────────────────────────────────────────────────────── */
 .login-footer {
