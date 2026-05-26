@@ -30,4 +30,11 @@ ENV DB_PATH=/app/data/careotter.db
 
 EXPOSE 5002
 
-CMD ["python3", "app.py"]
+CMD ["gunicorn", \
+    "--bind", "0.0.0.0:5002", \
+    "--workers", "1", \
+    "--threads", "4", \
+    "--timeout", "60", \
+    "--access-logfile", "-", \
+    "--error-logfile", "-", \
+    "wsgi:app"]

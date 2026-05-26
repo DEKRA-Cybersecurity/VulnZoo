@@ -1793,10 +1793,22 @@ def initialize_iot():
     }), 200
 
 
-# ── Entrypoint ────────────────────────────────────────────────────────────────
+# ── Application initialization (shared by `python app.py` and Gunicorn) ───────
 
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5002))
+_app_initialized = False
+
+
+def init_app() -> None:
+    """Run one-time startup logic: auto-initialize DB, spawn background threads.
+
+    This function is idempotent — calling it multiple times is safe. It is
+    invoked automatically by ``wsgi.py`` when the app is loaded by Gunicorn,
+    and manually by ``__main__`` when running ``python app.py`` directly.
+    """
+    global _app_initialized
+    if _app_initialized:
+        return
+    _app_initialized = True
 
     # NOTE: Background collectors (_vitals_collector, _alerts_collector) have been
     # removed. In the push architecture the Pi sends data via POST /api/device/vitals
@@ -1833,6 +1845,14 @@ if __name__ == '__main__':
                              name='vitals-aggregator').start()
         except Exception as e:
             logger.error(f"[App] Failed to start cloud simulator/aggregator: {e}")
+
+
+# ── Entrypoint ────────────────────────────────────────────────────────────────
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5002))
+
+    init_app()
 
     # VULNERABILITY (vuln=1): debug=True activates Werkzeug interactive debugger
     # which allows arbitrary code execution on the server if the PIN is obtained
