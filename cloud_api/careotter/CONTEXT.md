@@ -395,6 +395,30 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 | API8:2023 | Security Misconfiguration | Global | Debug mode, verbose error messages, Werkzeug dev server (mitigated by Gunicorn in container) |
 | API9:2023 | Improper Inventory Management | `/api/health` | Exposes internal device address and WiFi IP |
 
+## Multi-Device IGP Architecture
+
+The Cloud API now supports **per-device IGP resolution**. Each authenticated user
+has their device IP stored in `devices.device_ip` + `devices.igp_port`. Admin
+endpoints (`/api/network`, `/api/config/thresholds`, `/api/services/restart`,
+etc.) decode the JWT, look up the user's device, and instantiate a fresh
+`DeviceService(host, port)` for that specific target.
+
+### Real device (Raspberry Pi)
+- Discovers its WiFi IP via the sensor `/health` endpoint (`wifi_ip` / `wlan0_ip`).
+- Background thread `_fetch_device_mac` polls all devices with IPs and updates
+  the row in-place when the IP changes (roaming).
+- No hardcoded `192.168.2.1` fallback in the application code.
+
+### Virtual devices (Docker containers)
+Two additional `careservice.c` binaries run in lightweight Debian containers:
+- `careservice-alice` (`172.20.0.x:9999`) — bound to patient `alice_g67`
+- `careservice-bob`   (`172.20.0.x:9999`) — bound to patient `genuinebob49`
+
+They are **identical** to the Pi binary (same format-string, command-injection,
+and hardcoded-token vulnerabilities) but execute inside the Docker bridge network.
+This enables multi-target attack scenarios where a compromised caregiver JWT
+pivots from Alice's device to Bob's device via the same Cloud API endpoints.
+
 ## IoT Vulnerabilities (OWASP IoT Top 10 2018)
 
 | ID | Vulnerability | Evidence |

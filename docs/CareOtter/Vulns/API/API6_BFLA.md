@@ -1,23 +1,22 @@
 ---
-id: API-06
-title: "Broken Function Level Authorization (BFLA)"
+id: API6:2023
+title: Broken Function Level Authorization (BFLA)
 category: API
-status: COMPLETADA
+status: DONE
 severity: High
-owasp: "API5 — Broken Function Level Authorization"
-cwe: "CWE-863 (Incorrect Authorization) / CWE-285"
+owasp: API5 — Broken Function Level Authorization
+cwe: CWE-863 (Incorrect Authorization) / CWE-285
 source_docs:
-  - "CareOtter_Test_Suite.md §API-06"
+  - CareOtter_Test_Suite.md §API-06
   - "CareOtter_API.md Vulnerability Surface #8"
 affected_components:
-  - "cloud_api/careotter/api_server/core/decorators.py"
-  - "cloud_api/careotter/api_server/app.py"
-verified_date: "2026-05-02"
+  - cloud_api/careotter/api_server/core/decorators.py
+  - cloud_api/careotter/api_server/app.py
+verified_date: 2026-05-02
 ---
 
-# API-06 — Broken Function Level Authorization (BFLA)
+# API6 — Broken Function Level Authorization (BFLA)
 
-> **Status:** ✅ DONE  
 > **Source docs:** `CareOtter_Test_Suite.md` §API-06, `CareOtter_API.md` Vulnerability Surface #8  
 > **OWASP:** API5 — Broken Function Level Authorization  
 > **CWE:** CWE-863 (Incorrect Authorization) / CWE-285  
@@ -79,33 +78,20 @@ def web_admin_required(f):
 
 ### 3. The gap
 
-Every administrative REST endpoint in `app.py` uses `@token_required`, not `@web_admin_required`:
+The  `threshold` administrative REST endpoint in `app.py` uses `@token_required`, not `@web_admin_required`:
 
-- `GET /api/network`
-- `POST /api/network/wifi`
-- `POST /api/config/preferences`
 - `POST /api/config/thresholds`
-- `POST /api/services/restart`
-- `GET /api/logs`
-- `GET /api/devices`
-- `POST /api/devices`
 
-Because the REST layer lacks role enforcement, any user who can obtain a valid JWT — including a patient — can invoke all of these endpoints.
+Because the REST layer lacks role enforcement, any user who can obtain a valid JWT — including a patient — can invoke this endpoint.
 
 ---
 
 ## Affected Endpoints
 
-| Method | Endpoint | Admin Function | Impact When Accessed by Patient |
-|--------|----------|----------------|--------------------------------|
-| `GET` | `/api/network` | Read WiFi configuration | **CWE-200** — PSK leaked in plaintext (`raw` field) |
-| `POST` | `/api/network/wifi` | Change WiFi via IGP 0x06 | **CWE-78** — Shell injection payload via SSID field → RCE on Pi |
-| `POST` | `/api/config/preferences` | Write TLV preferences | **CWE-681** — Integer underflow in TLV parsing → potential stack BOF |
-| `POST` | `/api/config/thresholds` | Set clinical alert thresholds | **Patient safety** — BPM/spO₂ alarms silenced (bpm_min=0, spo2_min=0) |
-| `POST` | `/api/services/restart` | Restart init.d services | **DoS** — Medical sensor or BLE server stopped |
-| `GET` | `/api/logs` | Read device admin log | **CWE-200** — Internal firmware events and paths exposed |
-| `GET` | `/api/devices` | List all registered devices | **Privacy** — Other patients' MAC addresses and associations exposed |
-| `POST` | `/api/devices` | Register new device | **Integrity** — Rogue device MACs linked to arbitrary patients |
+| Method | Endpoint                  | Admin Function                | Impact When Accessed by Patient                                       |
+| ------ | ------------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| `POST` | `/api/config/thresholds`  | Set clinical alert thresholds | **Patient safety** — BPM/spO₂ alarms silenced (bpm_min=0, spo2_min=0) |
+
 
 ---
 

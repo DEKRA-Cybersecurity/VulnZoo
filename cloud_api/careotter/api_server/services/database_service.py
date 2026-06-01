@@ -79,6 +79,8 @@ class DatabaseService:
                     patient_username TEXT NOT NULL,
                     device_name TEXT,
                     auth_hash TEXT,
+                    device_ip TEXT,
+                    igp_port INTEGER DEFAULT 9999,
                     registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (patient_username) REFERENCES users(username)
                 );
@@ -236,6 +238,18 @@ class DatabaseService:
                 conn.execute("ALTER TABLE devices ADD COLUMN auth_hash TEXT")
                 conn.commit()
                 logger.info("[DB] Migration: auth_hash column added")
+
+            # Migration: add device_ip and igp_port to devices if missing
+            if 'device_ip' not in existing_devices:
+                logger.info("[DB] Migration: adding device_ip to devices")
+                conn.execute("ALTER TABLE devices ADD COLUMN device_ip TEXT")
+                conn.commit()
+                logger.info("[DB] Migration: device_ip column added")
+            if 'igp_port' not in existing_devices:
+                logger.info("[DB] Migration: adding igp_port to devices")
+                conn.execute("ALTER TABLE devices ADD COLUMN igp_port INTEGER DEFAULT 9999")
+                conn.commit()
+                logger.info("[DB] Migration: igp_port column added")
 
             # Migration: add profile_photo + display_name to users if missing
             existing_users = {row[1] for row in
@@ -399,7 +413,8 @@ class DatabaseService:
         return stored if stored.startswith(cls.HASH_PREFIX) else cls.HASH_PREFIX + stored
 
     def register_device(self, mac: str, patient_username: str,
-                        device_name: str = None, auth_hash: str = None) -> bool:
+                        device_name: str = None, auth_hash: str = None,
+                        device_ip: str = None, igp_port: int = None) -> bool:
         """Register a device MAC and associate it with a patient user.
         ``auth_hash`` is normalized via :meth:`canonical_hash` before insert."""
         mac = mac.upper()
@@ -407,15 +422,17 @@ class DatabaseService:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
-                    INSERT INTO devices (mac, patient_username, device_name, auth_hash)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO devices (mac, patient_username, device_name, auth_hash, device_ip, igp_port)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(mac) DO UPDATE SET
                         patient_username = excluded.patient_username,
                         device_name      = excluded.device_name,
-                        auth_hash        = COALESCE(excluded.auth_hash, auth_hash)
-                ''', (mac, patient_username, device_name, stored_hash))
+                        auth_hash        = COALESCE(excluded.auth_hash, auth_hash),
+                        device_ip        = COALESCE(excluded.device_ip, device_ip),
+                        igp_port         = COALESCE(excluded.igp_port, igp_port)
+                ''', (mac, patient_username, device_name, stored_hash, device_ip, igp_port))
                 conn.commit()
-                logger.info(f"[DB] Device registered: {mac} → {patient_username}")
+                logger.info(f"[DB] Device registered: {mac} → {patient_username} ip={device_ip}:{igp_port}")
                 return True
         except Exception as e:
             logger.error(f"[DB] Error registering device: {e}")
@@ -580,6 +597,21 @@ class DatabaseService:
             logger.error(f"[DB] Error fetching device by patient: {e}")
             return None
 
+    def update_device_ip(self, mac: str, device_ip: str, igp_port: int = 9999) -> bool:
+        """Update the IP and IGP port for a device identified by MAC."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'UPDATE devices SET device_ip = ?, igp_port = ? WHERE mac = ?',
+                    (device_ip, igp_port, mac.upper())
+                )
+                conn.commit()
+                logger.info(f"[DB] Updated device IP: {mac} → {device_ip}:{igp_port}")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error updating device IP for {mac}: {e}")
+            return False
+
     def get_devices_for_patient(self, username: str) -> List[Dict]:
         """Return devices for a patient (their own) or all devices for admin."""
         try:
@@ -613,6 +645,19 @@ class DatabaseService:
             logger.error(f"[DB] Error listing devices: {e}")
             return []
 
+    def list_devices_with_ip(self) -> List[Dict]:
+        """Return devices that have a non-null device_ip (reachable over network)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM devices WHERE device_ip IS NOT NULL AND device_ip != '' ORDER BY registered_at DESC"
+                ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] Error listing devices with IP: {e}")
+            return []
+
     # ── Signature-based device registration (WiFi-first provisioning) ────────
 
     EXPECTED_DEVICE_SIGNATURE = "9C0C306DEF2A"
@@ -643,12 +688,9 @@ class DatabaseService:
             self.create_or_update_user(patient_username, patient_password, 'patient')
             self.create_or_update_user(admin_username, admin_password, 'admin')
 
-            # Register / update device association
-            self.register_device(mac, patient_username, device_name, auth_hash=signature)
-
-            # Store the device's WiFi IP for vitals polling
-            self._set_config('device_ip', device_ip)
-            self._set_config('device_mac', mac.upper())
+            # Register / update device association with WiFi IP
+            self.register_device(mac, patient_username, device_name,
+                                 auth_hash=signature, device_ip=device_ip, igp_port=9999)
 
             logger.info(f"[DB] Device registered via signature: {mac} → patient={patient_username} admin={admin_username} ip={device_ip}")
             return True

@@ -15,7 +15,7 @@ affected_components:
   - "vulnzoo_apps/careotter_app/app/src/main/java/com/vulnzoo/careotter_app/IgpClient.java"
 verified_date: "2026-05-15"
 ---
-
+	
 # BLE-07 — Factory Provisioning Channel: Hidden Administrative Backdoor (M3)
 
 > **Status:** ✅ DONE

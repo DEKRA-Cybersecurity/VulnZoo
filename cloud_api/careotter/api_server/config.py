@@ -2,8 +2,9 @@
 config.py — CareOtter Cloud API configuration
 
 Environment variables allow adapting the API to different environments
-(development, lab, production). Default values point to the fixed device
-address used in the lab network (192.168.2.1).
+(development, lab, production). The device address is learned dynamically
+via POST /admin/device/register or the sensor /health endpoint — there is
+no fixed default address.
 
 INTENTIONAL VULNERABILITY:
     JWT_SECRET has a weak hardcoded default value.
@@ -17,9 +18,9 @@ import os
 class Config:
     # ── CareOtter device ───────────────────────────────────────────────────
     # Device IP: empty by default. The device registers dynamically via
-    # POST /admin/device/register sending its WiFi IP. The Cloud API learns
-    # the IP in real time instead of relying on a fixed Ethernet address
-    # (192.168.2.1).
+    # POST /admin/device/register sending its WiFi IP, or the Cloud API
+    # resolves it from the sensor /health endpoint. Per-device IPs are
+    # stored in the SQLite devices table (device_ip + igp_port columns).
     DEVICE_IP   = os.getenv('DEVICE_IP',   '')
     IGP_PORT    = int(os.getenv('IGP_PORT',  '9999'))
     HTTP_PORT   = int(os.getenv('HTTP_PORT', '8081'))

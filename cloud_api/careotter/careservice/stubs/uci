@@ -1,0 +1,4 @@
+#!/bin/sh
+# uci stub for careservice running in a standard Linux container.
+# careservice.c calls: uci set, uci commit
+exit 0

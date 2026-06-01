@@ -8,14 +8,6 @@ services:
     cpus: 1.0
     environment:
       - VULNERABLE=1
-      # DEVICE_IP starts empty on purpose. The CareOtter device IP is learned
-      # at runtime via either:
-      #   - POST /admin/device/register (BLE provisioning flow), or
-      #   - GET /initialize_iot (automatic Ethernet fallback to 192.168.2.1).
-      # Both write the IP into the SQLite `device_config` table and update
-      # Config.DEVICE_IP in memory. There is no assumption about which host
-      # interface reaches the Pi: kernel routing on the host (default gateway,
-      # wlan0/eth0/etc.) decides automatically because of network_mode: host.
       - DEVICE_IP=${DEVICE_IP:-}
       - IGP_PORT=${IGP_PORT:-9999}
       - HTTP_PORT=${HTTP_PORT:-8081}
@@ -23,35 +15,56 @@ services:
       - JWT_EXPIRATION_HOURS=8
       - PORT=5002
       - DB_PATH=/app/data/careotter.db
-      # Optional: auto-provision WiFi on the Pi during /initialize_iot via IGP
-      # over the Ethernet link. If set, the Cloud API pushes these credentials
-      # to careservice at 192.168.2.1:9999 so the Pi joins the WiFi network.
-      # If omitted, the Pi remains on Ethernet only.
       - WIFI_SSID=${WIFI_SSID:-}
       - WIFI_PSK=${WIFI_PSK:-}
-      # Host's WiFi-reachable IPv4 used by /api/health to advertise the cloud
-      # address back to the device. Required in bridge networking mode — the
-      # container cannot read host interfaces (wlan0, phy0-sta0, …) directly.
-      # Set it once before `docker compose up`:
-      #
-      #   export HOST_WIFI_IP=$(ip -4 -o addr show | \
-      #     awk '/wl|phy.*sta/{split($4,a,"/"); print a[1]; exit}')
-      #
-      # If unset and network_mode is bridge, /api/health returns wifi_ip=0.0.0.0.
       - HOST_WIFI_IP=${HOST_WIFI_IP:-}
     volumes:
-      # Persistent volume for the SQLite database
       - careotter_data:/app/data
-    # Host networking: container shares the host network stack so requests to
-    # the CareOtter Pi follow the host's normal routing table — typically the
-    # default-gateway interface (e.g. wlan0 → 192.168.1.0/24 via the home
-    # router) — without any hardcoded assumption about eth0 / 192.168.2.0/24.
-    # `ports:` is intentionally omitted — it is incompatible with host mode and
-    # the API is reachable directly on the host's PORT (5002) on every iface.
     ports:
       - "0.0.0.0:5002:5002"
+    networks:
+      - careotter-net
+    restart: unless-stopped
+    depends_on:
+      - careservice-alice
+      - careservice-bob
+
+  # ── Virtual CareOtter devices (identical careservice.c binary) ───────────────
+  # Each container runs the native x86_64 build of careservice.c with OpenWRT
+  # runtime stubs. They are reachable from the Cloud API over the internal
+  # Docker network at careservice-alice:9999 and careservice-bob:9999.
+  # These devices share the same hardcoded signature and vulnerabilities as
+  # the real Pi, enabling lateral-movement and multi-target attack scenarios.
+
+  careservice-alice:
+    build:
+      context: ../..
+      dockerfile: cloud_api/careotter/careservice/Dockerfile
+    container_name: careservice-alice
+    networks:
+      careotter-net:
+        aliases:
+          - careservice-alice
+    restart: unless-stopped
+
+  careservice-bob:
+    build:
+      context: ../..
+      dockerfile: cloud_api/careotter/careservice/Dockerfile
+    container_name: careservice-bob
+    networks:
+      careotter-net:
+        aliases:
+          - careservice-bob
     restart: unless-stopped
 
 volumes:
   careotter_data:
     driver: local
+
+networks:
+  careotter-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
