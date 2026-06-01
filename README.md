@@ -86,6 +86,40 @@ VulnZoo is designed to serve multiple communities:
 
 The ultimate goal of the project is to donate it to OWASP, ensuring neutral governance, global adoption, and community-led evolution. VulnZoo is not just a vulnerability lab: it is the first open-source infrastructure specifically designed to bridge offensive research with regulatory validation in the IoT space.
 
+## Repository Layout
+
+VulnZoo separates the **product** (the project that is shipped and runs on the Pi)
+from the **MWP development workspace** (the "factory" — the
+[Model Workspace Protocol](MWP.md) scaffolding used to build the project with AI
+agents). Both are committed to the repository.
+
+### The product — `src/`
+
+| Path | Role |
+|------|------|
+| `src/labs/` | OpenWRT base image (`vulnzoo`) + per-device lab overlays (`careotter`, `routcoon`, `owlcam`) packaged as `.tar.gz` |
+| `src/cloud_api/` | Dockerized backend APIs (Flask) that the devices and apps talk to |
+| `src/vulnzoo_apps/` | Android companion apps |
+| `src/docs/` | Lab documentation and vulnerability specifications |
+| `src/AGENTS.md`, `CLAUDE.md`, `KIMI.md`, `MWP_README.md` | In-project MWP navigation (global identity + per-agent entry points) |
+
+`src/` is the project itself — the only part that ships.
+
+### The MWP development workspace — repository root
+
+| Path | Role |
+|------|------|
+| `stages/` | Development pipeline: numbered MWP stages (`01_spec` → `02_implement` → `03_document` → `04_integrate`). The terminal stage **promotes** its outputs into `src/`; stage `output/` folders hold only intermediate work. |
+| `_config/` | Factory configuration: the vulnerability-doc template, authoring conventions, and the canonical `output/` → `src/` promotion map. |
+| `shared/` | Reference shared across all stages (glossary, device→doc-folder map, service ports). |
+| `setup/` | One-time setup questionnaire for a development cycle. |
+| `MWP.md` | The Model Workspace Protocol methodology paper. |
+| `CLAUDE.md` (root) | Agent entry shim that points to `src/AGENTS.md`. |
+
+**In short:** everything at the repository root is the apparatus for *developing*
+the project; `src/` is the project. Changes flow `stages/ → src/` through the
+`04_integrate` promotion contract — see [`stages/CONTEXT.md`](stages/CONTEXT.md).
+
 ## Project Images
 
 Once VulnZoo's image is flashed and running on the Raspberry Pi, a HTTP service will be running on http://192.168.2.1:8080. There is information about the project and laboratories.
