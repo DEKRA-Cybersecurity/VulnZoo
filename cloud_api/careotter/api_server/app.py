@@ -31,7 +31,7 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, m
 from config import Config
 from core.igp_client import IGPError
 from core.jwt_service import JWTService
-from core.decorators import token_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required, api_caregiver_required
+from core.decorators import token_required, admin_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required, api_caregiver_required
 from services.device_service import DeviceService
 from services.database_service import DatabaseService
 
@@ -100,17 +100,11 @@ try:
     db = DatabaseService()
     logger.info(f"[App] Database initialized at: {Config.DB_PATH}")
 
-    # Bootstrap DEVICE_IP from persisted DB value or Ethernet fallback.
-    # This lets the API talk to the Pi immediately without requiring an
-    # explicit /initialize_iot call on every container restart.
-    persisted_ip = db.get_device_ip() if db else ''
-    if persisted_ip:
-        Config.DEVICE_IP = persisted_ip
-        logger.info(f"[App] Restored DEVICE_IP from DB: {Config.DEVICE_IP}")
-    else:
-        eth_fallback = '192.168.2.1'
-        Config.DEVICE_IP = eth_fallback
-        logger.info(f"[App] No persisted device_ip — using Ethernet fallback: {Config.DEVICE_IP}")
+    # Per-device IP architecture: DEVICE_IP global is deprecated.
+    # Each device's WiFi IP is stored in the SQLite devices table
+    # (device_ip + igp_port) and resolved per-request from the JWT.
+    # The global Config.DEVICE_IP is kept only as a legacy fallback for
+    # code paths that have not yet migrated to per-device resolution.
 
     # NO default users are created at startup — the device must register itself
     # via POST /admin/device/register (or fallback GET /initialize_iot for lab operators).
@@ -121,96 +115,101 @@ except Exception as e:
     db = None
 
 # ── Device MAC resolution ─────────────────────────────────────────────────────
-# Fetched once at startup from the medical sensor's /health endpoint over Ethernet
-# (192.168.2.1:8081). The Raspberry Pi is always at that address via direct cable.
+# Per-device IP model: the background thread polls every device that has a
+# device_ip in the SQLite devices table. If the sensor /health reports a
+# different wifi_ip, the row is updated in-place.
 # Falls back to the env var DEFAULT_DEVICE_MAC so the API still works in dev/CI.
 
 DEVICE_MAC: str = os.getenv('DEFAULT_DEVICE_MAC', 'AA:BB:CC:DD:EE:FF')
 
 
 def _fetch_device_mac() -> None:
-    """Periodic background resolver for DEVICE_MAC + DEVICE_IP.
+    """Periodic background resolver for DEVICE_MAC + per-device IPs.
 
     Runs forever in a daemon thread. Each tick:
-      1. Polls the sensor ``/health`` on the currently known ``Config.DEVICE_IP``.
-      2. If ``mac`` is reported, updates the module-level ``DEVICE_MAC``.
-      3. If ``wifi_ip`` (or legacy ``wlan0_ip``) is non-zero AND differs from
-         the current ``Config.DEVICE_IP``, promotes it so subsequent IGP / sensor
-         calls flow over WiFi instead of the bootstrap Ethernet link.
-
-    Why periodic and not one-shot at startup: the Pi may join WiFi *after* the
-    cloud container is already up (admin pushes credentials via
-    ``/api/network/wifi`` later, or BLE provisioning happens minutes after
-    boot). A single attempt at startup misses every one of those cases.
+      1. Queries the SQLite devices table for every row with a non-null
+         ``device_ip``.
+      2. Polls ``/health`` on each IP to detect WiFi roaming.
+      3. If ``wifi_ip`` (or legacy ``wlan0_ip``) differs from the stored
+         ``device_ip``, updates the row in-place so subsequent IGP calls
+         target the correct address.
+      4. Updates the module-level ``DEVICE_MAC`` from the first reachable
+         device.
     """
     global DEVICE_MAC
-    INTERVAL_OK = 60        # seconds between checks when we already know the IP
-    INTERVAL_RETRY = 10     # seconds between checks when Pi was unreachable
+    INTERVAL_OK = 60
+    INTERVAL_RETRY = 10
     while True:
-        if not Config.DEVICE_IP:
-            logger.debug("[Device] No DEVICE_IP yet — waiting for /admin/device/register or /initialize_iot")
+        if not db:
             time.sleep(INTERVAL_RETRY)
             continue
-        sensor_url = f"http://{Config.DEVICE_IP}:{Config.HTTP_PORT}/health"
         try:
-            resp = http_requests.get(sensor_url, timeout=3)
-            resp.raise_for_status()
-            payload = resp.json() or {}
-            mac = payload.get('mac', '').upper()
-            if mac and mac != '00:00:00:00:00:00' and mac != DEVICE_MAC:
-                DEVICE_MAC = mac
-                logger.info(f"[Device] Resolved MAC from sensor: {DEVICE_MAC}")
-            wlan_ip = payload.get('wifi_ip') or payload.get('wlan0_ip', '0.0.0.0')
-            if wlan_ip and wlan_ip != '0.0.0.0' and wlan_ip != Config.DEVICE_IP:
-                old_ip = Config.DEVICE_IP
-                Config.DEVICE_IP = wlan_ip
-                try:
-                    if db:
-                        db._set_config('device_ip', wlan_ip)
-                except Exception as e:
-                    logger.warning(f"[Device] Could not persist device_ip to DB: {e}")
-                logger.info(
-                    f"[Device] DEVICE_IP promoted {old_ip} -> {wlan_ip} "
-                    f"(iface={payload.get('wifi_iface', '?')} via sensor /health)"
-                )
-            time.sleep(INTERVAL_OK)
+            devices_with_ip = db.list_devices_with_ip()
         except Exception as e:
-            logger.debug(f"[Device] Sensor /health unreachable at {sensor_url}: {e}")
+            logger.debug(f"[Device] Could not list devices with IP: {e}")
             time.sleep(INTERVAL_RETRY)
+            continue
+
+        if not devices_with_ip:
+            logger.debug("[Device] No devices with IP yet — waiting for registration")
+            time.sleep(INTERVAL_RETRY)
+            continue
+
+        reachable = False
+        for dev in devices_with_ip:
+            ip = dev.get('device_ip')
+            mac = dev.get('mac', '').upper()
+            if not ip:
+                continue
+            sensor_url = f"http://{ip}:{Config.HTTP_PORT}/health"
+            try:
+                resp = http_requests.get(sensor_url, timeout=3)
+                resp.raise_for_status()
+                payload = resp.json() or {}
+                reported_mac = payload.get('mac', '').upper()
+                if reported_mac and reported_mac != '00:00:00:00:00:00' and reported_mac != DEVICE_MAC:
+                    DEVICE_MAC = reported_mac
+                    logger.info(f"[Device] Resolved MAC from sensor: {DEVICE_MAC}")
+                wlan_ip = payload.get('wifi_ip') or payload.get('wlan0_ip', '0.0.0.0')
+                if wlan_ip and wlan_ip != '0.0.0.0' and wlan_ip != ip:
+                    db.update_device_ip(mac, wlan_ip, dev.get('igp_port', 9999))
+                    logger.info(
+                        f"[Device] Device IP updated {mac}: {ip} -> {wlan_ip} "
+                        f"(iface={payload.get('wifi_iface', '?')} via sensor /health)"
+                    )
+                    # Legacy: also update global Config.DEVICE_IP for backward compat
+                    Config.DEVICE_IP = wlan_ip
+                reachable = True
+            except Exception as e:
+                logger.debug(f"[Device] Sensor /health unreachable at {sensor_url}: {e}")
+
+        time.sleep(INTERVAL_OK if reachable else INTERVAL_RETRY)
 
 
 # Start MAC resolution immediately but don't block Flask startup
 threading.Thread(target=_fetch_device_mac, daemon=True).start()
 
 
-def _refresh_device_ip_from_sensor(attempts: int = 8, delay: float = 1.5) -> str | None:
-    """Poll the sensor /health endpoint until wlan0 reports a non-zero IPv4,
-    then promote that address to ``Config.DEVICE_IP`` and persist it.
+def _refresh_device_ip_from_sensor(host: str = None, attempts: int = 8, delay: float = 1.5) -> str | None:
+    """Poll the sensor /health endpoint until wlan0 reports a non-zero IPv4.
 
     Called after a successful IGP 0x06 SET_WIFI so subsequent cloud→device
-    traffic flows over the freshly provisioned WiFi link instead of the
-    bootstrap Ethernet path. The Pi's eth0 stays up during ``wifi reload``,
-    so polling on the current ``Config.DEVICE_IP`` (Ethernet) is safe until
-    we know the WiFi IP. Returns the new IP or ``None`` on timeout.
+    traffic flows over the freshly provisioned WiFi link. Returns the new IP
+    or ``None`` on timeout.
     """
-    sensor_url = f"http://{Config.DEVICE_IP}:{Config.HTTP_PORT}/health"
+    target = host or Config.DEVICE_IP
+    if not target:
+        logger.warning("[set_wifi] No host available to poll /health")
+        return None
+    sensor_url = f"http://{target}:{Config.HTTP_PORT}/health"
     for attempt in range(1, attempts + 1):
         try:
             resp = http_requests.get(sensor_url, timeout=3)
             resp.raise_for_status()
             payload = resp.json() or {}
-            # Prefer driver-agnostic ``wifi_ip`` (new sensor); fall back to
-            # legacy ``wlan0_ip`` for older firmware images that still hardcode
-            # the interface name.
             wlan_ip = payload.get('wifi_ip') or payload.get('wlan0_ip', '0.0.0.0')
             if wlan_ip and wlan_ip != '0.0.0.0':
-                old_ip = Config.DEVICE_IP
-                Config.DEVICE_IP = wlan_ip
-                try:
-                    db._set_config('device_ip', wlan_ip)
-                except Exception as e:
-                    logger.warning(f"[set_wifi] Could not persist device_ip to DB: {e}")
-                logger.info(f"[set_wifi] Device IP refreshed: {old_ip} -> {wlan_ip} (via sensor /health)")
+                logger.info(f"[set_wifi] Device IP refreshed: {target} -> {wlan_ip} (via sensor /health)")
                 return wlan_ip
             logger.debug(f"[set_wifi] /health attempt {attempt}/{attempts}: wlan0 still 0.0.0.0")
         except Exception as e:
@@ -226,6 +225,31 @@ def _refresh_device_ip_from_sensor(attempts: int = 8, delay: float = 1.5) -> str
 # reference it; it is no longer populated by a background collector.
 _latest_vitals: dict = {}
 _latest_vitals_lock = threading.Lock()
+
+
+# ── Per-device IGP resolution helper ──────────────────────────────────────────
+
+def _get_device_for_current_user() -> tuple[str | None, int | None, dict | None]:
+    """Resolve the IGP endpoint (host, port, device_row) for the authenticated user.
+
+    Reads ``g.current_user`` (set by ``@token_required``), looks up the user's
+    device in the ``devices`` table, and returns ``(device_ip, igp_port, row)``.
+    If the user has no associated device, returns ``(None, None, None)``.
+    """
+    payload = g.current_user if hasattr(g, 'current_user') else None
+    if not payload:
+        return None, None, None
+    username = payload.get('sub') or payload.get('username', '')
+    if not username or not db:
+        return None, None, None
+    device_row = db.get_device_by_patient(username)
+    if not device_row:
+        return None, None, None
+    return (
+        device_row.get('device_ip'),
+        device_row.get('igp_port', 9999),
+        device_row
+    )
 
 
 # ── Brute-force protection for /api/devices/register-by-hash ─────────────────
@@ -285,6 +309,8 @@ _CLOUD_SIM_DEVICES = [
         'device_name':      'CareOtter_HR (cloud-sim:alice)',
         'baseline_bpm':     74,
         'baseline_spo2':    98,
+        'device_ip':        'careservice-alice',
+        'igp_port':         9999,
     },
     {
         'mac':              '02:CE:01:00:00:02',
@@ -292,6 +318,8 @@ _CLOUD_SIM_DEVICES = [
         'device_name':      'CareOtter_HR (cloud-sim:bob)',
         'baseline_bpm':     68,
         'baseline_spo2':    97,
+        'device_ip':        'careservice-bob',
+        'igp_port':         9999,
     },
 ]
 CLOUD_SIM_INTERVAL = 10   # seconds between inserts (matches Pi cron cadence)
@@ -372,7 +400,9 @@ def _ensure_cloud_sim_devices() -> None:
     for d in _CLOUD_SIM_DEVICES:
         db.register_device(
             d['mac'], d['patient_username'], d['device_name'],
-            auth_hash=None,  # virtual: no factory signature
+            auth_hash=None,
+            device_ip=d.get('device_ip'),
+            igp_port=d.get('igp_port', 9999),
         )
         # Enforce single-device-per-patient — drop any legacy demo row that
         # earlier seeds left behind so the patient dashboard never shows two
@@ -1254,14 +1284,14 @@ def user_devices():
 # ── Devices ───────────────────────────────────────────────────────────────────
 
 @app.route('/api/devices', methods=['GET'])
-@token_required
+@admin_required
 def list_devices():
     """List all registered devices with their patient owner. Requires JWT."""
     return jsonify({'devices': db.list_devices()}), 200
 
 
 @app.route('/api/devices', methods=['POST'])
-@token_required
+@admin_required
 def register_device():
     """Register or update a device MAC → patient association. Requires JWT.
 
@@ -1288,7 +1318,7 @@ def register_device():
 
 
 @app.route('/api/devices/<mac>', methods=['GET'])
-@token_required
+@admin_required
 def get_device(mac):
     """Get device info and patient owner by MAC. Requires JWT."""
     device = db.get_device(mac)
@@ -1394,7 +1424,7 @@ def caregiver_patient_vitals(username):
 # ── Network ───────────────────────────────────────────────────────────────────
 
 @app.route('/api/network')
-@token_required
+@admin_required
 def get_network():
     """
     IGP 0x03 — Active network configuration. Requires JWT.
@@ -1403,10 +1433,13 @@ def get_network():
     /etc/config/wireless content, including WiFi PSK in plaintext. In vuln=0
     that field is omitted from the response.
     """
+    ip, port, _ = _get_device_for_current_user()
+    if not ip:
+        return jsonify({'error': 'No device associated with this account'}), 404
     try:
-        config = device.get_network_config()
+        svc = DeviceService(host=ip, port=port)
+        config = svc.get_network_config()
         if vuln != 1:
-            # Safe mode: do not expose raw field with PSK
             config.pop('raw', None)
         return jsonify(config), 200
     except IGPError as e:
@@ -1414,7 +1447,7 @@ def get_network():
 
 
 @app.route('/api/network/wifi', methods=['POST'])
-@token_required
+@admin_required
 def set_wifi():
     """
     IGP 0x06 — Configures WiFi SSID and password. Requires JWT.
@@ -1428,28 +1461,27 @@ def set_wifi():
     if not ssid or not password:
         return jsonify({'error': 'Fields "ssid" and "password" required'}), 400
 
+    ip, port, dev_row = _get_device_for_current_user()
+    if not ip:
+        return jsonify({'error': 'No device associated with this account'}), 404
+
     try:
-        result = device.set_wifi(ssid, password)
+        svc = DeviceService(host=ip, port=port)
+        result = svc.set_wifi(ssid, password)
     except IGPError as e:
         return jsonify({'error': str(e)}), 503
 
-    # After a successful wifi reload on the Pi, wlan0 picks up an address from
-    # the new network. Poll sensor /health (still reachable over the Ethernet
-    # bootstrap link) to learn that IP and switch Config.DEVICE_IP so every
-    # subsequent IGP / sensor call from the cloud takes the WiFi path.
-    # IGP itself does NOT expose runtime interface IPs (see careservice.c —
-    # 0x03 GET_NETWORK only returns /etc/config/wireless), hence the side
-    # channel via the sensor's unauthenticated /health.
     if result.get('success'):
-        new_ip = _refresh_device_ip_from_sensor()
-        if new_ip:
+        new_ip = _refresh_device_ip_from_sensor(host=ip)
+        if new_ip and db and dev_row:
+            db.update_device_ip(dev_row['mac'], new_ip, port or 9999)
             result['device_ip'] = new_ip
             result['device_ip_refreshed'] = True
         else:
             result['device_ip_refreshed'] = False
             result['device_ip_warning'] = (
                 'wlan0 IP not yet visible via sensor /health within timeout; '
-                'Config.DEVICE_IP left unchanged. Re-trigger /api/network/wifi '
+                'device_ip left unchanged. Re-trigger /api/network/wifi '
                 'or POST /initialize_iot once the device joins the WiFi.'
             )
 
@@ -1470,7 +1502,7 @@ def set_wifi():
 # ── Device Configuration ──────────────────────────────────────────────────────
 
 @app.route('/api/config/preferences', methods=['POST'])
-@token_required
+@admin_required
 def set_preferences():
     """
     IGP 0x04 — App preferences in TLV format. Requires JWT.
@@ -1494,8 +1526,12 @@ def set_preferences():
     except ValueError:
         return jsonify({'error': 'tlv_hex is not valid hexadecimal'}), 400
 
+    ip, port, _ = _get_device_for_current_user()
+    if not ip:
+        return jsonify({'error': 'No device associated with this account'}), 404
     try:
-        result = device.set_preferences(tlv_bytes)
+        svc = DeviceService(host=ip, port=port)
+        result = svc.set_preferences(tlv_bytes)
         return jsonify(result), 200
     except IGPError as e:
         return jsonify({'error': str(e)}), 503
@@ -1517,8 +1553,12 @@ def set_thresholds():
     bpm_max  = int(data.get('bpm_max',  120))
     spo2_min = int(data.get('spo2_min',  90))
 
+    ip, port, _ = _get_device_for_current_user()
+    if not ip:
+        return jsonify({'error': 'No device associated with this account'}), 404
     try:
-        result = device.set_thresholds(bpm_min, bpm_max, spo2_min)
+        svc = DeviceService(host=ip, port=port)
+        result = svc.set_thresholds(bpm_min, bpm_max, spo2_min)
         return jsonify(result), 200
     except IGPError as e:
         return jsonify({'error': str(e)}), 503
@@ -1527,7 +1567,7 @@ def set_thresholds():
 # ── System Services ───────────────────────────────────────────────────────────
 
 @app.route('/api/services/restart', methods=['POST'])
-@token_required
+@admin_required
 def restart_service():
     """
     IGP 0x09 — Restarts a device init.d service. Requires JWT.
@@ -1541,21 +1581,29 @@ def restart_service():
     if not service:
         return jsonify({'error': 'Field "service" required'}), 400
 
+    ip, port, _ = _get_device_for_current_user()
+    if not ip:
+        return jsonify({'error': 'No device associated with this account'}), 404
     try:
-        result = device.restart_service(service)
+        svc = DeviceService(host=ip, port=port)
+        result = svc.restart_service(service)
         return jsonify(result), 200
     except IGPError as e:
         return jsonify({'error': str(e)}), 503
 
 
 @app.route('/api/logs')
-@token_required
+@admin_required
 def get_logs():
     """
     IGP 0x0A — Last 512 bytes of device log. Requires JWT.
     """
+    ip, port, _ = _get_device_for_current_user()
+    if not ip:
+        return jsonify({'error': 'No device associated with this account'}), 404
     try:
-        result = device.get_log()
+        svc = DeviceService(host=ip, port=port)
+        result = svc.get_log()
         return jsonify(result), 200
     except IGPError as e:
         return jsonify({'error': str(e)}), 503
@@ -1623,6 +1671,7 @@ def hint():
 # ── Device registration (signature-based, WiFi-first) ─────────────────────────
 
 @app.route('/admin/device/register', methods=['POST'])
+@admin_required
 def device_register():
     """Receive device registration from the bedside monitor after BLE provisioning.
 
@@ -1696,7 +1745,7 @@ def initialize_iot():
                      'Use /admin/device/register for signature-based registration.'
         }), 409
 
-    # ── Ethernet fallback (direct cable) ───────────────────────────────────────
+    # ── Bootstrap IP: prefer env var, then Ethernet fallback ──────────────────
     eth_ip = '192.168.2.1'
     device_ip = Config.DEVICE_IP or eth_ip
 
@@ -1704,8 +1753,6 @@ def initialize_iot():
     db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
     db.create_or_update_user('john_doe', 'johnny123', 'patient')
     db.create_or_update_user('care_john', 'Caregiver2026!', 'caregiver')
-    db._set_config('device_ip', device_ip)
-    Config.DEVICE_IP = device_ip
 
     # ── Seed the real Pi device ───────────────────────────────────────────────
     # alice_g67 and genuinebob49 are seeded by ``_ensure_cloud_sim_devices``
@@ -1713,7 +1760,7 @@ def initialize_iot():
     # per patient — no duplicate "demo" placeholders).
     pi_mac = '00:00:00:00:00:00'
     try:
-        h = http_requests.get(f"http://{eth_ip}:{Config.HTTP_PORT}/health", timeout=2)
+        h = http_requests.get(f"http://{device_ip}:{Config.HTTP_PORT}/health", timeout=2)
         h.raise_for_status()
         detected = (h.json() or {}).get('mac', '').upper()
         if detected and detected != '00:00:00:00:00:00':
@@ -1727,13 +1774,14 @@ def initialize_iot():
         'auth_hash':        db.EXPECTED_DEVICE_SIGNATURE,  # "9C0C306DEF2A"
         'device_name':      'CareOtter_HR',
         'patient_username': '',
-        'ip':               eth_ip,
+        'ip':               device_ip,
     }
 
     seeded = []
     ok = db.register_device(
         pi_device['mac'], pi_device['patient_username'],
-        pi_device['device_name'], auth_hash=pi_device['auth_hash']
+        pi_device['device_name'], auth_hash=pi_device['auth_hash'],
+        device_ip=device_ip, igp_port=9999
     )
     seeded.append({
         'mac':              pi_device['mac'],
@@ -1750,19 +1798,19 @@ def initialize_iot():
 
     if wifi_ssid and wifi_psk:
         try:
-            # Force IGP traffic through the Ethernet link for this bootstrap step
+            # Force IGP traffic through the bootstrap link for this one-shot step
             original_ip = Config.DEVICE_IP
-            Config.DEVICE_IP = eth_ip
+            Config.DEVICE_IP = device_ip
             eth_device = DeviceService()
             wifi_result = eth_device.set_wifi(wifi_ssid, wifi_psk)
             Config.DEVICE_IP = original_ip
             logger.info(
-                f"[App] /initialize_iot pushed WiFi credentials to {eth_ip}: "
+                f"[App] /initialize_iot pushed WiFi credentials to {device_ip}: "
                 f"{wifi_result}"
             )
         except Exception as e:
             logger.warning(
-                f"[App] /initialize_iot WiFi push to {eth_ip} failed "
+                f"[App] /initialize_iot WiFi push to {device_ip} failed "
                 f"(device may be offline or careservice not running): {e}"
             )
             wifi_result = {'error': str(e), 'success': False}

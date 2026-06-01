@@ -28,20 +28,28 @@ class DeviceService:
     # Hardcoded IGP admin token on the device (intentional vulnerability)
     _ADMIN_TOKEN = "OtterMobile2026"
 
-    # Serializes the auth→cmd→deauth blocks for Cloud API requests.
-    # Class attribute — shared by all instances.
-    _igp_lock = threading.Lock()
+    def __init__(self, host: str = None, port: int = None):
+        """
+        Create a DeviceService bound to a specific IGP endpoint.
 
-    def __init__(self):
+        If ``host`` is None, falls back to ``Config.DEVICE_IP`` for backward
+        compatibility with code that still relies on the global default.
+        In the multi-device architecture every caller should supply the
+        patient's device IP explicitly.
+        """
+        self._host = host
+        self._port = port
         self._igp = None
-        self._last_ip = None
+        self._last_host = None
+        self._igp_lock = threading.Lock()
 
     def _ensure_igp(self):
-        """Recreate IGPClient if DEVICE_IP has changed since the last use."""
-        current_ip = Config.DEVICE_IP
-        if self._igp is None or self._last_ip != current_ip:
-            self._igp = IGPClient()
-            self._last_ip = current_ip
+        """Recreate IGPClient if the bound host/port has changed."""
+        target_host = self._host or Config.DEVICE_IP
+        target_port = self._port or Config.IGP_PORT
+        if self._igp is None or self._last_host != target_host or self._igp.port != target_port:
+            self._igp = IGPClient(host=target_host, port=target_port)
+            self._last_host = target_host
 
     def _exec_protected(self, method_name: str, *args, **kwargs):
         """

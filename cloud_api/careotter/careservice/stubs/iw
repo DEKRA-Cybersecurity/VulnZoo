@@ -1,0 +1,5 @@
+#!/bin/sh
+# iw stub for careservice running in a standard Linux container.
+# careservice.c calls: iw dev <iface> link (after SET_WIFI to verify association).
+# Pretend the interface exists and is connected.
+exit 0

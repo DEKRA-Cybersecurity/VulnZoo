@@ -1,23 +1,22 @@
 ---
-id: API-01
-title: "Broken Object Level Authorization (BOLA) via Cross-User Vitals Access"
+id: API1:2023
+title: Broken Object Level Authorization (BOLA) via Cross-User Vitals Access
 category: API
-status: COMPLETADA
+status: DONE
 severity: High
-owasp: "API1:2023 — Broken Object Level Authorization"
-cwe: "CWE-639 (Authorization Bypass Through User-Controlled Key) / CWE-863"
+owasp: API1:2023 — Broken Object Level Authorization
+cwe: CWE-639 (Authorization Bypass Through User-Controlled Key) / CWE-863
 source_docs:
-  - "CareOtter_Test_Suite.md §API-01"
-  - "CareOtter_API.md Vulnerability Surface"
+  - CareOtter_Test_Suite.md §API-01
+  - CareOtter_API.md Vulnerability Surface
 affected_components:
-  - "cloud_api/careotter/api_server/app.py"
-  - "cloud_api/careotter/api_server/services/database_service.py"
-verified_date: "2026-05-18"
+  - cloud_api/careotter/api_server/app.py
+  - cloud_api/careotter/api_server/services/database_service.py
+verified_date: 2026-05-18
 ---
 ****
-# API-01 — Broken Object Level Authorization (BOLA) via Cross-User Vitals Access
+# API1 — Broken Object Level Authorization (BOLA) via Cross-User Vitals Access
 
-> **Status:** ✅ DONE  
 > **Source docs:** `CareOtter_Test_Suite.md` §API-01, `CareOtter_API.md` Vulnerability Surface  
 > **OWASP:** API1:2023 — Broken Object Level Authorization  
 > **CWE:** CWE-639 (Authorization Bypass Through User-Controlled Key) / CWE-863  

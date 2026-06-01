@@ -1,0 +1,4 @@
+#!/bin/sh
+# wifi stub for careservice running in a standard Linux container.
+# careservice.c calls: wifi reload
+exit 0
