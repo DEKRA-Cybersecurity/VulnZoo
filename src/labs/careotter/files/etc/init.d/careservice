@@ -55,8 +55,18 @@ start_service() {
 
     logger -t careservice "Starting CareOtter Admin Service on port 9999"
 
+    # API4:2023 secure-mode toggle for the careservice command channel.
+    # Source of truth: UCI option careotter.@careotter[0].secure_mode (1 = secure,
+    # rate limiting ON). Defaults to 0 (VULNERABLE) when unset, preserving the
+    # lab's out-of-the-box vulnerable behavior. This is the careotter device's
+    # first secure/vulnerable toggle; the binary reads CARESERVICE_SECURE.
+    CARESERVICE_SECURE=$(uci -q get careotter.@careotter[0].secure_mode 2>/dev/null)
+    [ "$CARESERVICE_SECURE" = "1" ] || CARESERVICE_SECURE=0
+    logger -t careservice "secure_mode=$CARESERVICE_SECURE (API4 command-channel rate limiting)"
+
     procd_open_instance
     procd_set_param command "$PROG"
+    procd_set_param env CARESERVICE_SECURE="$CARESERVICE_SECURE"
     # respawn <threshold> <timeout> <retry>
     #   threshold = 3600s — long crash-counting window
     #   timeout   = 5s    — wait before respawn

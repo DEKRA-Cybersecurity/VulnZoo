@@ -20,7 +20,7 @@ IGP authentication pattern:
 import struct
 import threading
 from config import Config
-from core.igp_client import IGPClient, IGPError
+from core.igp_client import IGPClient, IGPError, MAGIC, IGP_HEADER_FMT
 
 
 class DeviceService:
@@ -191,13 +191,20 @@ class DeviceService:
         tlv += struct.pack('>BBB',  0xCC, 1, spo2_min)
         raw  = self._exec_protected('set_threshold', tlv)
         text = raw.decode('utf-8', errors='replace').strip()
+        # The exact IGP request frame IGPClient._build_header() sends for 0x08:
+        # 8-byte header (begins with MAGIC 0x43415245 = "CARE") + the TLV.
+        igp_frame = struct.pack(IGP_HEADER_FMT, MAGIC, 0x08, 0x00, len(tlv)) + tlv
         return {
             'result': text,
             'thresholds': {
                 'bpm_min':  bpm_min,
                 'bpm_max':  bpm_max,
                 'spo2_min': spo2_min
-            }
+            },
+            # INFO DISCLOSURE (stripped by the endpoint unless VULNERABLE=1):
+            # leaks the raw IGP request frame. Chains API6 BFLA → API4 — the first
+            # 4 bytes reveal the protocol MAGIC needed to craft valid frames.
+            'igp_request': igp_frame.hex()
         }
 
     def get_thresholds(self) -> dict:

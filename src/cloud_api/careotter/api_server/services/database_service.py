@@ -65,6 +65,9 @@ class DatabaseService:
                     role TEXT NOT NULL DEFAULT 'user',
                     display_name TEXT,
                     profile_photo TEXT,            -- base64 data URI
+                    email TEXT,                    -- contact PII (caregiver)
+                    phone TEXT,                    -- contact PII (caregiver)
+                    address TEXT,                  -- contact PII (caregiver)
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -265,6 +268,15 @@ class DatabaseService:
                 conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
                 conn.commit()
 
+            # Migration: add caregiver contact PII columns if missing.
+            # These private fields are over-exposed to patients by
+            # get_caregivers_for_patient() — see API3:2023 BOPLA in that method.
+            for _pii_col in ('email', 'phone', 'address'):
+                if _pii_col not in existing_users:
+                    logger.info(f"[DB] Migration: adding {_pii_col} to users")
+                    conn.execute(f"ALTER TABLE users ADD COLUMN {_pii_col} TEXT")
+                    conn.commit()
+
             # Migration: create caregiver_assignments if missing
             existing_tables = {row[0] for row in
                         conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
@@ -337,7 +349,31 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error upserting user: {e}")
             return False
-    
+
+    def set_user_pii(self, username: str, display_name: str = None,
+                     email: str = None, phone: str = None, address: str = None,
+                     profile_photo: str = None) -> bool:
+        """Set personal/contact info on a user. Used to seed caregiver PII for the
+        lab so the API3 BOPLA leak exposes real personal data. Only non-None
+        fields are updated. Column names are a fixed allow-list (no user input)."""
+        fields = {'display_name': display_name, 'email': email, 'phone': phone,
+                  'address': address, 'profile_photo': profile_photo}
+        updates = {k: v for k, v in fields.items() if v is not None}
+        if not updates:
+            return False
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                set_clause = ', '.join(f"{k} = ?" for k in updates)
+                conn.execute(
+                    f"UPDATE users SET {set_clause} WHERE username = ?",
+                    (*updates.values(), username))
+                conn.commit()
+                logger.info(f"[DB] PII set for user {username}: {', '.join(updates)}")
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error setting user PII: {e}")
+            return False
+
     def get_user_by_username(self, username: str) -> Optional[Dict]:
         """
         Gets a user by username.
@@ -842,13 +878,30 @@ class DatabaseService:
             return False
 
     def get_caregivers_for_patient(self, patient_username: str) -> List[Dict]:
-        """Return all caregivers assigned to a patient."""
+        """Return all caregivers assigned to a patient. Object scope is correct:
+        only the caller's own assignments (WHERE ca.patient_username = ?).
+
+        VULNERABILITY (API3:2023 BOPLA — Broken Object Property Level Authorization):
+        the projection over-exposes the caregiver object's *properties*. Beyond the
+        assignment fields, it leaks the caregiver's private PII (display_name, email,
+        phone, address, profile_photo) and internal fields (caregiver_id,
+        password_hash). Object-level authorization is intact, but a patient must not
+        be able to read these caregiver properties. The /api/patient/caregivers route
+        strips them back to a safe whitelist only when VULNERABLE != 1.
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute('''
                     SELECT ca.id, ca.caregiver_username, ca.patient_username, ca.created_at,
-                           u.role
+                           u.role,
+                           u.id            AS caregiver_id,
+                           u.display_name,
+                           u.email,
+                           u.phone,
+                           u.address,
+                           u.profile_photo,
+                           u.password_hash
                     FROM caregiver_assignments ca
                     JOIN users u ON ca.caregiver_username = u.username
                     WHERE ca.patient_username = ?

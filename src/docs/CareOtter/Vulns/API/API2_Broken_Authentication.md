@@ -146,7 +146,7 @@ ffuf -u http://localhost:5002/api/auth/login/patient \
   -mc all
 ```
 
-![[API-02-brute_force_john_doe.png]]
+![[api2-brute_force_john_doe.png]]
 
 ---
 ### 2. Perform sensitive operation without password confirmation
