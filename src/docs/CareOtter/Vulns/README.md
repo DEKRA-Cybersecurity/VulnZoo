@@ -31,6 +31,8 @@ Each file contains a YAML frontmatter block for automated parsing, followed by h
 | [IGP-01](IoT/IGP-01_Hardcoded_Credential.md) | Hardcoded Credential (`OtterMobile2026`) | IoT | ✅ DONE | Critical | CWE-798 |
 | [API-01](API1_BOLA.md) | Broken Object Level Authorization (BOLA) — Cross-User Vitals Access | API | ✅ DONE | High | CWE-639 / CWE-863 |
 | [API-02](API2_Broken_Authentication.md) | Broken Authentication | API | ✅ DONE | High | CWE-287 / CWE-308 / CWE-759 |
+| [API-03](API3_BOPLA.md) | Broken Object Property Level Authorization (BOPLA) — Patient Discovers Caregiver PII | API | ✅ DONE | High | CWE-213 / CWE-359 / CWE-200 |
+| [API-04](API4_Unrestricted_Resource_Consumption.md) | Unrestricted Resource Consumption — careservice command-channel flood | API | ✅ DONE | High | CWE-770 / CWE-400 / CWE-799 |
 | [API-06](API6_BFLA.md) | Broken Function Level Authorization (BFLA) | API | ✅ DONE | High | CWE-863 |
 | [BLE-07](Mobile/BLE-07_CSCP_Threshold_Forging.md) | CSCP v1 Threshold Forging (M3) | Mobile | ✅ DONE | Critical | CWE-306 / CWE-20 |
 

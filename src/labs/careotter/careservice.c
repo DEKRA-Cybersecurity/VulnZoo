@@ -35,6 +35,59 @@ typedef struct {
 /* Auth state global — persists between connections (embedded design flaw) */
 int authenticated = 0;
 
+/* ── API4:2023 secure-mode rate limiting (per-source-IP token bucket) ──────────
+ * Active ONLY when the environment variable CARESERVICE_SECURE=1 (set by the
+ * init.d launcher). Default (unset/0) = VULNERABLE: no throttling at all, so a
+ * connection-flood of this serial command channel starves legitimate IGP/admin
+ * traffic — OWASP API4:2023 (Unrestricted Resource Consumption). */
+static int secure_mode = 0;
+
+#define RL_MAX_IPS  64
+#define RL_RATE     5.0    /* sustained connections/sec allowed per source IP */
+#define RL_BURST    10.0   /* bucket capacity (instantaneous burst)           */
+
+typedef struct {
+    uint32_t ip;      /* network-order source addr; 0 marks a free slot */
+    double   tokens;
+    double   last;    /* last-seen time, seconds (gettimeofday)         */
+} rl_entry_t;
+static rl_entry_t rl_table[RL_MAX_IPS];   /* zero-initialised = all slots free */
+
+static double rl_now(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
+}
+
+/* Token-bucket admission for a source IP. Returns 1 = allow, 0 = reject.
+ * New IPs start with a full bucket; on table overflow the least-recently-seen
+ * slot is evicted. Single-threaded server, so no locking is needed. */
+static int rl_allow(uint32_t ip) {
+    double t = rl_now();
+    rl_entry_t *e = NULL, *oldest = &rl_table[0];
+    for (int i = 0; i < RL_MAX_IPS; i++) {
+        if (rl_table[i].ip != 0 && rl_table[i].ip == ip) { e = &rl_table[i]; break; }
+        if (rl_table[i].ip == 0) {                 /* claim a free slot */
+            e = &rl_table[i];
+            e->ip = ip; e->tokens = RL_BURST; e->last = t;
+            break;
+        }
+        if (rl_table[i].last < oldest->last) oldest = &rl_table[i];
+    }
+    if (!e) {                                       /* table full: evict LRU */
+        e = oldest;
+        e->ip = ip; e->tokens = RL_BURST; e->last = t;
+    }
+    double elapsed = t - e->last;                   /* refill */
+    if (elapsed > 0) {
+        e->tokens += elapsed * RL_RATE;
+        if (e->tokens > RL_BURST) e->tokens = RL_BURST;
+        e->last = t;
+    }
+    if (e->tokens >= 1.0) { e->tokens -= 1.0; return 1; }
+    return 0;
+}
+
 /* ── Internal utilities ──────────────────────────────────────────────────── */
 
 static void log_event(const char *msg) {
@@ -578,6 +631,11 @@ void handle_request(int c_fd) {
 /* ── Main server ──────────────────────────────────────────────────── */
 
 int main(void) {
+    /* API4 secure-mode toggle: env CARESERVICE_SECURE=1 enables per-source-IP
+     * rate limiting on the command channel. Default (unset) = vulnerable. */
+    const char *sec_env = getenv("CARESERVICE_SECURE");
+    secure_mode = (sec_env && sec_env[0] == '1') ? 1 : 0;
+
     int s_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (s_fd < 0) { perror("socket"); return 1; }
 
@@ -597,7 +655,9 @@ int main(void) {
         perror("listen"); return 1;
     }
 
-    log_event("careservice started on port " STRINGIFY(PORT));
+    log_event(secure_mode
+              ? "careservice started on port " STRINGIFY(PORT) " (SECURE: API4 rate limiting ON)"
+              : "careservice started on port " STRINGIFY(PORT) " (VULNERABLE: no rate limiting)");
 
     /* Idempotent threshold file bootstrap: if the file does not exist,
      * create it with clinical defaults so sensor_service.py and the
@@ -616,8 +676,21 @@ int main(void) {
     }
 
     while (1) {
-        int c_fd = accept(s_fd, NULL, NULL);
+        struct sockaddr_in peer;
+        socklen_t plen = sizeof(peer);
+        int c_fd = accept(s_fd, (struct sockaddr*)&peer, &plen);
         if (c_fd < 0) continue;
+
+        /* API4 control: in secure mode, throttle abusive sources BEFORE doing
+         * any work (no sensor connection, no parsing) so a connection flood
+         * cannot starve the serial channel for legitimate clients. In vulnerable
+         * mode this check is skipped entirely (today's behavior). */
+        if (secure_mode && !rl_allow(peer.sin_addr.s_addr)) {
+            send(c_fd, "ERR_RATE_LIMITED", 16, 0);
+            close(c_fd);
+            continue;
+        }
+
         handle_request(c_fd);
         close(c_fd);
     }

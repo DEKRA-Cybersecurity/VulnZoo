@@ -656,16 +656,34 @@ def add_patient_caregiver():
     return jsonify({'status': 'assigned', 'caregiver_username': caregiver_username}), 200
 
 
+# ── Patient endpoint (INTENTIONALLY VULNERABLE to BOPLA — do NOT widen the vuln=0 whitelist) ──
 @app.route('/api/patient/caregivers', methods=['GET'])
 @token_required
 def list_patient_caregivers():
-    """Return caregivers assigned to the authenticated patient."""
+    """Return caregivers assigned to the authenticated patient.
+
+    VULNERABILITY (API3:2023 BOPLA — Broken Object Property Level Authorization):
+    object-level authorization is correct — the patient only ever sees their *own*
+    assigned caregivers (the query is scoped to patient_username). But at the
+    property level the response over-exposes the caregiver object. In vuln=1 it
+    returns the caregiver's private PII (display_name, email, phone, address,
+    profile_photo) and internal fields (caregiver_id, password_hash). A patient can
+    thus discover personal information about their caregiver; the leaked unsalted
+    SHA-256 password_hash further enables a pivot to caregiver account takeover
+    (and, via the caregiver role, the API1 BOLA endpoint). In vuln=0 the response is
+    stripped back to the safe assignment whitelist (today's shape).
+    """
     current = g.current_user
     patient_username = current.get('sub') or current.get('username', '')
     if current.get('role') not in ('patient', 'admin'):
         return jsonify({'error': 'Only patients can view their caregivers', 'code': 'FORBIDDEN'}), 403
 
     caregivers = db.get_caregivers_for_patient(patient_username) if db else []
+    if vuln != 1:
+        # Secure mode: expose only the assignment fields, never the caregiver's
+        # PII or internal fields.
+        safe = ('id', 'caregiver_username', 'patient_username', 'created_at', 'role')
+        caregivers = [{k: c[k] for k in safe if k in c} for c in caregivers]
     return jsonify({'caregivers': caregivers, 'patient_username': patient_username}), 200
 
 
@@ -1559,6 +1577,13 @@ def set_thresholds():
     try:
         svc = DeviceService(host=ip, port=port)
         result = svc.set_thresholds(bpm_min, bpm_max, spo2_min)
+        # VULNERABILITY (vuln=1): leak the raw IGP request frame, whose first 4
+        # bytes are the protocol MAGIC ("CARE"). A patient reaching this admin
+        # endpoint (API6 BFLA) thus obtains the magic to craft valid IGP frames
+        # for the API4 flood. In secure mode the field is omitted (mirrors
+        # GET_NETWORK's 'raw' strip).
+        if vuln != 1:
+            result.pop('igp_request', None)
         return jsonify(result), 200
     except IGPError as e:
         return jsonify({'error': str(e)}), 503
@@ -1753,6 +1778,16 @@ def initialize_iot():
     db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
     db.create_or_update_user('john_doe', 'johnny123', 'patient')
     db.create_or_update_user('care_john', 'Caregiver2026!', 'caregiver')
+    # Seed the caregiver's personal/contact info so the API3 BOPLA leak exposes
+    # real PII. A patient must never be able to read these caregiver properties.
+    db.set_user_pii(
+        'care_john',
+        display_name='John Carter, RN',
+        email='j.carter@careotter-health.com',
+        phone='+1-555-0147',
+        address='42 Almond St, Boston, MA 02118',
+        profile_photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    )
 
     # ── Seed the real Pi device ───────────────────────────────────────────────
     # alice_g67 and genuinebob49 are seeded by ``_ensure_cloud_sim_devices``

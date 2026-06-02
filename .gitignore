@@ -8,13 +8,9 @@ instance/
 .env.*
 .vscode/
 .claude/
-/tools/
-docs/.obsidian/
-vulnzoo_app/.idea/
-vulnzoo_interface/
-openwrt_resources/routcoon/
-openwrt_resources/owlcam/
-openwrt_resources/careotter/
+src/docs/.obsidian/
+src/vulnzoo_app/.idea/
+src/vulnzoo_interface/
 /*.md
 /*.pdf
 # Keep these root docs in the repo (referenced across the project / MWP workspace)
@@ -25,7 +21,6 @@ openwrt_resources/careotter/
 #cloud_api/*.md
 #cloud_api/**/*.md
 #vulnzoo_apps/**/*.md
-releases/
 .aider*
 .qwen*
 

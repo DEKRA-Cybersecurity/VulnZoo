@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Handler;
@@ -189,7 +190,21 @@ public class BleWifiProvisioner {
             }
         };
 
-        scanner.startScan(activeScanCallback);
+        // Cold-discovery fix. The default startScan(callback) runs in
+        // SCAN_MODE_LOW_POWER (~10% radio duty), which in practice missed every
+        // advertisement / scan-response from CareOtter_HR inside the 20s window
+        // (logcat: two cold attempts → "Devices seen=0"). Only after a patient
+        // GATT connect warmed the device state did the admin scan surface it in
+        // ~1.7s. LOW_LATENCY listens continuously, so an advertising peripheral
+        // is caught in ~1-2s without needing the patient path to prime it.
+        // Name matching stays in onScanResult (it already resolves once a packet
+        // arrives), so no hardware ScanFilter is added — a name filter could
+        // match nothing if the local name rides in the scan response here.
+        ScanSettings settings = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                .build();
+        scanner.startScan(null, settings, activeScanCallback);
         uiHandler.postDelayed(scanTimeoutTask, SCAN_TIMEOUT_MS);
     }
 
