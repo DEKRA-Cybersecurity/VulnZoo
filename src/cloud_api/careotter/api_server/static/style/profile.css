@@ -148,3 +148,14 @@
     .inline-form { flex-direction: column; }
     .profile-identity { justify-content: center; text-align: center; }
 }
+
+/* ── Danger zone ──────────────────────────────────────────────────────────── */
+.danger-zone { border-color: var(--danger); }
+.danger-title { color: var(--danger); }
+.danger-title svg { stroke: var(--danger); }
+.btn-danger {
+    background: var(--danger);
+    color: #fff;
+    border: 1px solid var(--danger);
+}
+.btn-danger:hover { opacity: 0.9; }

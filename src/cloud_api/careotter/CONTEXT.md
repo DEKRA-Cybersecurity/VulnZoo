@@ -90,6 +90,8 @@
 | `/api/devices/register-by-hash` | POST | — | JWT | Patient claims a device by entering its factory hash |
 | `/initialize_iot` | GET | — | No | Fallback seed (creates default users, no auto-device) |
 | `/hint` | GET | — | No | Out-of-scope hint endpoint (API-07) |
+| `/api/users` | GET | — | JWT (admin) | List all users (no password hashes) — feeds the User Administration autocomplete |
+| `/api/users/delete` | GET/POST | — | Multi-modal | Admin JWT → delete any user; patient JWT → self-delete (password-gated); **no JWT + loopback → delete any (API-07 SSRF confused-deputy)**; else `404` |
 
 > **Internal IGP command not exposed as HTTP:** `0x0D DEAUTHENTICATE` — invoked
 > automatically by `device_service._exec_protected()` after every admin command
@@ -108,6 +110,7 @@
 | `/admin/config` | Cookie admin | Device preferences |
 | `/admin/services` | Cookie admin | Service management |
 | `/admin/logs` | Cookie admin | Device log viewer |
+| `/admin/users` | Cookie admin | User Administration — delete users via autocomplete (`/api/users/delete`) |
 
 > Web auth uses the `careotter_token` HttpOnly cookie populated by `/api/auth/login*`.
 > REST clients use the `Authorization: Bearer …` header on the same JWT.

@@ -9,7 +9,7 @@ instance/
 .vscode/
 .claude/
 src/docs/.obsidian/
-src/vulnzoo_app/.idea/
+src/vulnzoo_apps/**/.idea/
 src/vulnzoo_interface/
 /*.md
 /*.pdf

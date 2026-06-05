@@ -310,9 +310,34 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
 
-    /** HTTP POST to /api/auth/login — plaintext, no TLS (intentional vuln). */
+    /**
+     * Authenticates against the cloud. /api/auth/login is admin-only, so we try
+     * it first and fall back to /api/auth/login/patient on a 401 — the app does
+     * not know the account's role until it authenticates. A 200 from either
+     * endpoint returns the JWT body; anything else surfaces the server message.
+     * Plaintext HTTP, no TLS (intentional vuln).
+     */
     private String doLogin(String baseUrl, String username, String password) throws Exception {
-        URL url = new URL(baseUrl + "/api/auth/login");
+        LoginResp admin = postLogin(baseUrl + "/api/auth/login", username, password);
+        if (admin.code < 400) {
+            return admin.body;
+        }
+        // Admin endpoint rejected. A 401 may simply mean this is a patient
+        // account on an admin-only endpoint — retry the patient login. Other
+        // codes (429 rate-limited, 400, 503) are surfaced as-is, no fallback.
+        if (admin.code == 401) {
+            LoginResp patient = postLogin(baseUrl + "/api/auth/login/patient", username, password);
+            if (patient.code < 400) {
+                return patient.body;
+            }
+            throw new Exception(parseLoginError(patient.code, patient.body));
+        }
+        throw new Exception(parseLoginError(admin.code, admin.body));
+    }
+
+    /** One login POST; returns the status code + raw body without throwing on 4xx/5xx. */
+    private LoginResp postLogin(String urlStr, String username, String password) throws Exception {
+        URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
@@ -330,24 +355,33 @@ public class LoginActivity extends AppCompatActivity {
         int code = conn.getResponseCode();
         java.io.InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
         String response = new String(readAllBytesCompat(is), StandardCharsets.UTF_8);
+        return new LoginResp(code, response);
+    }
 
-        if (code >= 400) {
-            String msg = "Server error (" + code + ")";
-            try {
-                JSONObject err = new JSONObject(response);
-                String serverError = err.optString("error", "");
-                String serverCode  = err.optString("code", "");
-                if (!serverError.isEmpty()) {
-                    msg = serverError;
-                    if ("AUTH_FAIL".equals(serverCode))          msg = "Invalid username or password";
-                    else if ("FORBIDDEN".equals(serverCode))     msg = "Access denied for this role";
-                    else if ("MISSING_FIELD".equals(serverCode)) msg = "Field required";
-                    else if ("DB_ERROR".equals(serverCode))      msg = "Database unavailable";
-                }
-            } catch (Exception ignored) {}
-            throw new Exception(msg);
-        }
-        return response;
+    /** Maps a server error body/code to a user-facing message. */
+    private String parseLoginError(int code, String response) {
+        String msg = "Server error (" + code + ")";
+        try {
+            JSONObject err = new JSONObject(response);
+            String serverError = err.optString("error", "");
+            String serverCode  = err.optString("code", "");
+            if (!serverError.isEmpty()) {
+                msg = serverError;
+                if ("AUTH_FAIL".equals(serverCode))          msg = "Invalid username or password";
+                else if ("FORBIDDEN".equals(serverCode))     msg = "Access denied for this role";
+                else if ("MISSING_FIELD".equals(serverCode)) msg = "Field required";
+                else if ("DB_ERROR".equals(serverCode))      msg = "Database unavailable";
+                else if ("RATE_LIMITED".equals(serverCode))  msg = "Too many login attempts. Try again later.";
+            }
+        } catch (Exception ignored) {}
+        return msg;
+    }
+
+    /** Status code + raw body of a single login attempt. */
+    private static class LoginResp {
+        final int code;
+        final String body;
+        LoginResp(int code, String body) { this.code = code; this.body = body; }
     }
 
     private byte[] readAllBytesCompat(java.io.InputStream is) throws java.io.IOException {

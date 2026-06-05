@@ -31,9 +31,12 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, m
 from config import Config
 from core.igp_client import IGPError
 from core.jwt_service import JWTService
-from core.decorators import token_required, admin_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required, api_caregiver_required
+from core.decorators import token_required, admin_required, web_login_required, web_admin_required, web_patient_required, web_caregiver_required, api_caregiver_required, _decode_and_validate
 from services.device_service import DeviceService
 from services.database_service import DatabaseService
+from services.store_service import StoreService
+from services.appointment_service import AppointmentService
+from services.diagnostics_service import DiagnosticsService
 
 # Configure logging
 logging.basicConfig(
@@ -113,6 +116,14 @@ try:
 except Exception as e:
     logger.error(f"[App] Failed to initialize database: {e}")
     db = None
+
+# Health Store service (API6:2023 — sensitive business flow). Patient purchase
+# flow with secure controls in StoreService; intentional vuln deferred to Phase 2.
+store = StoreService(db) if db else None
+# Teleconsultation booking service (API6:2023 — sensitive business flow)
+appt = AppointmentService(db) if db else None
+# Device diagnostics probe (API7:2023 — SSRF). URL-whitelist bypass in VULNERABLE mode.
+diag = DiagnosticsService(db) if db else None
 
 # ── Device MAC resolution ─────────────────────────────────────────────────────
 # Per-device IP model: the background thread polls every device that has a
@@ -286,6 +297,55 @@ def _register_record_fail(user_key: str) -> None:
         dq.append(time.time())
 
 
+# ── Brute-force protection for /api/auth/login/patient ───────────────────────
+# Per-username sliding-window rate limit on the patient login endpoint.
+#
+# INTENTIONAL VULNERABILITY (VULNERABLE=1): in login_patient() the limiter is
+# wired in *after* the patient-role gate, so any non-patient account (admin /
+# caregiver) short-circuits to a 401/403 response BEFORE the counter is ever
+# touched. That gives an attacker (a) unlimited brute-force attempts against an
+# admin password — 429 never fires — and (b) a 401-vs-403 oracle that reveals
+# when a guessed admin password is correct. With VULNERABLE=0 the limiter runs
+# first and the role gate collapses into a uniform 401 (no oracle, every path
+# throttled). Same sliding-window mechanism as the register limiter above.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW = 300           # 5 minutes
+_login_attempts: dict[str, deque] = {}
+_login_attempts_lock = threading.Lock()
+
+
+def _login_rate_check(user_key: str) -> tuple[bool, float]:
+    """Returns (allowed, retry_after_seconds) for a login key. The counter is
+    incremented only by _login_record_fail() on a confirmed credential failure,
+    so a successful login never costs an attempt."""
+    now = time.time()
+    with _login_attempts_lock:
+        dq = _login_attempts.get(user_key)
+        if dq is None:
+            return True, 0.0
+        while dq and now - dq[0] >= LOGIN_WINDOW:
+            dq.popleft()
+        if len(dq) >= LOGIN_MAX_ATTEMPTS:
+            retry_after = LOGIN_WINDOW - (now - dq[0])
+            return False, max(retry_after, 1.0)
+        return True, 0.0
+
+
+def _login_record_fail(user_key: str) -> None:
+    with _login_attempts_lock:
+        dq = _login_attempts.setdefault(user_key, deque())
+        dq.append(time.time())
+
+
+def _login_reset(user_key: str) -> None:
+    """Clear the failure window on a successful login (standard reset-on-success).
+    Also keeps the mobile app's admin-first → patient-fallback flow from locking a
+    patient out: the throwaway admin-endpoint 401 is wiped when the patient login
+    that follows it succeeds."""
+    with _login_attempts_lock:
+        _login_attempts.pop(user_key, None)
+
+
 # ── Cloud-side vitals simulator (alice_g67 + genuinebob49) ───────────────────
 # Two virtual CareOtter devices live entirely inside the Cloud API container.
 # They generate vitals with the same MAX30102Simulator model the bedside Pi
@@ -397,6 +457,14 @@ def _ensure_cloud_sim_devices() -> None:
         return
     db.create_or_update_user('alice_g67', 'Aliceisthebest!', 'patient')
     db.create_or_update_user('genuinebob49', 'spongebob1', 'patient')
+    # API7 SSRF victim — a dedicated, re-seedable target the attacker deletes via the internal
+    # admin endpoint reached through the diagnostics SSRF. Kept separate so the exploit never
+    # has to delete john_doe / care_john (which would break the API1/API3 chains).
+    db.create_or_update_user('target_tom', 'Target2026!', 'patient')
+    # Health Store: ensure a virtual wallet (with salary) for every patient user.
+    db.seed_store_wallets()
+    # Teleconsultation: seed a scarce set of open appointment slots.
+    db.seed_appointment_slots()
     for d in _CLOUD_SIM_DEVICES:
         db.register_device(
             d['mac'], d['patient_username'], d['device_name'],
@@ -467,6 +535,11 @@ def admin_services():
 def admin_logs():
     return render_template('logs.html')
 
+@app.route('/admin/users')
+@web_admin_required
+def admin_users():
+    return render_template('users.html')
+
 @app.route('/patient/login')
 def patient_login():
     return render_template('patient_login.html')
@@ -505,6 +578,263 @@ def profile_page():
     return render_template('profile.html')
 
 
+@app.route('/store')
+@web_patient_required
+def store_page():
+    """Patient Health Store page — browse products, draw salary, purchase."""
+    return render_template('store.html')
+
+
+# ── Health Store API (API6:2023 — sensitive business flow) ─────────────────────
+# @token_required (patient access) is CORRECT — API6 is about unprotected automation
+# of a sensitive flow, not auth. The wallet is a FIXED budget (no top-up endpoint).
+# The secure control is the per-patient purchase quota in StoreService; with
+# VULNERABLE=1 it is dropped so one patient can hoard the scarce inventory.
+
+@app.route('/api/store/products', methods=['GET'])
+@token_required
+def store_products():
+    if not store:
+        return jsonify({'error': 'Store unavailable'}), 503
+    return jsonify({'products': store.get_products()}), 200
+
+
+@app.route('/api/store/products/<int:product_id>', methods=['GET'])
+@token_required
+def store_product(product_id):
+    if not store:
+        return jsonify({'error': 'Store unavailable'}), 503
+    prod = store.get_product(product_id)
+    if not prod:
+        return jsonify({'error': 'Product not found'}), 404
+    return jsonify({'product': prod}), 200
+
+
+@app.route('/api/store/wallet', methods=['GET'])
+@token_required
+def store_wallet():
+    if not store:
+        return jsonify({'error': 'Store unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
+    wallet = store.get_wallet(username)
+    if not wallet:
+        return jsonify({'error': 'Wallet not found'}), 404
+    return jsonify({'wallet': wallet}), 200
+
+
+@app.route('/api/store/purchase', methods=['POST'])
+@token_required
+def store_purchase():
+    if not store:
+        return jsonify({'error': 'Store unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        product_id = int(data.get('product_id'))
+        q = data.get('quantity')
+        if Config.VULNERABLE == 1:
+            # VULNERABLE (API3 Variant B — property tampering): the ONLY way to smuggle a
+            # negative quantity is a FLOAT-FORMATTED STRING (e.g. "-1.0"). Native ints are
+            # range-checked, native floats/bools are rejected, and plain integer strings
+            # ("-1") are rejected — but a string containing a "." is coerced via
+            # int(float(...)) and truncates, so "-1.0" → -1, and try_purchase's signed
+            # arithmetic then credits the wallet / inflates stock.
+            if isinstance(q, bool) or isinstance(q, float):
+                raise ValueError("quantity must be an integer")
+            elif isinstance(q, int):
+                if q < 1:
+                    raise ValueError("quantity must be a positive integer")
+                quantity = q
+            elif isinstance(q, str) and q.isdigit():
+                quantity = int(q)                 # "5" → legit positive integer string
+            elif isinstance(q, str) and '.' in q:
+                quantity = int(float(q))          # "-1.0" → -1   (the vulnerable vector)
+            else:
+                # "-1", "abc", None, … — not a positive int and not a float literal
+                raise ValueError("quantity must be a positive integer")
+        else:
+            # SECURE: require a genuine positive integer. Reject float/str/bool outright so the
+            # type-confusion bypass can never produce a negative quantity. (bool is an int
+            # subclass in Python, so it is excluded explicitly.)
+            if isinstance(q, bool) or not isinstance(q, int) or q < 1:
+                raise ValueError("quantity must be a positive integer")
+            quantity = q
+    except (TypeError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    result = store.purchase(username, product_id, quantity)
+    if not result.get('ok'):
+        err  = result.get('error')
+        code = 404 if err == 'not_found' else (402 if err == 'insufficient_funds' else 409)
+        return jsonify(result), code
+    return jsonify(result), 201
+
+
+@app.route('/api/store/orders', methods=['GET'])
+@token_required
+def store_orders():
+    if not store:
+        return jsonify({'error': 'Store unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
+    return jsonify({'orders': store.get_orders(username)}), 200
+
+
+# ── Teleconsultation appointments (API6:2023 — sensitive business flow) ────────
+# @token_required (patient access) is CORRECT — API6 is about the MISSING per-patient
+# booking cap on a sensitive flow, not auth. The cap lives in AppointmentService; with
+# VULNERABLE=1 it is dropped so one patient can book every slot (denial of care). The
+# slot claim stays atomic in both modes (no double-booking) — clean API6, not a race.
+
+@app.route('/appointments')
+@web_patient_required
+def appointments_page():
+    """Patient teleconsultation booking page — browse open slots, book, cancel."""
+    return render_template('appointments.html')
+
+
+@app.route('/api/appointments/slots', methods=['GET'])
+@token_required
+def appointments_slots():
+    if not appt:
+        return jsonify({'error': 'Appointments unavailable'}), 503
+    return jsonify({'slots': appt.get_slots()}), 200
+
+
+@app.route('/api/appointments/mine', methods=['GET'])
+@token_required
+def appointments_mine():
+    if not appt:
+        return jsonify({'error': 'Appointments unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
+    return jsonify({'appointments': appt.get_mine(username)}), 200
+
+
+@app.route('/api/appointments/book', methods=['POST'])
+@token_required
+def appointments_book():
+    if not appt:
+        return jsonify({'error': 'Appointments unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        slot_id = int(data.get('slot_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'slot_id must be an integer'}), 400
+    result = appt.book(username, slot_id)
+    if not result.get('ok'):
+        return jsonify(result), 409
+    return jsonify(result), 201
+
+
+# The route accepts GET/DELETE alongside POST so the method check happens INSIDE the handler
+# (in AppointmentService.cancel). The endpoint is only *meant* to be POST; with VULNERABLE=1
+# the cancel flow decrements the per-patient counter before it verifies the method, so a
+# non-POST request desyncs the counter without releasing the slot (API6 slot hoarding).
+@app.route('/api/appointments/cancel', methods=['POST', 'GET', 'DELETE'])
+@token_required
+def appointments_cancel():
+    if not appt:
+        return jsonify({'error': 'Appointments unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
+    data = request.get_json(force=True, silent=True) or {}
+    # slot_id may arrive in the JSON body (POST) or the query string (GET/DELETE).
+    raw = data.get('slot_id', request.args.get('slot_id'))
+    try:
+        slot_id = int(raw)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'slot_id must be an integer'}), 400
+    result = appt.cancel(username, slot_id, http_method=request.method)
+    if result.get('error') == 'method_not_allowed':
+        return jsonify(result), 405
+    if not result.get('ok'):
+        return jsonify(result), 409
+    return jsonify(result), 200
+
+
+# ── Device Diagnostics (INTENTIONALLY VULNERABLE to SSRF — API7:2023) ──────────
+# The cloud fetches a device URL server-side and reflects the response. In VULNERABLE=1 the
+# host whitelist is bypassable via embedded credentials (a naive parser in DiagnosticsService),
+# so `http://<device-host>@127.0.0.1:5002/api/users/...` reaches the loopback-only admin
+# API → a patient escalates to deleting any user. Do NOT "fix" the parser or the loopback trust.
+
+@app.route('/diagnostics')
+@web_patient_required
+def diagnostics_page():
+    """Patient device-diagnostics page — linked from the index.html nav bar."""
+    return render_template('diagnostics.html')
+
+
+@app.route('/api/device/diagnostics', methods=['POST'])
+@token_required
+def device_diagnostics():
+    if not diag:
+        return jsonify({'error': 'Diagnostics unavailable'}), 503
+    data = request.get_json(force=True, silent=True) or {}
+    probe_url = data.get('probe_url', '')
+    result = diag.probe(probe_url)
+    if not result.get('ok'):
+        code = 400 if result.get('error') in ('invalid_url', 'host_not_allowed') else 502
+        return jsonify(result), code
+    return jsonify(result), 200
+
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def api_users_list():
+    """List all users (admin only) — feeds the User Administration autocomplete.
+    Projection excludes password_hash (db.list_users)."""
+    return jsonify({'users': db.list_users() if db else []}), 200
+
+
+# User-management endpoint — role-aware, but Branch C (loopback, no JWT) is the UNCHANGED API7 SSRF
+# confused-deputy. Auth is layered IN FRONT: an admin JWT deletes any user (no confirmation); a
+# non-admin JWT may delete ONLY itself and must supply its password. With no valid JWT a loopback
+# caller still deletes any user (the SSRF); everyone else gets 404. INTENTIONAL — do NOT "fix" the
+# loopback trust or the (API2) forgeable-admin-JWT path.
+@app.route('/api/users/delete', methods=['GET', 'POST'])
+def api_users_delete():
+    payload = _decode_and_validate()   # Bearer header OR careotter_token cookie; None if absent/invalid
+
+    # Branch A — authenticated admin: delete any chosen user, no confirmation.
+    if payload and payload.get('role') == 'admin':
+        username = request.args.get('username') or (request.get_json(silent=True) or {}).get('username', '')
+        if not username:
+            return jsonify({'ok': False, 'error': 'username required'}), 400
+        deleted = bool(db.delete_user(username)) if db else False
+        return jsonify({'ok': deleted, 'deleted': username if deleted else None,
+                        'via': 'admin'}), (200 if deleted else 404)
+
+    # Branch B — authenticated non-admin (patient/caregiver): self-delete only, password required.
+    if payload:
+        username = payload.get('sub') or payload.get('username', '')   # SELF ONLY — never client input
+        data = request.get_json(silent=True) or {}
+        password = data.get('password', '')
+        if not password:
+            return jsonify({'ok': False, 'error': 'password required'}), 400
+        if not db or not db.verify_user(username, password):
+            return jsonify({'ok': False, 'error': 'invalid password'}), 403
+        deleted = bool(db.delete_user(username))
+        return jsonify({'ok': deleted, 'deleted': username if deleted else None,
+                        'via': 'self-service'}), (200 if deleted else 404)
+
+    # Branch C — no valid JWT: the loopback-trust SSRF confused-deputy (API7), byte-identical.
+    remote = request.remote_addr or ''
+    if remote not in ('127.0.0.1', '::1', 'localhost'):
+        return jsonify({'error': 'Not Found'}), 404
+    username = request.args.get('username', '')
+    if not username:
+        return jsonify({'ok': False, 'error': 'username required'}), 400
+    deleted = bool(db.delete_user(username)) if db else False
+    return jsonify({'ok': deleted, 'deleted': username if deleted else None,
+                    'via': 'internal-loopback'}), (200 if deleted else 404)
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    # Discovery clue (model D): hints at the privileged user-management path without exposing it.
+    return ("User-agent: *\nDisallow: /api/users/\n", 200,
+            {'Content-Type': 'text/plain; charset=utf-8'})
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.route('/api/health')
@@ -528,14 +858,24 @@ def api_health():
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     """
-    Authenticates operator against the local SQLite user database.
+    Authenticates an administrator against the local SQLite user database
+    (the admin panel login).
 
-    Expects JSON body with 'username' and 'password'.
-    Verifies credentials against the 'users' table and requires role='admin'.
-    On success, issues a JWT session token.
+    Expects JSON body with 'username' and 'password'. Verifies credentials and
+    requires role='admin'. On success, issues a JWT session token.
 
-    NOTE: passwords are hashed with SHA-256 without salt —
-    an intentional vulnerability for the lab.
+    This endpoint is deliberately NOT an oracle:
+      * A per-username sliding-window rate limit (LOGIN_MAX_ATTEMPTS /
+        LOGIN_WINDOW) is ALWAYS enforced — regardless of Config.VULNERABLE.
+      * Any failed login returns an identical 401 whether the credentials were
+        wrong OR the account is simply not an admin (no allowed_roles, no 403).
+        So it reveals no difference between a patient and an admin username.
+    The only intentional online admin-credential oracle in the lab is the 403
+    differential on /api/auth/login/patient (see login_patient).
+
+    NOTE: passwords are hashed with SHA-256 without salt — an intentional
+    vulnerability for the lab (enables offline cracking of a leaked DB, not
+    online brute force here).
 
     Body JSON:
         {"username": "admin", "password": "CareOtter2026!"}
@@ -552,23 +892,25 @@ def login():
     if db is None:
         return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
 
+    # Rate-limit first — always on, no role branch, no VULNERABLE toggle.
+    allowed, retry_after = _login_rate_check(username)
+    if not allowed:
+        resp = jsonify({'error': 'Too many login attempts. Try again later.', 'code': 'RATE_LIMITED'})
+        resp.headers['Retry-After'] = str(int(retry_after))
+        return resp, 429
+
     user = db.verify_user(username, password)
-    if not user:
+    # Admin-only, uniform failure: wrong credentials and non-admin accounts are
+    # indistinguishable (both 401), so this endpoint leaks no role information.
+    if user is None or user.get('role') != 'admin':
+        _login_record_fail(username)
         return jsonify({
             'error': 'Invalid username or password',
             'code':  'AUTH_FAIL'
         }), 401
 
-    # Allow both 'admin' and 'patient' roles — role is returned so the mobile
-    # app can route to the correct screen without a second request.
-    allowed_roles = ('admin', 'patient')
-    if user.get('role') not in allowed_roles:
-        return jsonify({
-            'error': 'Access denied for this role',
-            'code':  'FORBIDDEN'
-        }), 403
-
-    jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'patient'))
+    _login_reset(username)   # successful login clears the failure window
+    jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'admin'))
     resp = make_response(jsonify({
         'token':      jwt_token,
         'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
@@ -587,6 +929,18 @@ def login_patient():
 
     Same authentication flow as /api/auth/login, but rejects non-patient roles.
     Used by the patient portal web UI and mobile app patient mode.
+
+    Brute-force protection is per-username (LOGIN_MAX_ATTEMPTS / LOGIN_WINDOW).
+
+    INTENTIONAL VULNERABILITY (VULNERABLE=1): the patient-role gate is evaluated
+    BEFORE the rate-limit check, and the role is resolved by *username* (not by a
+    successful password verification). So every non-patient account (admin /
+    caregiver) returns 401/403 without ever incrementing the limiter. An attacker
+    therefore (a) learns the username is a non-patient because 429 never fires
+    no matter how many guesses, and (b) brute-forces the admin password with
+    unlimited attempts, reading 401 (wrong) vs 403 (correct) as a "password
+    correct" oracle. With VULNERABLE=0 the limiter runs first and every
+    non-patient-success collapses into a uniform, rate-limited 401.
     """
     data = request.get_json(force=True, silent=True) or {}
     username = data.get('username', '').strip()
@@ -600,19 +954,51 @@ def login_patient():
     if db is None:
         return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
 
-    user = db.verify_user(username, password)
-    if not user:
-        return jsonify({
-            'error': 'Invalid username or password',
-            'code':  'AUTH_FAIL'
-        }), 401
+    user = db.verify_user(username, password)          # dict iff username+password both valid
 
-    if user.get('role') != 'patient':
-        return jsonify({
-            'error': 'Access denied for this role',
-            'code':  'FORBIDDEN'
-        }), 403
+    if Config.VULNERABLE == 1:
+        # BUG: role gate first, resolved by username — fires for any non-patient
+        # account *before* the limiter, so this branch never rate-limits.
+        account = db.get_user_by_username(username)
+        if account is not None and account.get('role') != 'patient':
+            if user is not None:                       # correct credentials → oracle: CORRECT
+                return jsonify({
+                    'error': 'Access denied for this role',
+                    'code':  'FORBIDDEN'
+                }), 403
+            return jsonify({                           # wrong password → oracle: WRONG
+                'error': 'Invalid username or password',
+                'code':  'AUTH_FAIL'
+            }), 401
 
+        # Patients and unknown usernames: the (correctly) rate-limited path.
+        allowed, retry_after = _login_rate_check(username)
+        if not allowed:
+            resp = jsonify({'error': 'Too many login attempts. Try again later.', 'code': 'RATE_LIMITED'})
+            resp.headers['Retry-After'] = str(int(retry_after))
+            return resp, 429
+        if user is None:
+            _login_record_fail(username)
+            return jsonify({
+                'error': 'Invalid username or password',
+                'code':  'AUTH_FAIL'
+            }), 401
+    else:
+        # Secure: rate-limit FIRST, then a uniform 401 for any failure or
+        # non-patient role — no 401/403 oracle, every path counts toward the cap.
+        allowed, retry_after = _login_rate_check(username)
+        if not allowed:
+            resp = jsonify({'error': 'Too many login attempts. Try again later.', 'code': 'RATE_LIMITED'})
+            resp.headers['Retry-After'] = str(int(retry_after))
+            return resp, 429
+        if user is None or user.get('role') != 'patient':
+            _login_record_fail(username)
+            return jsonify({
+                'error': 'Invalid username or password',
+                'code':  'AUTH_FAIL'
+            }), 401
+
+    _login_reset(username)   # successful login clears the failure window
     jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'patient'))
     resp = make_response(jsonify({
         'token':      jwt_token,
@@ -835,9 +1221,16 @@ def login_caregiver():
     """
     Caregiver login endpoint.
 
-    Same authentication flow as /api/auth/login/patient, but accepts the
-    'caregiver' role. Returns a JWT that can be used to access the caregiver
-    dashboard and (intentionally, due to BOLA) any patient's vitals endpoint.
+    Same authentication flow as /api/auth/login, but for the 'caregiver' role.
+    Returns a JWT that can be used to access the caregiver dashboard and
+    (intentionally, due to BOLA) any patient's vitals endpoint.
+
+    Like /api/auth/login, this endpoint is NOT an oracle: the per-username
+    sliding-window rate limit is ALWAYS enforced, it is caregiver-only, and any
+    failure (wrong credentials OR a non-caregiver account) returns an identical
+    401 — no 403, no role/credential leak. The only intentional online
+    admin-credential oracle in the lab is the 403 differential on
+    /api/auth/login/patient.
     """
     data = request.get_json(force=True, silent=True) or {}
     username = data.get('username', '').strip()
@@ -851,19 +1244,24 @@ def login_caregiver():
     if db is None:
         return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
 
+    # Rate-limit first — always on, no role branch, no VULNERABLE toggle.
+    allowed, retry_after = _login_rate_check(username)
+    if not allowed:
+        resp = jsonify({'error': 'Too many login attempts. Try again later.', 'code': 'RATE_LIMITED'})
+        resp.headers['Retry-After'] = str(int(retry_after))
+        return resp, 429
+
     user = db.verify_user(username, password)
-    if not user:
+    # Caregiver-only, uniform failure: wrong credentials and non-caregiver
+    # accounts are indistinguishable (both 401) — no 403, no oracle.
+    if user is None or user.get('role') != 'caregiver':
+        _login_record_fail(username)
         return jsonify({
             'error': 'Invalid username or password',
             'code':  'AUTH_FAIL'
         }), 401
 
-    if user.get('role') != 'caregiver':
-        return jsonify({
-            'error': 'Access denied for this role',
-            'code':  'FORBIDDEN'
-        }), 403
-
+    _login_reset(username)   # successful login clears the failure window
     jwt_token = JWTService.generate_token(username=username, role=user.get('role', 'caregiver'))
     resp = make_response(jsonify({
         'token':      jwt_token,
@@ -1778,6 +2176,7 @@ def initialize_iot():
     db.create_or_update_user('admin', 'CareOtter2026!', 'admin')
     db.create_or_update_user('john_doe', 'johnny123', 'patient')
     db.create_or_update_user('care_john', 'Caregiver2026!', 'caregiver')
+    db.create_or_update_user('target_tom', 'Target2026!', 'patient')   # API7 SSRF victim (re-seedable)
     # Seed the caregiver's personal/contact info so the API3 BOPLA leak exposes
     # real PII. A patient must never be able to read these caregiver properties.
     db.set_user_pii(
@@ -1939,4 +2338,7 @@ if __name__ == '__main__':
 
     # VULNERABILITY (vuln=1): debug=True activates Werkzeug interactive debugger
     # which allows arbitrary code execution on the server if the PIN is obtained
-    app.run(host='0.0.0.0', port=port, debug=(vuln == 1), use_reloader=False)
+    # threaded=True so the dev server can serve the diagnostics SSRF's self-call to :5002
+    # concurrently with the in-flight probe (gunicorn already runs --threads 4). Without it a
+    # single-threaded dev server would deadlock on the loopback request.
+    app.run(host='0.0.0.0', port=port, debug=(vuln == 1), use_reloader=False, threaded=True)

@@ -1,0 +1,40 @@
+/* appointments.css — CareOtter teleconsultation booking page. Builds on index.css vars. */
+
+.appt-section { margin: 1.5rem 0; }
+.appt-msg { font-size: 0.875rem; margin: 0.5rem 0 0; }
+
+/* My appointments list */
+.appt-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.appt-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    /* --bg-card is white in light mode, dark navy in dark mode (index.css). The old
+       `--surface` var was undefined, so its dark fallback was always used → unreadable
+       dark box in light mode. Use the same themed surface the slot `.card`s use. */
+    background: var(--bg-card);
+    box-shadow: var(--shadow);
+}
+.appt-when { font-weight: 600; color: var(--text-primary, #e2e8f0); }
+.appt-who { display: flex; flex-direction: column; }
+.appt-clin { color: var(--text-primary, #e2e8f0); font-size: 0.9rem; }
+.appt-spec { color: var(--accent-primary, #2dd4bf); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Available slots grid */
+.slot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+.slot-card { display: flex; flex-direction: column; gap: 0.35rem; padding: 1.1rem; }
+.slot-when { font-weight: 700; font-size: 1.05rem; color: var(--text-primary, #e2e8f0); }
+.slot-clin { color: var(--text-primary, #e2e8f0); font-size: 0.9rem; }
+.slot-spec {
+    color: var(--accent-primary, #2dd4bf); font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;
+}
+.btn-book { margin-top: auto; }

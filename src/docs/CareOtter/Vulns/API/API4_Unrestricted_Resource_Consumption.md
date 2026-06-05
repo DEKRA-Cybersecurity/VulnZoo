@@ -86,9 +86,9 @@ the enabler for the single-connection collapse (Technique B below).
 > **Correction:** `careservice` closes the socket after **one** command, so an exploit that reuses a single socket for many commands does **not** work — only the first is processed. The real attack is **one connection per command**, and since `0x07` is unauthenticated, no `0x02` auth step is needed.
 
 > **Obtaining the MAGIC `CARE`:** the attacker needs no source access or packet
-> sniffing — a logged-in patient can leak it through the **API6 BFLA** threshold
+> sniffing — a logged-in patient can leak it through the **API5 Broken Function Level Authorization** threshold
 > endpoint, whose `igp_request` field exposes the raw frame (first 4 bytes =
-> `0x43415245`). See [API6_BFLA.md](API6_BFLA.md) → "Chain: leak the IGP MAGIC".
+> `0x43415245`). See [API5_Broken_Function_Level_Authorization.md](API5_Broken_Function_Level_Authorization.md) → "Chain: leak the IGP MAGIC".
 > (For Technique B's *valid*-`0x07` hold the magic is required; the zero-byte hold
 > and the churn flood do not even need it.)
 

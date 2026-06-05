@@ -1,0 +1,79 @@
+/* store.css — CareOtter Health Store page. Builds on index.css variables. */
+
+.store-section { margin: 1.5rem 0; }
+
+/* Wallet */
+.wallet-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1.25rem 1.5rem;
+}
+.wallet-info { display: flex; align-items: center; gap: 1rem; }
+.wallet-icon svg {
+    width: 32px; height: 32px; color: var(--accent-primary, #2dd4bf);
+}
+.wallet-label { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); }
+.wallet-balance {
+    font-size: 1.75rem; font-weight: 700; color: var(--text-primary, #e2e8f0);
+    line-height: 1.1;
+}
+.wallet-sub { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); margin-top: 0.25rem; }
+
+/* Catalog grid */
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+}
+.product-card { display: flex; flex-direction: column; padding: 1.25rem; }
+.product-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+}
+.product-name { font-weight: 600; font-size: 1rem; color: var(--text-primary, #e2e8f0); }
+.rx-badge {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    padding: 0.1rem 0.4rem; border-radius: 0.25rem;
+    background: var(--danger, #ef4444); color: #fff; letter-spacing: 0.05em;
+}
+.product-cat {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--accent-primary, #2dd4bf); margin: 0.25rem 0 0.5rem;
+}
+.product-desc {
+    font-size: 0.85rem; color: var(--text-secondary, #94a3b8);
+    flex: 1; margin-bottom: 0.75rem;
+}
+.product-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+.product-price { font-size: 1.1rem; font-weight: 700; color: var(--text-primary, #e2e8f0); }
+.product-stock { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); }
+.product-buy { display: flex; gap: 0.5rem; align-items: center; }
+.qty-input {
+    width: 64px; padding: 0.4rem; border-radius: 0.375rem;
+    border: 1px solid var(--border-color, #334155);
+    background: var(--bg-secondary, #1e293b); color: var(--text-primary, #e2e8f0);
+}
+.btn-buy { flex: 1; }
+
+/* Orders */
+.order-row {
+    display: grid;
+    grid-template-columns: 3rem 1fr auto auto;
+    gap: 0.75rem; align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color, #334155);
+    font-size: 0.875rem;
+}
+.order-row:last-child { border-bottom: none; }
+.order-qty { font-weight: 700; color: var(--accent-primary, #2dd4bf); }
+.order-name { color: var(--text-primary, #e2e8f0); }
+.order-total { font-weight: 600; color: var(--text-primary, #e2e8f0); }
+.order-date { color: var(--text-secondary, #94a3b8); font-size: 0.75rem; }
+
+/* Inline messages */
+.store-msg { font-size: 0.875rem; margin: 0.5rem 0 0; }
