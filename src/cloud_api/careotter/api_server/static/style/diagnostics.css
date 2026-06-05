@@ -1,0 +1,37 @@
+/* diagnostics.css — CareOtter Device Diagnostics page. Builds on index.css vars. */
+
+.diag-section { margin: 1.5rem 0; }
+.diag-help { color: var(--text-secondary); font-size: 0.9rem; margin: 0.25rem 0 1rem; }
+
+.diag-card { padding: 1.25rem; }
+.diag-label {
+    display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-secondary); margin-bottom: 0.5rem;
+}
+.diag-row { display: flex; gap: 0.6rem; align-items: stretch; flex-wrap: wrap; }
+.diag-input {
+    flex: 1 1 320px; min-width: 0; padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border-color); border-radius: 0.5rem;
+    background: var(--bg-primary); color: var(--text-primary);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9rem;
+}
+.diag-input:focus { outline: none; border-color: var(--accent-primary); }
+.diag-msg { font-size: 0.875rem; margin: 0.75rem 0 0; }
+
+.diag-result { margin-top: 1rem; padding: 0; overflow: hidden; }
+.diag-result-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color);
+}
+.diag-result-title { font-weight: 600; }
+.diag-status {
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85rem;
+    color: var(--accent-primary);
+}
+.diag-body {
+    margin: 0; padding: 1rem; max-height: 360px; overflow: auto;
+    background: var(--bg-card); color: var(--text-primary);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}

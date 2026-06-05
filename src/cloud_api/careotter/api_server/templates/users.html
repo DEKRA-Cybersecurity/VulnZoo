@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareOtter — User Administration</title>
+    <link rel="stylesheet" href="/static/style/panel.css">
+</head>
+<body>
+
+<!-- Topbar -->
+<nav class="topbar">
+    <a href="/admin/dashboard" class="topbar-brand">
+        <div class="brand-icon">
+            <svg viewBox="0 0 24 24"><polyline points="2,12 6,12 8,6 10,18 12,10 14,14 16,12 22,12"/></svg>
+        </div>
+        <span>CareOtter</span>
+    </a>
+    <div class="topbar-nav">
+        <a href="/admin/dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Dashboard</a>
+        <a href="/admin/network"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5.5" y2="16.5"/><line x1="12" y1="8" x2="18.5" y2="16.5"/></svg>Network</a>
+        <a href="/admin/config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Config</a>
+        <a href="/admin/services"><svg viewBox="0 0 24 24"><polyline points="16,3 21,3 21,8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21,16 21,21 16,21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>Services</a>
+        <a href="/admin/logs"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>Logs</a>
+        <a href="/admin/users"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Users</a>
+    </div>
+    <div class="topbar-right">
+        <span class="topbar-badge">ADMIN</span>
+        <button class="btn-logout">
+            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Logout
+        </button>
+    </div>
+</nav>
+
+<main class="page-content">
+
+    <div class="page-header">
+        <h2>User Administration</h2>
+        <p>Manage all system users — currently: delete an account.</p>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="23" y2="8"/></svg>
+                Delete User
+            </span>
+        </div>
+
+        <div class="form-grid">
+            <div class="form-group full">
+                <label for="user-search">Username</label>
+                <div class="user-search-wrap">
+                    <input type="text" id="user-search" autocomplete="off" spellcheck="false"
+                           placeholder="Type a username…">
+                    <div class="user-suggest" id="user-suggest"></div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top:18px;display:flex;gap:12px;align-items:center">
+            <button class="btn btn-danger" id="btn-delete-user">
+                <svg viewBox="0 0 24 24"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Delete user
+            </button>
+        </div>
+
+        <div class="alert-inline" id="delete-alert"></div>
+    </div>
+
+</main>
+
+<script src="/static/js/panel.js"></script>
+<script>
+    // User Administration — autocomplete username search + delete.
+    // Auth + active-nav marking are handled by panel.js (apiFetch attaches the Bearer token).
+    (function () {
+        const input   = document.getElementById('user-search');
+        const suggest = document.getElementById('user-suggest');
+        const alertEl = document.getElementById('delete-alert');
+        let allUsers = [];          // [{username, role}]
+
+        function showAlert(type, text) {
+            alertEl.className = 'alert-inline show ' + type;
+            alertEl.textContent = text;
+        }
+        function clearAlert() {
+            alertEl.className = 'alert-inline';
+            alertEl.textContent = '';
+        }
+
+        async function loadUsers() {
+            try {
+                const res  = await apiFetch('/api/users');
+                const data = await res.json();
+                allUsers = (data.users || []).map(u => ({ username: u.username, role: u.role }));
+            } catch (e) {
+                showAlert('error', 'Failed to load users.');
+            }
+        }
+
+        function renderSuggest() {
+            const q = input.value.trim().toLowerCase();
+            suggest.innerHTML = '';
+            if (!q) { suggest.className = 'user-suggest'; return; }
+
+            const matches = allUsers
+                .filter(u => u.username.toLowerCase().includes(q))      // substring match
+                .sort((a, b) => a.username.localeCompare(b.username))   // alphabetical
+                .slice(0, 50);
+
+            if (!matches.length) {
+                const empty = document.createElement('div');
+                empty.className = 'user-suggest-empty';
+                empty.textContent = 'No matching users';
+                suggest.appendChild(empty);
+            } else {
+                matches.forEach(u => {
+                    const item = document.createElement('div');
+                    item.className = 'user-suggest-item';
+                    item.dataset.username = u.username;
+                    const name = document.createElement('span');
+                    name.textContent = u.username;                     // textContent → XSS-safe
+                    const role = document.createElement('span');
+                    role.className = 'u-role';
+                    role.textContent = u.role || '';
+                    item.append(name, role);
+                    suggest.appendChild(item);
+                });
+            }
+            suggest.className = 'user-suggest show';
+        }
+
+        input.addEventListener('input', () => { clearAlert(); renderSuggest(); });
+
+        suggest.addEventListener('click', (e) => {
+            const item = e.target.closest('.user-suggest-item');
+            if (!item) return;
+            input.value = item.dataset.username;
+            suggest.className = 'user-suggest';
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.user-search-wrap')) suggest.className = 'user-suggest';
+        });
+
+        document.getElementById('btn-delete-user').addEventListener('click', async () => {
+            const username = input.value.trim();
+            if (!username) { showAlert('error', 'Enter a username to delete.'); return; }
+            if (!window.confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+            try {
+                const res = await apiFetch('/api/users/delete', {
+                    method: 'POST',
+                    body: JSON.stringify({ username })
+                });
+                const d = await res.json().catch(() => ({}));
+                if (res.ok && d.ok) {
+                    showAlert('success', 'Deleted user: ' + d.deleted);
+                    allUsers = allUsers.filter(u => u.username !== username);
+                    input.value = '';
+                    suggest.className = 'user-suggest';
+                } else {
+                    showAlert('error', d.error ? ('Failed: ' + d.error) : 'User not found or not deleted.');
+                }
+            } catch (e) {
+                showAlert('error', 'Network error.');
+            }
+        });
+
+        loadUsers();
+    })();
+</script>
+</body>
+</html>

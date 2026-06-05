@@ -68,6 +68,7 @@ class DatabaseService:
                     email TEXT,                    -- contact PII (caregiver)
                     phone TEXT,                    -- contact PII (caregiver)
                     address TEXT,                  -- contact PII (caregiver)
+                    active_appointments INTEGER NOT NULL DEFAULT 0,  -- denormalized live booking counter (API6)
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -277,6 +278,27 @@ class DatabaseService:
                     conn.execute(f"ALTER TABLE users ADD COLUMN {_pii_col} TEXT")
                     conn.commit()
 
+            # Migration: denormalized appointment counter on users (API6 booking feature).
+            # The per-patient cap is checked against THIS column, not a live COUNT over
+            # appointment_slots — book_slot/cancel_slot keep it in sync.
+            if 'active_appointments' not in existing_users:
+                logger.info("[DB] Migration: adding active_appointments to users")
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN active_appointments INTEGER NOT NULL DEFAULT 0")
+                conn.commit()
+                # Backfill from current bookings if the appointments table already exists
+                # (on a DB that predates appointments there is nothing to count yet).
+                appt_exists = conn.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name='appointment_slots'").fetchone()
+                if appt_exists:
+                    conn.execute(
+                        "UPDATE users SET active_appointments = ("
+                        "  SELECT COUNT(*) FROM appointment_slots "
+                        "  WHERE booked_by = users.username AND status = 'booked')")
+                    conn.commit()
+                    logger.info("[DB] Migration: backfilled active_appointments from bookings")
+
             # Migration: create caregiver_assignments if missing
             existing_tables = {row[0] for row in
                         conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
@@ -297,6 +319,89 @@ class DatabaseService:
                 ''')
                 conn.commit()
                 logger.info("[DB] Migration: caregiver_assignments table created")
+
+            # Migration: Health Store tables (API6:2023 — sensitive business flows feature)
+            if 'products' not in existing_tables:
+                logger.info("[DB] Migration: creating Health Store tables (wallets/products/orders)")
+                conn.executescript('''
+                    CREATE TABLE IF NOT EXISTS wallets (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username    TEXT UNIQUE NOT NULL,
+                        balance     REAL NOT NULL DEFAULT 0,
+                        salary      REAL NOT NULL DEFAULT 0,
+                        last_payout TIMESTAMP,
+                        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (username) REFERENCES users(username)
+                    );
+                    CREATE TABLE IF NOT EXISTS products (
+                        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sku                   TEXT UNIQUE NOT NULL,
+                        name                  TEXT NOT NULL,
+                        description           TEXT,
+                        price                 REAL NOT NULL,
+                        category              TEXT,
+                        stock                 INTEGER NOT NULL DEFAULT 0,
+                        requires_prescription INTEGER NOT NULL DEFAULT 1,
+                        active                INTEGER NOT NULL DEFAULT 1,
+                        created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE IF NOT EXISTS orders (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username   TEXT NOT NULL,
+                        product_id INTEGER NOT NULL,
+                        quantity   INTEGER NOT NULL,
+                        unit_price REAL NOT NULL,
+                        total      REAL NOT NULL,
+                        status     TEXT DEFAULT 'completed',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (username)   REFERENCES users(username),
+                        FOREIGN KEY (product_id) REFERENCES products(id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_orders_username ON orders(username);
+                ''')
+                conn.commit()
+                # Seed the fictional health catalog (idempotent by sku). Stock is
+                # deliberately small — scarcity is what the Phase-2 API6 abuse exhausts.
+                catalog = [
+                    ('ICD-X1',
+                     'Implantable Cardioverter-Defibrillator — OtterGuard X1',
+                     'Subcutaneous ICD for cardiac arrhythmia management. Lab-fictional device.',
+                     24500.00, 'cardiac', 5, 1),
+                    ('PUMP-IP200',
+                     'Insulin Pump — OtterFlow IP-200',
+                     'Wearable insulin delivery pump with basal/bolus control. Lab-fictional device.',
+                     6800.00, 'diabetes', 8, 1),
+                    ('PACE-D3',
+                     'Dual-Chamber Pacemaker — OtterPace D3',
+                     'Dual-chamber implantable cardiac pacemaker. Lab-fictional device.',
+                     18900.00, 'cardiac', 4, 1),
+                ]
+                conn.executemany(
+                    'INSERT OR IGNORE INTO products '
+                    '(sku, name, description, price, category, stock, requires_prescription) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?)', catalog)
+                conn.commit()
+                logger.info("[DB] Migration: Health Store catalog seeded (3 products)")
+
+            # Migration: teleconsultation appointment slots (API6 booking feature)
+            if 'appointment_slots' not in existing_tables:
+                logger.info("[DB] Migration: creating appointment_slots table")
+                conn.executescript('''
+                    CREATE TABLE IF NOT EXISTS appointment_slots (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        clinician   TEXT NOT NULL,
+                        specialty   TEXT NOT NULL,
+                        slot_time   TEXT NOT NULL,
+                        status      TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'booked' | 'cancelled'
+                        booked_by   TEXT,
+                        booked_at   TIMESTAMP,
+                        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_slots_status ON appointment_slots(status);
+                    CREATE INDEX IF NOT EXISTS idx_slots_booked_by ON appointment_slots(booked_by);
+                ''')
+                conn.commit()
+                logger.info("[DB] Migration: appointment_slots table created")
 
     # ── User management ───────────────────────────────────────────────────────
     
@@ -1605,3 +1710,317 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error cleaning up old data: {e}")
             return 0
+
+    # ── Health Store (API6:2023 — sensitive business flow) ─────────────────────
+    # Raw persistence only; the business policy (cooldown/quota/stock toggle) lives
+    # in services/store_service.py.
+
+    # Each patient's wallet is pre-funded with a FIXED device-procurement budget.
+    # There is intentionally NO top-up path — money cannot be added to a wallet
+    # (the `salary` column is retained for schema stability but seeded to 0).
+    WALLET_BUDGET = 5000.0
+
+    def ensure_wallet(self, username: str, budget: float = None) -> bool:
+        """Create a fixed-budget wallet for the user if absent. Idempotent."""
+        budget = self.WALLET_BUDGET if budget is None else budget
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'INSERT OR IGNORE INTO wallets (username, balance, salary) VALUES (?, ?, ?)',
+                    (username, budget, 0))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[DB] ensure_wallet error: {e}")
+            return False
+
+    def seed_store_wallets(self, budget: float = None) -> int:
+        """Ensure a fixed-budget wallet for every patient user. Idempotent."""
+        budget = self.WALLET_BUDGET if budget is None else budget
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                patients = conn.execute(
+                    "SELECT username FROM users WHERE role = 'patient'").fetchall()
+                for (uname,) in patients:
+                    conn.execute(
+                        'INSERT OR IGNORE INTO wallets (username, balance, salary) VALUES (?, ?, ?)',
+                        (uname, budget, 0))
+                conn.commit()
+                return len(patients)
+        except Exception as e:
+            logger.error(f"[DB] seed_store_wallets error: {e}")
+            return 0
+
+    def get_wallet(self, username: str) -> Optional[Dict]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    'SELECT username, balance, updated_at '
+                    'FROM wallets WHERE username = ?', (username,)).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] get_wallet error: {e}")
+            return None
+
+    def list_products(self, active_only: bool = True) -> List[Dict]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                q = ('SELECT id, sku, name, description, price, category, stock, '
+                     'requires_prescription, active FROM products')
+                if active_only:
+                    q += ' WHERE active = 1'
+                q += ' ORDER BY price DESC'
+                return [dict(r) for r in conn.execute(q).fetchall()]
+        except Exception as e:
+            logger.error(f"[DB] list_products error: {e}")
+            return []
+
+    def get_product(self, product_id: int) -> Optional[Dict]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    'SELECT id, sku, name, description, price, category, stock, '
+                    'requires_prescription, active FROM products WHERE id = ?',
+                    (product_id,)).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] get_product error: {e}")
+            return None
+
+    def get_orders(self, username: str) -> List[Dict]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute('''
+                    SELECT o.id, o.product_id, o.quantity, o.unit_price, o.total,
+                           o.status, o.created_at,
+                           p.name AS product_name, p.sku AS product_sku
+                    FROM orders o
+                    LEFT JOIN products p ON p.id = o.product_id
+                    WHERE o.username = ?
+                    ORDER BY o.created_at DESC, o.id DESC
+                ''', (username,)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] get_orders error: {e}")
+            return []
+
+    def try_purchase(self, username: str, product_id: int, quantity: int,
+                     max_per_product=None, check_stock: bool = True) -> Dict:
+        """Attempt a purchase in a single transaction. Returns a result dict.
+        max_per_product=None disables the per-user quota; check_stock=False disables
+        the stock guard — both are the Phase-2 API6 hooks (Phase 1 passes secure values)."""
+        if quantity is None:
+            return {'ok': False, 'error': 'bad_quantity'}
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                conn.execute('BEGIN IMMEDIATE')
+                prod = conn.execute(
+                    'SELECT id, name, price, stock, active FROM products WHERE id = ?',
+                    (product_id,)).fetchone()
+                if not prod or not prod['active']:
+                    conn.rollback()
+                    return {'ok': False, 'error': 'not_found'}
+                if check_stock and prod['stock'] < quantity:
+                    conn.rollback()
+                    return {'ok': False, 'error': 'out_of_stock', 'stock': prod['stock']}
+                if max_per_product is not None:
+                    already = conn.execute(
+                        'SELECT COALESCE(SUM(quantity), 0) FROM orders '
+                        'WHERE username = ? AND product_id = ?',
+                        (username, product_id)).fetchone()[0]
+                    if already + quantity > max_per_product:
+                        conn.rollback()
+                        return {'ok': False, 'error': 'quota_exceeded',
+                                'max_per_product': max_per_product, 'already': already}
+                unit_price = prod['price']
+                total = unit_price * quantity
+                wallet = conn.execute(
+                    'SELECT balance FROM wallets WHERE username = ?', (username,)).fetchone()
+                if not wallet:
+                    conn.rollback()
+                    return {'ok': False, 'error': 'no_wallet'}
+                if wallet['balance'] < total:
+                    conn.rollback()
+                    return {'ok': False, 'error': 'insufficient_funds',
+                            'balance': wallet['balance'], 'total': total}
+                if check_stock:
+                    conn.execute('UPDATE products SET stock = stock - ? WHERE id = ?',
+                                 (quantity, product_id))
+                conn.execute(
+                    'UPDATE wallets SET balance = balance - ?, '
+                    'updated_at = CURRENT_TIMESTAMP WHERE username = ?', (total, username))
+                cur = conn.execute(
+                    'INSERT INTO orders (username, product_id, quantity, unit_price, total) '
+                    'VALUES (?, ?, ?, ?, ?)',
+                    (username, product_id, quantity, unit_price, total))
+                order_id = cur.lastrowid
+                conn.commit()
+                return {'ok': True, 'order_id': order_id, 'product_id': product_id,
+                        'product': prod['name'], 'quantity': quantity,
+                        'unit_price': unit_price, 'total': total,
+                        'balance': wallet['balance'] - total}
+        except Exception as e:
+            logger.error(f"[DB] try_purchase error: {e}")
+            return {'ok': False, 'error': 'db_error'}
+
+    # ── Teleconsultation appointments (API6 — sensitive business flow) ─────────
+    # Raw persistence only; the per-patient booking-cap toggle lives in
+    # services/appointment_service.py.
+
+    def seed_appointment_slots(self) -> int:
+        """Seed a scarce set of open slots if none exist. Idempotent. Returns count."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                n = conn.execute('SELECT COUNT(*) FROM appointment_slots').fetchone()[0]
+                if n > 0:
+                    return n
+                base = (datetime.now().replace(minute=0, second=0, microsecond=0)
+                        + timedelta(days=1, hours=1))
+                roster = [('Dr. Marlowe Pike', 'Cardiology'),
+                          ('Dr. Selma Okafor', 'Electrophysiology')]
+                rows = []
+                for clin_i, (clinician, specialty) in enumerate(roster):
+                    for day in range(4):
+                        t = base + timedelta(days=day, hours=clin_i * 2)
+                        rows.append((clinician, specialty, t.isoformat()))
+                conn.executemany(
+                    'INSERT INTO appointment_slots (clinician, specialty, slot_time) '
+                    'VALUES (?, ?, ?)', rows)
+                conn.commit()
+                logger.info(f"[DB] Seeded {len(rows)} appointment slots")
+                return len(rows)
+        except Exception as e:
+            logger.error(f"[DB] seed_appointment_slots error: {e}")
+            return 0
+
+    def list_open_slots(self) -> List[Dict]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT id, clinician, specialty, slot_time FROM appointment_slots "
+                    "WHERE status = 'open' ORDER BY slot_time, id").fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] list_open_slots error: {e}")
+            return []
+
+    def slots_for_user(self, username: str) -> List[Dict]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT id, clinician, specialty, slot_time, booked_at "
+                    "FROM appointment_slots WHERE booked_by = ? AND status = 'booked' "
+                    "ORDER BY slot_time, id", (username,)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[DB] slots_for_user error: {e}")
+            return []
+
+    def book_slot(self, username: str, slot_id: int, max_active=2) -> Dict:
+        """Book a slot. The atomic claim (UPDATE … WHERE status='open') stops two patients
+        double-booking the same slot in BOTH modes. max_active=None disables the per-patient
+        cap (the API6 hook); a number enforces it (secure mode).
+
+        The cap is checked against the denormalized users.active_appointments counter — NOT a
+        live COUNT over appointment_slots. A successful booking increments that counter (and
+        cancel_slot decrements it), so the column is the single source of truth for the cap."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                # Secure control: per-patient active-booking cap, read straight from the
+                # users counter column (no row count over appointment_slots).
+                if max_active is not None:
+                    row = conn.execute(
+                        "SELECT active_appointments FROM users WHERE username = ?",
+                        (username,)).fetchone()
+                    active = row['active_appointments'] if row else 0
+                    if active >= max_active:
+                        return {'ok': False, 'error': 'booking_limit_reached',
+                                'max_active': max_active}
+                # Atomic slot claim — succeeds only if the slot is still open.
+                cur = conn.execute(
+                    "UPDATE appointment_slots SET status = 'booked', booked_by = ?, "
+                    "booked_at = ? WHERE id = ? AND status = 'open'",
+                    (username, datetime.now().isoformat(), slot_id))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    return {'ok': False, 'error': 'slot_taken'}
+                # Keep the denormalized counter in lock-step with the new booking.
+                conn.execute(
+                    "UPDATE users SET active_appointments = active_appointments + 1 "
+                    "WHERE username = ?", (username,))
+                conn.commit()
+                row = conn.execute(
+                    "SELECT id, clinician, specialty, slot_time FROM appointment_slots "
+                    "WHERE id = ?", (slot_id,)).fetchone()
+                return {'ok': True, 'slot': dict(row)}
+        except Exception as e:
+            logger.error(f"[DB] book_slot error: {e}")
+            return {'ok': False, 'error': 'db_error'}
+
+    def cancel_slot(self, username: str, slot_id: int,
+                    http_method: str = 'POST', vulnerable: bool = False) -> Dict:
+        """Release one of the caller's booked slots and decrement the user's denormalized
+        active_appointments counter.
+
+        SECURE (vulnerable=False): the HTTP method is validated FIRST — only POST may mutate
+        state — and then the slot release and the counter decrement happen together,
+        atomically and owner-only. A non-POST request changes nothing and returns 405. The
+        counter never drifts from the schedule.
+
+        VULNERABLE (vulnerable=True) — INTENTIONAL business-logic flaw (API6 slot hoarding via
+        an HTTP-method-confusion counter desync): the counter is decremented FIRST, for ANY
+        method, and the method is only checked AFTERWARD. The endpoint is meant to accept POST
+        only, but that is not verified until the counter has already been lowered. On a
+        non-POST request (DELETE / GET) the function returns BEFORE releasing the slot — so the
+        booking stays under the attacker while their counter drops, letting them re-book and
+        accumulate slots past the per-patient cap (denial of care). Second vector: a POST for a
+        slot they do NOT own also decrements the counter before the ownership check fails."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                if not vulnerable:
+                    # SECURE: reject any non-POST method before touching state.
+                    if http_method != 'POST':
+                        return {'ok': False, 'error': 'method_not_allowed',
+                                'method': http_method}
+                    cur = conn.execute(
+                        "UPDATE appointment_slots SET status = 'open', booked_by = NULL, "
+                        "booked_at = NULL WHERE id = ? AND booked_by = ? AND status = 'booked'",
+                        (slot_id, username))
+                    if cur.rowcount != 1:
+                        conn.rollback()
+                        return {'ok': False, 'error': 'not_your_booking'}
+                    conn.execute(
+                        "UPDATE users SET active_appointments = MAX(active_appointments - 1, 0) "
+                        "WHERE username = ?", (username,))
+                    conn.commit()
+                    return {'ok': True, 'slot_id': slot_id}
+
+                # VULNERABLE: decrement the counter BEFORE validating the request method.
+                conn.execute(
+                    "UPDATE users SET active_appointments = MAX(active_appointments - 1, 0) "
+                    "WHERE username = ?", (username,))
+                conn.commit()
+                # The endpoint only means to accept POST — but it is checked too late, after
+                # the counter was already lowered. Non-POST leaves the slot booked.
+                if http_method != 'POST':
+                    return {'ok': False, 'error': 'method_not_allowed', 'method': http_method}
+                # POST path: actually release the slot (owner-only).
+                cur = conn.execute(
+                    "UPDATE appointment_slots SET status = 'open', booked_by = NULL, "
+                    "booked_at = NULL WHERE id = ? AND booked_by = ? AND status = 'booked'",
+                    (slot_id, username))
+                conn.commit()
+                if cur.rowcount != 1:
+                    return {'ok': False, 'error': 'not_your_booking'}
+                return {'ok': True, 'slot_id': slot_id}
+        except Exception as e:
+            logger.error(f"[DB] cancel_slot error: {e}")
+            return {'ok': False, 'error': 'db_error'}
