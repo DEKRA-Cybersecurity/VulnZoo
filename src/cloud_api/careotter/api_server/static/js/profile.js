@@ -97,9 +97,12 @@
                         headers: authHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ photo: dataUri })
                     });
+                    const d = await res.json().catch(() => ({}));
                     if (!res.ok) {
-                        const d = await res.json().catch(() => ({}));
                         alert(d.error || 'Failed to upload photo.');
+                    } else if (d.photo) {
+                        // Swap the optimistic data URI for the canonical stored file.
+                        document.getElementById('avatar-img').src = d.photo;
                     }
                 } catch (e) {
                     alert('Network error uploading photo.');

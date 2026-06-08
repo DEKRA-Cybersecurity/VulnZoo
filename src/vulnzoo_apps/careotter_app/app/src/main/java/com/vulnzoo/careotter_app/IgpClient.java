@@ -18,7 +18,8 @@ import java.nio.ByteOrder;
  * 1. Credentials (auth token) sent in plaintext over TCP — no TLS
  * 2. Hardcoded XOR token visible via static analysis
  * 3. No server certificate / identity verification
- * 4. Stateful auth on server: one successful auth enables all connections
+ * 4. Stateful auth on server: one successful aut
+ * h enables all connections
  */
 public class IgpClient {
 

@@ -580,20 +580,23 @@ class DatabaseService:
             return False
 
     def delete_device_for_patient(self, patient_username: str) -> bool:
-        """Delete the device associated with a patient."""
+        """Unregister (not delete) the patient's device: keep the row but clear its
+        owner. ``patient_username`` is ``NOT NULL`` in the schema, so the unowned
+        marker is the empty string ``''`` — the same convention the seeded/unclaimed
+        Pi device uses — not ``NULL`` (which would raise a NOT NULL IntegrityError)."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.execute(
-                    'DELETE FROM devices WHERE patient_username = ?',
+                    "UPDATE devices SET patient_username = '' WHERE patient_username = ?",
                     (patient_username,)
                 )
                 conn.commit()
                 if cur.rowcount > 0:
-                    logger.info(f"[DB] Deleted device for patient: {patient_username}")
+                    logger.info(f"[DB] Unregistered device for patient: {patient_username}")
                     return True
                 return False
         except Exception as e:
-            logger.error(f"[DB] Error deleting device for patient: {e}")
+            logger.error(f"[DB] Error unregistering device for patient: {e}")
             return False
 
     def delete_other_devices_for_patient(self, patient_username: str,

@@ -8,9 +8,8 @@
     <link rel="stylesheet" href="/static/style/diagnostics.css">
 </head>
 <!--
-    Device Diagnostics: the cloud fetches the device's own /health endpoint server-side and
-    shows the raw response. The device probe URL is validated against the registered-device
-    whitelist. Privileged user-management API lives under /api/users/* (loopback only).
+    Device Diagnostics: the cloud pings the patient's registered device server-side and shows
+    the status it reports back.
 -->
 <body>
 
@@ -55,29 +54,56 @@
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg>
             Device Connectivity &amp; Diagnostics
         </h2>
+        {% if device_ip %}
         <p class="diag-help">
-            The cloud will fetch your device's diagnostics endpoint and show the raw response.
-            Only registered device hosts are allowed.
+            Run a connectivity check against your registered device. The cloud contacts the
+            device and shows the status it reports back.
         </p>
 
         <div class="card diag-card">
-            <label class="diag-label" for="probe-url">Device diagnostics URL</label>
-            <div class="diag-row">
-                <input type="text" id="probe-url" class="diag-input"
-                       value="http://careservice:8081/health"
-                       spellcheck="false" autocomplete="off">
-                <button id="btn-probe" class="btn btn-primary">Check diagnostics</button>
-            </div>
+            <!-- Registered device diagnostics endpoint. -->
+            <input type="hidden" id="probe-url" value="http://{{ device_ip }}:8081/health">
+            <button id="btn-probe" class="btn btn-primary">Check device connectivity</button>
             <p id="diag-msg" class="diag-msg" style="display:none;"></p>
         </div>
 
         <div class="card diag-result" id="diag-result" style="display:none;">
-            <div class="diag-result-head">
-                <span class="diag-result-title">Upstream response</span>
-                <span id="diag-status" class="diag-status">—</span>
+            <!-- Friendly summary, shown when the device returns a normal health report. -->
+            <div id="diag-friendly" class="diag-friendly" style="display:none;">
+                <div class="diag-ok-head">
+                    <span class="diag-ok-badge">
+                        <svg viewBox="0 0 24 24"><polyline points="20,6 9,17 4,12"/></svg>
+                    </span>
+                    <div>
+                        <div class="diag-ok-title">Device online</div>
+                        <div class="diag-ok-sub">Your CareOtter device is connected and reporting normally.</div>
+                    </div>
+                </div>
+                <dl class="diag-info">
+                    <div class="diag-info-row"><dt>Status</dt><dd id="info-status">—</dd></div>
+                    <div class="diag-info-row"><dt>Connection</dt><dd id="info-network">—</dd></div>
+                    <div class="diag-info-row"><dt>Device ID</dt><dd id="info-mac">—</dd></div>
+                    <div class="diag-info-row"><dt>Last report</dt><dd id="info-uptime">—</dd></div>
+                </dl>
             </div>
-            <pre id="diag-body" class="diag-body"></pre>
+            <!-- Raw reflected response — fallback for any non-health reply. -->
+            <div id="diag-raw" style="display:none;">
+                <div class="diag-result-head">
+                    <span class="diag-result-title">Upstream response</span>
+                    <span id="diag-status" class="diag-status">—</span>
+                </div>
+                <pre id="diag-body" class="diag-body"></pre>
+            </div>
         </div>
+        {% else %}
+        <div class="card diag-card">
+            <p class="diag-help" style="margin:0 0 14px">
+                <strong>No device registered.</strong> You must register your device before you can
+                run diagnostics. Once it's registered, its address appears here automatically.
+            </p>
+            <a href="/" class="btn btn-primary">Register a device</a>
+        </div>
+        {% endif %}
     </section>
 
 </main>
