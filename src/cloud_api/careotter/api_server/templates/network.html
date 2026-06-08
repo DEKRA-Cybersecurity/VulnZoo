@@ -121,7 +121,10 @@
         try {
             const res  = await apiFetch('/api/health');
             const data = await res.json();
-            display.value = data.device || 'unknown';
+            // /api/health reports the Pi as `raspberry_pi_ip` in "host:port"
+            // form (e.g. "192.168.0.24:9999") — exactly what pingDevice() parses.
+            // The old `data.device` field never existed, so Reset showed "unknown".
+            display.value = data.raspberry_pi_ip || 'unknown';
         } catch (e) {
             display.value = 'Error fetching IP';
         }

@@ -25,9 +25,13 @@ import struct
 import logging
 import secrets
 import hmac
+import base64
+import hashlib
 from collections import deque
 import requests as http_requests
-from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response, g
+from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response, g, send_from_directory
+from werkzeug.utils import secure_filename
+from werkzeug.exceptions import NotFound
 from config import Config
 from core.igp_client import IGPError
 from core.jwt_service import JWTService
@@ -253,6 +257,17 @@ def _get_device_for_current_user() -> tuple[str | None, int | None, dict | None]
     username = payload.get('sub') or payload.get('username', '')
     if not username or not db:
         return None, None, None
+    # The admin panel manages the global CareOtter device (the Raspberry Pi),
+    # not a per-patient owned device — admins own no row in `devices`, so the
+    # per-patient lookup below would wrongly report "no device" and 404 every
+    # admin endpoint (network / wifi / preferences / services / logs). Resolve
+    # admins to the live Config.DEVICE_IP — the same address /api/device/ping
+    # and /api/health already use — with no DB row (the row can be stale; the
+    # in-memory IP is promoted by _refresh_device_ip_from_sensor). Patient and
+    # caregiver resolution is unchanged, so the /api/config/thresholds BFLA
+    # chain still resolves to the patient's own device.
+    if payload.get('role') == 'admin':
+        return (Config.DEVICE_IP or None, Config.IGP_PORT, None)
     device_row = db.get_device_by_patient(username)
     if not device_row:
         return None, None, None
@@ -759,8 +774,16 @@ def appointments_cancel():
 @app.route('/diagnostics')
 @web_patient_required
 def diagnostics_page():
-    """Patient device-diagnostics page — linked from the index.html nav bar."""
-    return render_template('diagnostics.html')
+    """Patient device-diagnostics page — linked from the index.html nav bar.
+    Pre-fills the probe field with the LOGGED-IN PATIENT's own registered device
+    IP (the `devices` row whose patient_username matches them) — NOT the global
+    Config.DEVICE_IP. If the patient has not registered/claimed a device, the
+    field is left empty and the placeholder prompts for their device IP."""
+    payload = _decode_and_validate() or {}
+    username = payload.get('sub') or payload.get('username', '')
+    dev = db.get_device_by_patient(username) if (db and username) else None
+    device_ip = (dev.get('device_ip') or '') if dev else ''
+    return render_template('diagnostics.html', device_ip=device_ip)
 
 
 @app.route('/api/device/diagnostics', methods=['POST'])
@@ -768,11 +791,19 @@ def diagnostics_page():
 def device_diagnostics():
     if not diag:
         return jsonify({'error': 'Diagnostics unavailable'}), 503
+    username = g.current_user.get('sub') or g.current_user.get('username', '')
     data = request.get_json(force=True, silent=True) or {}
     probe_url = data.get('probe_url', '')
-    result = diag.probe(probe_url)
+    # Protection: probe is validated against the requester's OWN registered device(s).
+    result = diag.probe(probe_url, username)
     if not result.get('ok'):
-        code = 400 if result.get('error') in ('invalid_url', 'host_not_allowed') else 502
+        err = result.get('error')
+        if err == 'no_device':
+            code = 403          # patient must register a device before diagnosing
+        elif err in ('invalid_url', 'host_not_allowed'):
+            code = 400
+        else:
+            code = 502
         return jsonify(result), code
     return jsonify(result), 200
 
@@ -1090,9 +1121,65 @@ def remove_patient_caregiver(caregiver_username):
 
 # ── Patient profile self-service ──────────────────────────────────────────────
 
-# Max accepted profile photo size (base64 data URI). 2 MB of raw image →
-# ~2.7 MB base64; cap at 4 MB of encoded text to leave headroom.
+# Profile photos are stored as files on disk under Config.UPLOAD_DIR/avatars and
+# referenced by URL path in users.profile_photo — not inlined as base64 in the DB.
+# Incoming uploads still arrive as a `data:image/*;base64,…` URI (the file input
+# reads the picture with FileReader.readAsDataURL); the server decodes it, writes
+# the bytes to a file, and persists only the short `/uploads/avatars/<file>` path.
+_AVATAR_DIR = os.path.join(Config.UPLOAD_DIR, 'avatars')
+# Incoming data-URI text cap (DoS guard before we even decode): ~2 MB image →
+# ~2.7 MB base64; allow 4 MB of encoded text for headroom.
 _MAX_PHOTO_DATA_URI = 4 * 1024 * 1024
+# Decoded-image cap.
+_MAX_PHOTO_BYTES = 2 * 1024 * 1024
+# Allowed image types → file extension. SVG is deliberately excluded: serving it
+# from our own origin (the /uploads route below) would be a stored-XSS the inline
+# data-URI version never had.
+_ALLOWED_IMAGE_TYPES = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg',
+    'image/gif': 'gif', 'image/webp': 'webp',
+}
+
+
+def _store_avatar_file(username: str, data_uri: str) -> str | None:
+    """Decode a ``data:image/*;base64,…`` URI, write it under the avatars dir, and
+    return its public ``/uploads/avatars/<file>`` path. Returns ``None`` if the URI
+    is malformed, the type is not an allowed image, or the decoded bytes exceed the
+    cap. The filename embeds a content hash so re-uploads bust the browser cache."""
+    try:
+        header, b64 = data_uri.split(',', 1)
+    except ValueError:
+        return None
+    if ';base64' not in header:
+        return None
+    mime = header[5:].split(';', 1)[0].strip().lower()   # strip leading "data:"
+    ext = _ALLOWED_IMAGE_TYPES.get(mime)
+    if not ext:
+        return None
+    try:
+        raw = base64.b64decode(''.join(b64.split()), validate=True)   # tolerate stray whitespace
+    except Exception:
+        return None
+    if not raw or len(raw) > _MAX_PHOTO_BYTES:
+        return None
+    os.makedirs(_AVATAR_DIR, exist_ok=True)
+    safe = secure_filename(username) or 'user'
+    digest = hashlib.sha256(raw).hexdigest()[:10]
+    filename = f"{safe}-{digest}.{ext}"
+    with open(os.path.join(_AVATAR_DIR, filename), 'wb') as fh:
+        fh.write(raw)
+    return f"/uploads/avatars/{filename}"
+
+
+def _delete_avatar_if_local(stored: str) -> None:
+    """Remove a previously stored avatar file when it is replaced. No-ops for a
+    legacy inline data URI (only paths under /uploads/avatars/ map to a file)."""
+    if not stored or not stored.startswith('/uploads/avatars/'):
+        return
+    try:
+        os.remove(os.path.join(_AVATAR_DIR, os.path.basename(stored)))
+    except OSError:
+        pass
 
 
 @app.route('/api/user/profile', methods=['GET'])
@@ -1200,12 +1287,20 @@ def upload_profile_photo():
     display_name = data.get('display_name')
 
     updated = []
+    stored_path = None
     if photo is not None:
         if not isinstance(photo, str) or not photo.startswith('data:image/'):
             return jsonify({'error': 'photo must be a data:image/* base64 URI'}), 400
         if len(photo) > _MAX_PHOTO_DATA_URI:
             return jsonify({'error': 'Image too large (max ~3 MB)'}), 413
-        if db.set_profile_photo(username, photo):
+        stored_path = _store_avatar_file(username, photo)
+        if not stored_path:
+            return jsonify({'error': 'photo must be a valid data:image/(png|jpeg|gif|webp) base64 URI under 2 MB'}), 400
+        # Persist the path (not the bytes); drop the user's previous avatar file.
+        old_photo = (db.get_user_profile(username) or {}).get('profile_photo')
+        if db.set_profile_photo(username, stored_path):
+            if old_photo and old_photo != stored_path:
+                _delete_avatar_if_local(old_photo)
             updated.append('photo')
     if display_name is not None:
         if db.set_display_name(username, display_name.strip()):
@@ -1213,7 +1308,24 @@ def upload_profile_photo():
 
     if not updated:
         return jsonify({'error': 'Nothing to update'}), 400
-    return jsonify({'status': 'profile_updated', 'updated': updated}), 200
+    resp = {'status': 'profile_updated', 'updated': updated}
+    if stored_path:
+        resp['photo'] = stored_path
+    return jsonify(resp), 200
+
+
+@app.route('/uploads/avatars/<path:filename>')
+def serve_avatar(filename):
+    """Serve a stored profile photo from disk. The bytes live under the avatars
+    dir (see _store_avatar_file); the DB only holds the path. Public, like any
+    profile image — an <img> can't send the auth token. send_from_directory uses
+    werkzeug's safe_join, so path traversal (../) or a missing file raises
+    NotFound — caught here for a clean 404 (otherwise the global Exception handler
+    would surface it as a 500)."""
+    try:
+        return send_from_directory(_AVATAR_DIR, filename)
+    except NotFound:
+        return jsonify({'error': 'avatar not found'}), 404
 
 
 @app.route('/api/auth/login/caregiver', methods=['POST'])

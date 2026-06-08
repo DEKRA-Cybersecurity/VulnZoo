@@ -92,6 +92,8 @@
 | `/hint` | GET | — | No | Out-of-scope hint endpoint (API-07) |
 | `/api/users` | GET | — | JWT (admin) | List all users (no password hashes) — feeds the User Administration autocomplete |
 | `/api/users/delete` | GET/POST | — | Multi-modal | Admin JWT → delete any user; patient JWT → self-delete (password-gated); **no JWT + loopback → delete any (API-07 SSRF confused-deputy)**; else `404` |
+| `/api/user/profile/photo` | POST | — | JWT | Upload avatar (`data:image/*` base64) — decoded and written to disk; `users.profile_photo` stores only the `/uploads/avatars/<file>` path |
+| `/uploads/avatars/<file>` | GET | — | No | Serve a stored profile photo from `Config.UPLOAD_DIR/avatars` (`send_from_directory`, traversal-safe) |
 
 > **Internal IGP command not exposed as HTTP:** `0x0D DEAUTHENTICATE` — invoked
 > automatically by `device_service._exec_protected()` after every admin command

@@ -22,6 +22,7 @@
 #define THRESH_FILE   "/var/log/careotter.thresholds"
 #define ALERT_CONF    "/etc/careotter/alert.conf"
 #define SENSOR_PORT   8081
+#define MACADDR       "02:CE:01:00:00:03"  /* fixed MAC for WiFi interface to avoid DHCP issues */
 #define _STRINGIFY(x) #x
 #define STRINGIFY(x)  _STRINGIFY(x)
 

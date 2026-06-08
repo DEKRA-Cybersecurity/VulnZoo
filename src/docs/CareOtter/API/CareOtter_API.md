@@ -90,7 +90,7 @@ Each physical device (identified by BLE MAC) is owned by one patient user.
 |--------|------|-------------|
 | `id` | INTEGER PK | Auto-increment |
 | `mac` | TEXT UNIQUE | BLE MAC address |
-| `patient_username` | TEXT FK → users.username | Owning patient |
+| `patient_username` | TEXT NOT NULL, FK → users.username | Owning patient; `''` = unclaimed (see device lifecycle below) |
 | `device_name` | TEXT | Human-readable name |
 | `auth_hash` | TEXT | 12-hex factory signature |
 | `registered_at` | TIMESTAMP | Registration time |
@@ -358,6 +358,15 @@ the empty string `''` as the "unclaimed" sentinel. `get_devices_for_patient`
 filters by exact match, so an unclaimed row never leaks to any logged-in
 user.
 
+`DELETE /api/devices/me` is the **inverse** of `register-by-hash`: it
+**unregisters** the patient's device by writing `patient_username` back to the
+same `''` unclaimed sentinel — **not** `NULL` (the column is `NOT NULL`, so a
+`NULL` write raises a `NOT NULL constraint failed` IntegrityError and the
+operation silently no-ops). The **device row is kept**, so the device can be
+re-claimed later via `register-by-hash`; it is an *unregister*, not a row delete.
+Implemented in `db.delete_device_for_patient` as
+`UPDATE devices SET patient_username = '' WHERE patient_username = ?`.
+
 ---
 
 #### `/admin/device/register` — Signature-Based Device Registration
@@ -460,7 +469,7 @@ The patient types the 12-hex code printed on the device sticker. The cloud looks
 | POST | `/api/patient/caregivers` | — | Patient adds a caregiver to their account |
 | GET | `/api/patient/caregivers` | — | List caregivers assigned to the authenticated patient |
 | DELETE | `/api/patient/caregivers/<username>` | — | Patient removes a caregiver |
-| DELETE | `/api/devices/me` | — | Patient unregisters their own device |
+| DELETE | `/api/devices/me` | — | Patient unregisters their own device — clears `patient_username` to the `''` unclaimed sentinel (row kept, re-claimable); **not** a row delete |
 
 ### Web UI Pages
 

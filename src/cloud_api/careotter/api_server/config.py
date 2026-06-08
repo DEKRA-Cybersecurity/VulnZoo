@@ -38,7 +38,13 @@ class Config:
     # ── Database ───────────────────────────────────────────────────────────
     # Path to the SQLite database (persisted via Docker volume)
     DB_PATH = os.getenv('DB_PATH', '/app/data/careotter.db')
-    
+
+    # ── Uploads (user content on disk, not inline in the DB) ────────────────
+    # Profile photos are written here as files; the users.profile_photo column
+    # keeps only a short URL path. Placed beside the SQLite DB so the same
+    # mounted volume persists both.
+    UPLOAD_DIR = os.getenv('UPLOAD_DIR', os.path.join(os.path.dirname(DB_PATH) or '.', 'uploads'))
+
     # ── Operation mode ─────────────────────────────────────────────────────
     # VULNERABLE=1 exposes raw fields, debug mode and detailed errors
     # VULNERABLE=0 enables additional security controls
