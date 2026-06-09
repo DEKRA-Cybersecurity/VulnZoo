@@ -554,21 +554,42 @@ The recommended way to start the Cloud API is via the **`cloudctl.sh`** helper s
 
 ```bash
 cd cloud_api/careotter
-./cloudctl.sh start        # build + up -d with auto WiFi detection
-./cloudctl.sh start --no-wifi  # skip WiFi credential injection
-./cloudctl.sh stop         # docker compose down -v
-./cloudctl.sh restart      # stop + start
+./cloudctl.sh start                 # build + up -d, VULNERABLE mode (default), auto WiFi
+./cloudctl.sh start --secure        # same, but SECURE mode (VULNERABLE=0)
+./cloudctl.sh start --no-wifi       # skip WiFi credential injection
+./cloudctl.sh stop                  # docker compose down — KEEPS the seeded DB volume
+./cloudctl.sh restart [--secure]    # stop + start; non-destructive (data preserved)
+./cloudctl.sh reset                 # docker compose down -v — DROPS the seeded DB
+./cloudctl.sh status                # docker compose ps
+./cloudctl.sh logs [service…]       # follow logs (e.g. logs careotter-proxy)
 
-# API:           http://localhost:5002/api/health
-# Admin Panel:   http://localhost:5002/admin/login
+# API:            http://localhost:5002/api/health
+# Admin Panel:    http://localhost:5002/admin/login
 # Patient Portal: http://localhost:5002/patient/login
 ```
 
-If you prefer manual control, you can still use `docker compose` directly:
+> **Vulnerable vs. secure mode.** `start`/`restart` default to **VULNERABLE**
+> (`VULNERABLE=1`): the API8 reverse proxy (`careotter-proxy`) enforces an
+> exact-match ACL on the admin/DB-debug/init endpoints that a trailing slash
+> bypasses (the app routes slash-insensitively). Pass `--secure` (`VULNERABLE=0`)
+> to launch with normalized matching that closes the bypass. The script prints
+> the active mode on every launch.
+
+> **`stop` vs. `reset`.** `stop` (and therefore `restart`) is **non-destructive**:
+> it runs `docker compose down` and keeps the `careotter_data` volume, so seeded
+> users/vitals survive. Use `reset` (`docker compose down -v`) only for a clean
+> slate — the stack re-seeds default accounts on the next `start`. Wiping the
+> seeded users breaks the API1/API3 attack chains and makes `/initialize_iot`
+> return `409` until the volume is recreated.
+
+If you prefer manual control, you can still use `docker compose` directly. Note
+that the external `:5002` is published by the `careotter-proxy` container — the
+API itself is internal-only on `careotter-net`, so bring up the **whole stack**,
+not just the API service:
 
 ```bash
 cd cloud_api/careotter
-docker compose up careotter-api
+VULNERABLE=1 docker compose up -d --build   # proxy + API + careservice (use VULNERABLE=0 for secure mode)
 ```
 
 ---
@@ -678,6 +699,10 @@ curl http://localhost:5002/api/health
 ```
 
 `cloudctl.sh start` detects your active WiFi interface, reads the SSID and PSK from NetworkManager, and passes them as `WIFI_SSID`/`WIFI_PSK` to the container. When you later call `/initialize_iot`, the Pi receives the WiFi config automatically over IGP.
+
+> For the full lifecycle command set — `stop` (non-destructive) vs. `reset`
+> (wipes the seeded DB), `status`, `logs`, and `--secure`/`--vulnerable` mode
+> selection — see *Cloud API → Docker Deployment* above.
 
 **Manual startup (Ethernet only):**
 ```bash

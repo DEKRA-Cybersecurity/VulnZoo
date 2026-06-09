@@ -7,10 +7,14 @@
 # Reading the PSK requires sudo because the connection file is root-only.
 #
 # Usage:
-#   ./cloudctl.sh start          # build + up -d with auto WIFI_SSID/WIFI_PSK
-#   ./cloudctl.sh start --no-wifi  # up -d without pushing credentials
-#   ./cloudctl.sh stop           # docker compose down -v
-#   ./cloudctl.sh restart        # stop + start
+#   ./cloudctl.sh start                 # build + up -d (VULNERABLE mode, default)
+#   ./cloudctl.sh start --secure        # build + up -d in SECURE mode (VULNERABLE=0)
+#   ./cloudctl.sh start --no-wifi       # up -d without pushing WiFi credentials
+#   ./cloudctl.sh stop                  # docker compose down (KEEPS the data volume)
+#   ./cloudctl.sh restart [--secure]    # stop + start (non-destructive; data preserved)
+#   ./cloudctl.sh reset                 # docker compose down -v (DROPS the seeded DB)
+#   ./cloudctl.sh status                # docker compose ps
+#   ./cloudctl.sh logs [service…]       # follow logs (e.g. logs careotter-proxy)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -83,8 +87,24 @@ action_start() {
     require docker
     docker compose version >/dev/null 2>&1 || die "docker compose plugin not installed"
 
-    local push_wifi=1
-    [ "${1:-}" = "--no-wifi" ] && push_wifi=0
+    local push_wifi=1 vulnerable=1
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --no-wifi)            push_wifi=0 ;;
+            --secure)             vulnerable=0 ;;
+            --vulnerable|--vuln)  vulnerable=1 ;;
+            *) die "Unknown option for start: $1 (try: --secure | --vulnerable | --no-wifi)" ;;
+        esac
+        shift
+    done
+
+    local mode_label
+    if [ "$vulnerable" -eq 1 ]; then
+        mode_label="VULNERABLE — proxy ACL bypassable (trailing-slash)"
+    else
+        mode_label="SECURE — normalized ACL (bypass closed)"
+    fi
+    log "Launch mode: $mode_label  (VULNERABLE=$vulnerable)"
 
     local wifi_ssid="" wifi_psk="" host_ip="" iface=""
 
@@ -115,18 +135,49 @@ action_start() {
     fi
 
     log "docker compose up --build -d"
+    VULNERABLE="${vulnerable}" \
     WIFI_SSID="${wifi_ssid}" \
     WIFI_PSK="${wifi_psk}" \
     HOST_WIFI_IP="${host_ip}" \
         docker compose up --build -d
 
     docker compose ps
+
+    local url_host="${host_ip:-localhost}"
+    [ -n "$url_host" ] || url_host=localhost
+    log "Mode: $mode_label"
+    log "API reachable at http://${url_host}:5002  (external :5002 is the nginx proxy → API internal-only)"
 }
 
 action_stop() {
     require docker
+    log "docker compose down  (data volume preserved — use 'reset' to wipe it)"
+    docker compose down
+}
+
+# reset — tear down AND drop the careotter_data volume (seeded DB is lost).
+action_reset() {
+    require docker
+    local assume_yes=0
+    case "${1:-}" in -y|--yes) assume_yes=1 ;; esac
+    if [ "$assume_yes" -ne 1 ] && [ -t 0 ]; then
+        printf '\033[1;31m[cloudctl]\033[0m This DROPS the careotter_data volume (seeded users/vitals lost). Continue? [y/N] '
+        local ans=""; read -r ans || true
+        case "$ans" in y|Y|yes|YES) ;; *) die "Aborted — volume untouched." ;; esac
+    fi
     log "docker compose down -v"
     docker compose down -v
+}
+
+action_status() {
+    require docker
+    docker compose ps
+}
+
+# logs [service…] — follow container logs (Ctrl+C to stop).
+action_logs() {
+    require docker
+    docker compose logs --tail=200 -f "$@"
 }
 
 action_restart() {
@@ -140,18 +191,37 @@ case "${1:-}" in
     start)   shift; action_start "$@" ;;
     stop)    action_stop ;;
     restart) shift; action_restart "$@" ;;
+    reset)   shift; action_reset "$@" ;;
+    status)  action_status ;;
+    logs)    shift; action_logs "$@" ;;
     *)
         cat >&2 <<EOF
-Usage: $0 {start|stop|restart} [--no-wifi]
+Usage: $0 {start|stop|restart|reset|status|logs} [options]
 
-  start    Build the image and bring the stack up. Auto-detects the host's
-           WiFi interface and exports WIFI_SSID, WIFI_PSK, HOST_WIFI_IP so
-           /initialize_iot can push the same credentials to the Pi.
-           Use --no-wifi to skip WiFi credential injection.
+  start [--secure|--vulnerable] [--no-wifi]
+           Build the image and bring the stack up (detached). Default mode is
+           VULNERABLE (API8 proxy ACL bypassable via trailing slash); pass
+           --secure to launch with VULNERABLE=0 (normalized ACL, bypass closed).
+           Auto-detects the host's WiFi interface and exports WIFI_SSID,
+           WIFI_PSK, HOST_WIFI_IP so /initialize_iot can push the same
+           credentials to the Pi; use --no-wifi to skip that.
 
-  stop     docker compose down -v (drops the careotter_data volume).
+  stop     docker compose down — stops the stack but KEEPS the careotter_data
+           volume (the seeded DB survives).
 
-  restart  stop + start (accepts --no-wifi like start).
+  restart [--secure|--vulnerable] [--no-wifi]
+           stop + start; non-destructive (data preserved). Accepts the same
+           flags as start, so you can flip mode on restart.
+
+  reset [-y]
+           docker compose down -v — tears down AND drops the careotter_data
+           volume (seeded users/vitals are lost; the stack re-seeds on next
+           start). Prompts for confirmation unless -y/--yes is given.
+
+  status   docker compose ps.
+
+  logs [service…]
+           Follow container logs (e.g. logs careotter-proxy). Ctrl+C to stop.
 EOF
         exit 1
         ;;

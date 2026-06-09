@@ -123,7 +123,7 @@ ffuf -u http://localhost:5002/api/config/FUZZ -w params.txt -X POST \
 | `405` | wrong HTTP method — the `Allow:` response header reveals the valid verbs |
 | `200`/`2xx` | exists and the **patient is allowed** to call it |
 
-**Client / convention inference.** The mobile app's `IgpClient` exposes the device command taxonomy (`CMD_SET_THRESHOLD 0x08`, `CMD_GET_NETWORK 0x03`, `CMD_SET_WIFI 0x06`…); the Cloud API mirrors these as `/api/config/thresholds`, `/api/network`, `/api/network/wifi`, so the admin route names are guessable even though the app drives them over IGP. The admin web templates (`config.html`, `network.html`, `logs.html`) also embed these paths in inline JS — reachable if the attacker obtains that source (LFI, a static-route misconfig, or the lab material itself).
+**Client / convention inference.** The mobile app's `IgpClient` exposes the device command taxonomy (`CMD_SET_THRESHOLD 0x08`, `CMD_GET_NETWORK 0x03`, `CMD_SET_WIFI 0x06`…). The Cloud API mirrors these as `/api/config/thresholds`, `/api/network`, `/api/network/wifi`, so the admin route names are guessable even though the app drives them over IGP. The admin web templates (`config.html`, `network.html`, `logs.html`) also embed these paths in inline JS — reachable if the attacker obtains that source (LFI, a static-route misconfig, or the lab material itself).
 
 ### 2. Identify which endpoints are BFLA-vulnerable (role differential)
 
@@ -151,7 +151,7 @@ EOF
 
 > Use the **right verb** per route: a `POST` to a `GET`-only endpoint returns `405`, not `403`, which would muddy the differential.
 
-The **authorization oracle** for "what *should* be admin-only" is the Web UI: the `/admin/*` routes redirect a patient to login (the web layer enforces the role), so any REST counterpart a patient can still reach is mis-authorized. Generalised, build a **role × endpoint matrix** (patient / caregiver / admin); every cell where a low role reaches a high-role function is a BFLA. Here the matrix has exactly **one** offending cell: `POST /api/config/thresholds`.
+The **authorization oracle** for "what *should* be admin-only" is the Web UI: the `/admin/*` routes redirect a patient to login (the web layer enforces the role), so any REST counterpart a patient can still reach is mis-authorized. Generalised, build a **role × endpoint matrix** (patient / caregiver / admin). Every cell where a low role reaches a high-role function is a BFLA. Here the matrix has exactly **one** offending cell: `POST /api/config/thresholds`.
 
 ---
 
@@ -239,7 +239,7 @@ omitted (same strip as the `GET_NETWORK` `raw` field).
 
 ## Expected Result
 
-`POST /api/config/thresholds` returns `200 OK` with a patient token instead of `403 Forbidden`. The token is accepted because `@token_required` validates the JWT signature and expiration but **never evaluates the `role` claim**. The response is `THRESHOLDS_UPDATED` with BPM range `0–255` and SpO₂ minimum `0`, effectively disabling all clinical alerts; in vulnerable mode it also carries the `igp_request` field (Step 4).
+`POST /api/config/thresholds` returns `200 OK` with a patient token instead of `403 Forbidden`. The token is accepted because `@token_required` validates the JWT signature and expiration but **never evaluates the `role` claim**. The response is `THRESHOLDS_UPDATED` with BPM range `0–255` and SpO₂ minimum `0`, effectively disabling all clinical alerts. In vulnerable mode it also carries the `igp_request` field (Step 4).
 
 The remaining administrative endpoints behave as the secure baseline — a patient token receives **`403 Forbidden`**:
 - `GET /api/network`, `POST /api/network/wifi`, `POST /api/config/preferences`, `POST /api/services/restart`, `GET /api/logs` → `403` (`@admin_required`).

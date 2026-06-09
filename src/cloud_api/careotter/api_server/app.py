@@ -97,6 +97,11 @@ def _get_wifi_ip() -> str:
 
 
 app  = Flask(__name__)
+# API8 (Security Misconfiguration): the app routes slash-insensitively, so "/x" and
+# "/x/" hit the same handler. The reverse proxy (proxy/nginx.vuln.conf) ACLs the
+# admin/debug/init paths with EXACT-match rules, so a trailing slash slips past the
+# deny while still reaching the handler — a proxy↔app path-interpretation conflict.
+app.url_map.strict_slashes = False
 vuln = Config.VULNERABLE
 
 # Service instances (stateless — thread-safe for Flask dev server)
