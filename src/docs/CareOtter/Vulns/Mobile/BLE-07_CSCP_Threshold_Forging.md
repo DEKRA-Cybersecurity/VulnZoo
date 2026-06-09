@@ -18,7 +18,7 @@ verified_date: "2026-05-15"
 	
 # BLE-07 — Factory Provisioning Channel: Hidden Administrative Backdoor (M3)
 
-> **Status:** ✅ DONE
+> **Status:** DONE
 > **Source:** `CareOtter_IoT.md` §3.4 Factory Provisioning Channel
 > **OWASP Mobile:** M3 — Insecure Authentication/Authorization
 > **OWASP IoT:** I3 (primary), I9, I6, I2

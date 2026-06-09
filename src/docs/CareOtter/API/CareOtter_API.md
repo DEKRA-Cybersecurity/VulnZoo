@@ -660,18 +660,36 @@ POST /api/network
 
 ### Recommended: `cloudctl.sh`
 
-Use the provided helper script to start the stack. It auto-detects your host's active WiFi interface, extracts the SSID and PSK from NetworkManager, and exports them as `WIFI_SSID`/`WIFI_PSK` so `/initialize_iot` can push WiFi credentials to the Pi automatically.
+Use the provided helper script to manage the stack. On `start`/`restart` it
+auto-detects your host's active WiFi interface, extracts the SSID and PSK from
+NetworkManager, and exports them as `WIFI_SSID`/`WIFI_PSK` so `/initialize_iot`
+can push WiFi credentials to the Pi automatically.
 
 ```bash
 cd cloud_api/careotter
-./cloudctl.sh start        # build + up -d with auto WiFi detection
-./cloudctl.sh start --no-wifi  # skip WiFi credential injection
-./cloudctl.sh stop         # docker compose down -v
-./cloudctl.sh restart      # stop + start
+./cloudctl.sh start                 # build + up -d, VULNERABLE mode (default), auto WiFi
+./cloudctl.sh start --secure        # same, but SECURE mode (VULNERABLE=0)
+./cloudctl.sh start --no-wifi       # skip WiFi credential injection
+./cloudctl.sh stop                  # docker compose down — KEEPS the data volume
+./cloudctl.sh restart [--secure]    # stop + start; non-destructive (data preserved)
+./cloudctl.sh reset [-y]            # docker compose down -v — DROPS the seeded DB
+./cloudctl.sh status                # docker compose ps
+./cloudctl.sh logs [service…]       # follow logs (e.g. logs careotter-proxy)
 
 # Verify
 curl http://localhost:5002/api/health
 ```
+
+**Mode selection.** `start`/`restart` default to **VULNERABLE** (`VULNERABLE=1`).
+Pass `--secure` to launch with `VULNERABLE=0` (see *Operating Modes* above); among
+other things this flips the API8 reverse-proxy ACL from the bypassable exact-match
+form to normalized matching. The script echoes the active mode on every launch.
+
+**Non-destructive lifecycle.** `stop` runs `docker compose down` and **preserves**
+the `careotter_data` volume, so seeded users/vitals survive a `stop`/`restart`.
+Use `reset` (`down -v`) to wipe the volume for a clean re-seed; `-y` skips the
+confirmation prompt. The external `:5002` is published by the `careotter-proxy`
+container (API8) — the API itself is internal-only on `careotter-net`.
 
 ### Manual: `docker compose`
 

@@ -22,7 +22,7 @@ For each artifact, copy it to its canonical `src/` destination per
 | `02_implement/output/code/<path>` | same `<path>` under `src/` (per `manifest.md`) |
 | Lab overlay change | repackage `src/labs/<device>/files/` → `src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/<device>.tar.gz` |
 | `03_document/output/<VULN-ID>.md` | `src/docs/<Device>/Vulns/<Category>/<VULN-ID>.md` |
-| Index + status update | `src/docs/<Device>/Vulns/README.md` → set badge `✅ DONE` |
+| Index + status update | `src/docs/<Device>/Vulns/README.md` → set badge `DONE` |
 
 Then:
 1. Verify the change builds/loads (see the device's `src/labs/<device>/CONTEXT.md`).

@@ -69,11 +69,12 @@ src/
 
 ## Global conventions
 
-- **OWASP IDs**: API `API1:2023`…`API10:2023`; IoT `IoT:I1`…`IoT:I5` (router) / `IoT1`…`IoT4`; Mobile `M6`, `M9`. Custom: `IGP-01`, `BLE-07`.
-- **Status badges** (in vuln docs): `✅ DONE` · `⏳ PENDING` · `🚧 IN PROGRESS`.
-- **Naming**: lab/device folders lowercase (`careotter/`); lab package `<device>.tar.gz`; hooks `##-descriptive-name.sh`.
+- **OWASP IDs**: API `API1:2023`…`API10:2023`. IoT `IoT:I1`…`IoT:I5` (router) / `IoT1`…`IoT4`. Mobile `M6`, `M9`. Custom: `IGP-01`, `BLE-07`.
+- **Status badges** (in vuln docs): `DONE` · `PENDING` · `IN PROGRESS` — plain text, no emoji.
+- **Naming**: lab/device folders lowercase (`careotter/`), lab package `<device>.tar.gz`, hooks `##-descriptive-name.sh`.
 - **Vuln docs** carry YAML frontmatter (`id`, `title`, `category`, `status`, `severity`, `owasp`, `cwe`, `affected_components`).
 - **Language**: production MWP markdown (Layer 0–2 files, `CONTEXT.md`, docs) is written in **English**.
+- **Prose style** (informational markdown, not code): write each paragraph on one physical line with no hard wrapping — Obsidian-style readers soft-wrap to their own max width. Do not use the semicolon `;` in prose — use a comma or split into two sentences. Code is exempt: C, shell, JavaScript, inline code, code fences, and command lines keep their semicolons and line structure.
 
 ## Hard rules for agents
 

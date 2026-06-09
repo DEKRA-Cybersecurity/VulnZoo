@@ -248,7 +248,7 @@ wc -l careotter-passwords.txt                      # hundreds, not millions
 grep -nx 'CareOtter2026!' careotter-passwords.txt  # the password is in there
 ```
 
-`careotter-passwords.txt` is the wordlist fed to the `ffuf` oracle in §2; the line
+`careotter-passwords.txt` is the wordlist fed to the `ffuf` oracle in §2. The line
 that flips `401 → 403` is the admin password. Only the `admin` username is needed
 for that oracle:
 
@@ -268,7 +268,7 @@ limiter and exposes two oracles at once.
 #### Channel 1 — role enumeration (the throttle that never fires)
 
 Throw more than 5 wrong passwords at a username on the **patient** endpoint and
-watch the status code. A patient gets `429` on the 6th attempt; a non-patient
+watch the status code. A patient gets `429` on the 6th attempt. A non-patient
 keeps returning `401` forever — which *is* the tell that the account is privileged:
 
 ```bash
@@ -306,7 +306,7 @@ ffuf -u http://localhost:5002/api/auth/login/patient \
   -w careotter-passwords.txt \
   -fc 401 \
   -mc all
-# careotter-passwords.txt = the targeted list from "prepare a targeted dictionary";
+# careotter-passwords.txt = the targeted list from "prepare a targeted dictionary"
 # the surviving (403) line is the correct admin password — no 429 ever appears
 ```
 
@@ -371,7 +371,7 @@ curl -s -X DELETE -H "Authorization: Bearer $JWT" \
 
 ### Rate-limit login attempts — and order the checks correctly
 
-The limiter primitive itself is fine; the vulnerability is **where it sits in the
+The limiter primitive itself is fine, the vulnerability is **where it sits in the
 handler**. Run the rate-limit check **before** any role gate, and never branch the
 response on the account's role — return a single, uniform `401` for every failure
 (wrong password *and* "valid but not a patient"), counting all of them:
@@ -450,7 +450,7 @@ if not db.verify_user(username, current_password):
 | Layer | Measure | Objective |
 |-------|---------|-----------|
 | Authentication | Per-IP + per-account rate limiting on login (5 attempts / 5 min) | Stop credential stuffing and brute force |
-| Authentication | Run the rate-limit check **before** any role/authorization gate; never `return` early on a path that skips the counter | Close the misplaced-limiter bypass (CWE-307) |
+| Authentication | Run the rate-limit check **before** any role/authorization gate, never `return` early on a path that skips the counter | Close the misplaced-limiter bypass (CWE-307) |
 | Authentication | Uniform `401` for every failed login (wrong password *and* wrong role) — no role-dependent status/body | Kill the `401`/`403` response-discrepancy oracle (CWE-204) |
 | Authentication | Account lockout after N consecutive failures | Slow down targeted attacks |
 | Authentication | CAPTCHA after 3 failed attempts | Distinguish humans from automated tools |
@@ -476,7 +476,7 @@ if not db.verify_user(username, current_password):
   nothing and the "admin-only, via the patient panel" invariant holds again.
 - **Direct patient-account brute force is not viable online.** With the caregiver
   endpoint closed, `john_doe` can no longer be brute-forced on any login endpoint
-  (patient endpoint throttles patients; admin/caregiver endpoints reject them with
+  (patient endpoint throttles patients. admin/caregiver endpoints reject them with
   a uniform, throttled `401`). Gaining access to a patient account is intended to
   be a separate, dedicated vulnerability — documented when implemented.
 - **Reset-on-success.** All three login endpoints clear a username's failure
@@ -489,7 +489,7 @@ if not db.verify_user(username, current_password):
 - **Mobile app (`careotter_app`).** `/api/auth/login` is admin-only, so
   `LoginActivity` now tries it first and falls back to `/api/auth/login/patient` on
   a `401` (it cannot know the role before authenticating). Admin logins resolve on
-  the first endpoint; patient logins on the fallback.
+  the first endpoint, patient logins on the fallback.
 - **Forged admin JWT → arbitrary user deletion.** With the weak secret, an attacker
   mints a `role:admin` JWT and calls `POST /api/users/delete {"username":"…"}` (the
   admin branch of the User Administration feature) to delete any account — no SSRF

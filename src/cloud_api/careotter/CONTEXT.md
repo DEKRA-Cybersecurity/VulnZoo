@@ -47,8 +47,17 @@
 **Components:**
 | Component | Type | Technology | Port | Purpose |
 |-----------|------|------------|------|---------|
-| API Server | Docker (host network) | Python 3.11/Flask | 5002 | HTTP→IGP gateway |
+| Reverse proxy | Docker (`proxy/`) | nginx | 5002 (published) | **API8** edge: fronts the API; "internal-only" ACL on `/admin/*` + `/api/db/*` + `/initialize_iot` (exact-match in `VULNERABLE=1` → trailing-slash bypass) |
+| API Server | Docker (`api_server/`) | Python 3.11/Flask | 5002 (internal) | HTTP→IGP gateway; **no longer publishes a port** — reached via the proxy or internally at `careotter-api:5002` |
 | SQLite DB | Volume | `careotter_data:/app/data` | — | Vitals history, users, devices |
+
+> **API8 topology (Security Misconfiguration).** External `:5002` is now served by
+> `careotter-proxy` (nginx); `careotter-api` is internal-only. The proxy ACL is the
+> *only* control for the no-auth `/api/db/*` and `/initialize_iot` endpoints. With
+> `VULNERABLE=1` the ACL uses exact-match `location =` rules while the app routes
+> slash-insensitively (`app.url_map.strict_slashes = False`), so a trailing slash
+> (`/api/db/info/`) bypasses the deny and reaches the handler. See
+> `docs/CareOtter/Vulns/API/API8_Security_Misconfiguration.md`.
 
 **Protocol Mapping:**
 

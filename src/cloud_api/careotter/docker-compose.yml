@@ -1,5 +1,25 @@
 services:
 
+  # ── Reverse proxy (API8:2023 Security Misconfiguration) ──────────────────────
+  # Publishes the external :5002 and enforces an "internal-only" ACL on the admin
+  # panel + DB-debug + lab-init endpoints. VULNERABLE=1 → exact-match ACL that a
+  # trailing slash bypasses (the API routes slash-insensitively); VULNERABLE=0 →
+  # normalized matching that closes it. The API container is now internal-only:
+  # all external traffic enters through this proxy.
+  careotter-proxy:
+    build:
+      context: ./proxy
+    container_name: careotter-proxy
+    environment:
+      - VULNERABLE=${VULNERABLE:-1}
+    ports:
+      - "0.0.0.0:5002:5002"
+    networks:
+      - careotter-net
+    restart: unless-stopped
+    depends_on:
+      - careotter-api
+
   careotter-api:
     build:
       context: ./api_server
@@ -7,7 +27,7 @@ services:
     mem_limit: 256m
     cpus: 1.0
     environment:
-      - VULNERABLE=1
+      - VULNERABLE=${VULNERABLE:-1}
       - DEVICE_IP=${DEVICE_IP:-}
       - IGP_PORT=${IGP_PORT:-9999}
       - HTTP_PORT=${HTTP_PORT:-8081}
@@ -20,8 +40,8 @@ services:
       - HOST_WIFI_IP=${HOST_WIFI_IP:-}
     volumes:
       - careotter_data:/app/data
-    ports:
-      - "0.0.0.0:5002:5002"
+    # No published ports — the API is reachable only on the internal careotter-net
+    # (at careotter-api:5002). The careotter-proxy in front owns the external :5002.
     networks:
       - careotter-net
     restart: unless-stopped

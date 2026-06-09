@@ -18,7 +18,7 @@ verified_date: "2026-05-02"
 
 # IGP-01 — Hardcoded Credential (`OtterMobile2026`)
 
-> **Status:** ✅ DONE
+> **Status:** DONE
 > **Source docs:** `CareOtter_Test_Suite.md` §IGP-01, `CareOtter.md` Vuln #1, `CareOtter_IoT.md` §IoT:I1  
 > **OWASP:** IoT I1 — Weak, Guessable, or Hardcoded Passwords  
 > **CWE:** CWE-798 (Hardcoded Credentials)  
