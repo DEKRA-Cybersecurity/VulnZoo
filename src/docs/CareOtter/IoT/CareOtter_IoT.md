@@ -16,7 +16,7 @@ The device runs on a **Raspberry Pi 3B/4** under **OpenWRT v24.10.2** and expose
 | BLE GATT server | Python + `dbus_fast` (`ble_server.py`) — BlueZ |
 | Admin service | C binary (`careservice`) — port 9999 |
 | Mobile app | Android (Java) — BLE + Cloud API |
-| Cloud API | Flask (Docker) — port 5002/5003 |
+| Cloud API | Flask (Docker) — nginx edge on port 80/5002 |
 
 ### Communication Surfaces
 
@@ -42,6 +42,7 @@ The device runs on a **Raspberry Pi 3B/4** under **OpenWRT v24.10.2** and expose
 |------|----------|---------|------|
 | 8081 | HTTP | `sensor_service.py` — vitals and health | None |
 | 9999 | TCP binary (IGP v4) | `careservice` — device administration | Hardcoded token |
+| 21 | FTP | `careotter-ftp` — field-service FTP (`vsftpd 2.3.4`) | None (backdoored) |
 | BLE | GATT | `ble_server.py` — vitals + thresholds | None |
 
 ---
@@ -702,6 +703,54 @@ docker exec careotter-api sqlite3 /app/data/careotter.db \
 
 ---
 
+## CareOtter-FTP — Field-Service FTP Daemon (port 21)
+
+A legacy "field-service" FTP daemon (`/opt/careotter-ftp/careotter-ftp`, source `labs/careotter/careotter-ftp.c`) listens on `0.0.0.0:21`, modelling the firmware/log-transfer FTP that real medical devices ship and leave enabled in the field. It runs as **root**, is started by the `72-careotter-ftp.sh` hook under procd (`START=72`), and is independent from `careservice` (`:9999`) and the sensor service (`:8081`). The firewall hook (`75-firewall.sh`) already opens `:21` from the WAN side.
+
+### Control channel
+
+The daemon implements just enough of FTP for version fingerprinting and the backdoor trigger (not a full RFC-959 server). It greets with the legacy banner and answers a handful of commands:
+
+| Command | Response | Notes |
+|---------|----------|-------|
+| (connect) | `220 (vsFTPd 2.3.4)` | the version banner — the lure picked up by `nmap -sV` |
+| `USER <arg>` | `331 Please specify the password.` | if `<arg>` contains `:)` it triggers the backdoor (see below) |
+| `PASS <arg>` | `230 Login successful.` | any password is accepted — there is no real authentication |
+| `SYST` | `215 UNIX Type: L8` | static system-type reply |
+| `FEAT` | `211 No features.` | |
+| `QUIT` | `221 Goodbye.` | closes the control connection |
+
+One process is forked per control connection. Activity is logged to `/tmp/careotter-ftp.log`.
+
+### Backdoor mechanism (vsftpd 2.3.4 / CVE-2011-2523)
+
+The daemon reproduces the historical vsftpd 2.3.4 backdoor. When a `USER` argument contains the smiley `:)`, it forks a child that binds `/bin/sh` to TCP `:6200` and serves one shell on the next connection. Because the daemon runs as root, that shell is **root**. The control conversation continues normally, so the trigger is invisible on the FTP side — the attacker simply connects to `:6200` afterwards. This mirrors the original `vsf_sysutil_extra()` and is a faithful re-implementation for training, not the upstream vsftpd source, the same way `careservice` reproduces its own CVEs.
+
+```
+$ nc <pi> 21
+220 (vsFTPd 2.3.4)
+USER pwn:)
+331 Please specify the password.
+# then, from another terminal:
+$ nc <pi> 6200
+id   ->  uid=0(root)
+```
+
+### Secure / vulnerable toggle
+
+The service follows the careotter secure/vulnerable convention. The init script reads UCI `careotter.@careotter[0].ftp_secure` and exports it as `CAREOTTER_FTP_SECURE` (default `0` = vulnerable).
+
+- **`0` (vulnerable):** the daemon starts, the banner is `vsFTPd 2.3.4`, the `:)` backdoor is active.
+- **`1` (secure):** the init script does not start the daemon at all — the I2 remediation is to decommission the unnecessary legacy service, so nothing listens on `:21`. The binary also disables the backdoor if it is launched directly, as defense-in-depth.
+
+### Lifecycle and build
+
+The service is procd-managed via `/etc/init.d/careotter-ftp` (`START=72`, `USE_PROCD=1`), with the boot symlink `/etc/rc.d/S72careotter-ftp` self-healed by `boot()`/`enable`. The binary is built from `careotter-ftp.c` with the OpenWRT 24.10.x aarch64 musl SDK (static, the same toolchain as `careservice`) and is **not stripped**, so `nmap -sV` and `strings(1)` reveal the `vsFTPd 2.3.4` version string.
+
+The full exploit walk-through, CWE mapping and remediation live in the vulnerability doc `docs/CareOtter/Vulns/IoT/IoT2_Insecure_Network_Services.md` (§2.3).
+
+---
+
 ## Vulnerabilities
 
 ### IoT:I1 — Weak, Guessable, or Hardcoded Credentials
@@ -717,7 +766,7 @@ The `careservice` C daemon authenticates clients via a token comparison against 
 The token is visible in plaintext by running `strings` on the binary:
 
 ```bash
-$ strings /opt/careotter/careservice | grep Otter
+$ strings /opt/careservice/careservice | grep Otter
 OtterMobile2026
 ```
 
@@ -772,24 +821,20 @@ PORT     STATE SERVICE
 
 A passive observer on the `192.168.2.0/24` segment can capture the admin token and the WiFi PSK with a single `tcpdump` session.
 
-#### 2.2 HTTP sensor service with no authentication
+#### 2.2 HTTP sensor service is API-key gated, and the threshold bypass is the Cloud API BFLA
 
-Port 8081 exposes real-time vitals, history, and a `POST /thresholds` endpoint with no authentication:
+Port 8081 requires an `X-API-Key` header on every endpoint except `/health` (`sensor_service.py` `_check_auth`), so a direct unauthenticated POST is rejected:
 
 ```bash
-$ curl -s http://192.168.2.1:8081/vitals
-{"bpm": 72, "spo2": 98, "timestamp": 1746000000.0}
-
-# Unauthenticated threshold overwrite:
 $ curl -s -X POST http://192.168.2.1:8081/thresholds \
     -H "Content-Type: application/json" \
     -d '{"bpm_min": 0, "bpm_max": 255, "spo2_min": 0}'
-{"status": "thresholds updated"}
+{"error": "unauthorized", "X-API-Key": "invalid"}
 ```
 
-Silencing all clinical alerts without any credentials constitutes a patient safety risk.
+The alarm-silencing threshold change is not a direct device call. It is reached one layer up, through the Cloud API `POST /api/config/thresholds`, which is guarded by the wrong decorator (`@token_required` instead of `@admin_required`), so a patient JWT is accepted (Broken Function Level Authorization, see API5). The Cloud API then proxies the change to the device over IGP `0x08`. Full analysis in `docs/CareOtter/Vulns/IoT/IoT2_Insecure_Network_Services.md` §2.2.
 
-**References:** OWASP IoT Top 10 — I2 · CWE-306
+**References:** OWASP IoT Top 10 · I2 · CWE-306 · API5 (BFLA)
 
 ---
 

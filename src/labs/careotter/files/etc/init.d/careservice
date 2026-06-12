@@ -17,7 +17,7 @@ START=70
 STOP=10
 USE_PROCD=1
 
-PROG=/opt/careotter/careservice
+PROG=/opt/careservice/careservice
 PIDFILE=/var/run/careservice.pid
 
 boot() {

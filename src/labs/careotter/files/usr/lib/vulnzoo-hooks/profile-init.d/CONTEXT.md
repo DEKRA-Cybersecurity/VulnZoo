@@ -43,7 +43,8 @@ Hooks are executed alphabetically by the VulnZoo hook-manager when loading the `
 | 5 | `55-ble-server.sh` | Start BLE GATT server | BLE "CareOtter_HR" | ⚠️ Needs Bluetooth |
 | 6 | `60-cron.sh` | Configure log rotation | Cron | ✅ Active |
 | 7 | `70-careotter-admin.sh` | Start admin/exploit service | IGP :9999 | ✅ Active |
-| 8 | `80-wifi.sh` | Configure WiFi client mode | WiFi STA | ✅ Active |
+| 8 | `72-careotter-ftp.sh` | Start legacy field-service FTP (IoT:I2 RCE) | FTP :21 | Active (vuln) |
+| 9 | `80-wifi.sh` | Configure WiFi client mode | WiFi STA | ✅ Active |
 
 ## Detailed Hook Descriptions
 
@@ -190,7 +191,7 @@ Hooks are executed alphabetically by the VulnZoo hook-manager when loading the `
 **Purpose:** Start the device administration service (careservice) with intentional vulnerabilities
 
 **Service Details:**
-- **Binary:** `/opt/careotter/careservice`
+- **Binary:** `/opt/careservice/careservice`
 - **Port:** 9999 (TCP)
 - **Protocol:** Binary IGP (IoT Gateway Protocol) v4
 - **PID File:** `/var/run/careservice.pid`
@@ -206,7 +207,7 @@ Hooks are executed alphabetically by the VulnZoo hook-manager when loading the `
 1. Verify device is `careotter`
 2. **Idempotency Check** - Skip if already running
 3. Check for existing careservice processes and kill if found
-4. Verify binary exists at `/opt/careotter/careservice`
+4. Verify binary exists at `/opt/careservice/careservice`
 5. Make binary executable if needed
 6. Check port 9999 is available
 7. Start careservice in background
@@ -376,7 +377,7 @@ cat /root/vulnzoo.log | grep careotter-admin  # Hook logs
 ```bash
 /etc/init.d/careservice restart
 # Or manually:
-/opt/careotter/careservice &
+/opt/careservice/careservice &
 ```
 
 ### Hook Failures

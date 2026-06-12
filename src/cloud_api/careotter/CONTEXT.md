@@ -47,7 +47,7 @@
 **Components:**
 | Component | Type | Technology | Port | Purpose |
 |-----------|------|------------|------|---------|
-| Reverse proxy | Docker (`proxy/`) | nginx | 5002 (published) | **API8** edge: fronts the API; "internal-only" ACL on `/admin/*` + `/api/db/*` + `/initialize_iot` (exact-match in `VULNERABLE=1` → trailing-slash bypass) |
+| Reverse proxy | Docker (`proxy/`) | nginx | 80 + 5002 (published) | One edge, two name-based vhosts → same `careotter-api`. **API8** ACL. **API9**: `api.careotter.lab` = secure mechanism (edge `limit_req` + app attempt-cap via trusted `X-OTP-Guard: on`, also default_server). `beta.api.careotter.lab` = precarious (no limit, guard cleared → no cap), served only in `VULNERABLE=1`, returns 404 in secure (decommissioned) |
 | API Server | Docker (`api_server/`) | Python 3.11/Flask | 5002 (internal) | HTTP→IGP gateway; **no longer publishes a port** — reached via the proxy or internally at `careotter-api:5002` |
 | SQLite DB | Volume | `careotter_data:/app/data` | — | Vitals history, users, devices |
 
@@ -58,6 +58,20 @@
 > slash-insensitively (`app.url_map.strict_slashes = False`), so a trailing slash
 > (`/api/db/info/`) bypasses the deny and reaches the handler. See
 > `docs/CareOtter/Vulns/API/API8_Security_Misconfiguration.md`.
+
+> **API9 topology (Improper Inventory Management).** The single edge
+> `careotter-proxy` serves two name-based vhosts on `:80` and `:5002`, both
+> forwarding to the same internal `careotter-api:5002`. `api.careotter.lab` is the
+> SECURE mechanism: edge `limit_req` on `/api/auth/password-reset/verify` AND an
+> app-level per-account attempt cap (the proxy sets the trusted header
+> `X-OTP-Guard: on`, so the app locks the OTP after 5 wrong codes — reload/IP change
+> do not reset it). `beta.api.careotter.lab` is the PRECARIOUS mechanism: no
+> `limit_req`, and the proxy clears `X-OTP-Guard`, so the app skips the cap — the
+> 6-digit OTP is brute-forceable by name. `VULNERABLE=1` serves the beta host,
+> `VULNERABLE=0` returns 404 for it (decommissioned). The portal posts the OTP to
+> the absolute external auth API `http://api.careotter.lab/...` (CORS), so a learner
+> pivots to fuzzing the beta name. Map both names via `/etc/hosts`. See
+> `docs/CareOtter/Vulns/API/API9_Improper_Inventory_Management.md`.
 
 **Protocol Mapping:**
 
@@ -86,6 +100,8 @@
 | `/api/auth/login/patient` | POST | — | No | Patient-only login (rejects role≠patient) |
 | `/api/auth/login/caregiver` | POST | — | No | Caregiver-only login (rejects role≠caregiver) |
 | `/api/auth/logout` | POST | — | No | Clears `careotter_token` cookie |
+| `/api/auth/password-reset/request` | POST | — | No | Issue a 6-digit reset OTP (logged server-side, never returned) — **API9** |
+| `/api/auth/password-reset/verify` | POST | — | No | Verify OTP + set new password. Secure mechanism (`X-OTP-Guard: on` from api.) enforces a per-account attempt cap (locks after 5). Precarious beta clears the guard → no cap — **API9** |
 | `/api/caregiver/patients` | GET | — | JWT (caregiver) | Patients assigned to authenticated caregiver |
 | `/api/caregiver/patient/<username>/vitals` | GET | — | JWT | **BOLA** — caregiver vitals view (no ownership check) |
 | `/api/patient/caregivers` | POST | — | JWT (patient) | Patient adds a caregiver |
@@ -407,7 +423,7 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 | API6:2023 | Unrestricted Access to Business Flows | `/api/config/preferences` | No rate limiting on TLV config writes |
 | API7:2023 | Server Side Request Forgery | *(legacy — `/api/vitals` no longer proxies)* |
 | API8:2023 | Security Misconfiguration | Global | Debug mode, verbose error messages, Werkzeug dev server (mitigated by Gunicorn in container) |
-| API9:2023 | Improper Inventory Management | `/api/health` | Exposes internal device address and WiFi IP |
+| API9:2023 | Improper Inventory Management | `/api/auth/password-reset/verify` (beta vhost `beta.api.careotter.lab`) | The secure host `api.careotter.lab` has BOTH an edge rate-limit and an app-level per-account attempt cap. The forgotten `beta.api.careotter.lab` runs the same API with NEITHER (precarious), so the 6-digit reset code is brute-forceable by pivoting to it → takeover. Secure mode decommissions beta (404) |
 
 ## Multi-Device IGP Architecture
 

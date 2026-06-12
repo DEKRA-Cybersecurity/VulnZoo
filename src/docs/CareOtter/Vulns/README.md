@@ -28,7 +28,8 @@ Each file contains a YAML frontmatter block for automated parsing, followed by h
 
 | ID | Title | Category | Status | Severity | CWE |
 |----|-------|----------|--------|----------|-----|
-| [IGP-01](IoT/IGP-01_Hardcoded_Credential.md) | Hardcoded Credential (`OtterMobile2026`) | IoT | DONE | Critical | CWE-798 |
+| [IGP-01](IoT1_Weak_Guessable_Hardcoded_Passwords.md) | Hardcoded Credential (`OtterMobile2026`) | IoT | DONE | Critical | CWE-798 |
+| [IoT:I2](IoT/IoT2_Insecure_Network_Services.md) | Insecure Network Services — cleartext IGP (§2.1), no-auth HTTP threshold overwrite (§2.2), forgotten legacy FTP daemon (`vsftpd 2.3.4` backdoor) → unauthenticated root RCE (§2.3) | IoT | PENDING | Critical | CWE-1104 / CWE-912 / CWE-78 / CWE-306 / CWE-319 |
 | [API-01](API1_Broken_Object_Level_Authorization.md) | Broken Object Level Authorization (BOLA) — Cross-User Vitals Access | API | DONE | High | CWE-639 / CWE-863 |
 | [API-02](API2_Broken_Authentication.md) | Broken Authentication — weak storage/JWT + misplaced rate limit on `/api/auth/login/patient` (role gate before limiter → unlimited admin brute force + 401/403 oracle) | API | DONE | High | CWE-287 / CWE-308 / CWE-759 / CWE-307 / CWE-204 |
 | [API-03](API3_Broken_Objetc_Property_Level_Authorization.md) | Broken Object Property Level Authorization (BOPLA) — A: Caregiver PII Exposure (read) · B: Store Quantity Property Tampering (write) | API | DONE | High | CWE-213 / CWE-359 / CWE-200 · CWE-1287 / CWE-20 / CWE-840 |
@@ -37,6 +38,7 @@ Each file contains a YAML frontmatter block for automated parsing, followed by h
 | [API-06](API6_Unrestricted_Access_to_Business_Flows.md) | Unrestricted Access to Sensitive Business Flows — Teleconsultation Appointment Booking (cancel counter-desync → slot hoarding / denial of care) | API | DONE | High | CWE-840 / CWE-696 / CWE-799 |
 | [API-07](API7_Server_Side_Request_Forgery.md) | Server-Side Request Forgery — Device-Diagnostics whitelist bypass (embedded-credentials parser confusion) → loopback internal admin → delete user | API | DONE | High | CWE-918 / CWE-20 / CWE-346 |
 | [API-08](API8_Security_Misconfiguration.md) | Security Misconfiguration — reverse-proxy (nginx) ACL bypass via nginx↔gunicorn path-processing discrepancy (exact-match deny + slash-insensitive app → trailing-slash bypass to admin/debug/init) | API | DONE | High | CWE-16 / CWE-436 / CWE-863 |
+| [API-09](API9_Improper_Inventory_Management.md) | Improper Inventory Management — forgotten beta subdomain (`beta.api.careotter.lab`) serves the password-reset OTP without the production vhost's rate-limit (app has no attempt cap) → 6-digit code brute-force → patient account takeover | API | DONE | High | CWE-307 / CWE-640 / CWE-799 |
 | [BLE-07](Mobile/BLE-07_CSCP_Threshold_Forging.md) | CSCP v1 Threshold Forging (M3) | Mobile | DONE | Critical | CWE-306 / CWE-20 |
 
 ---

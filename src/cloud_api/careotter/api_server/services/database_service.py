@@ -7,6 +7,7 @@ in an embedded SQLite database.
 
 import sqlite3
 import os
+import time
 import logging
 import hashlib
 from datetime import datetime, timedelta
@@ -205,6 +206,22 @@ class DatabaseService:
                     ON alerts(timestamp);
                 CREATE INDEX IF NOT EXISTS idx_alerts_mac_timestamp
                     ON alerts(device_mac, timestamp);
+
+                -- API9:2023 (Improper Inventory Management): password-reset OTP.
+                -- One active 6-digit code per user. `attempts` backs the SECURE
+                -- mechanism's per-account lockout (api.careotter.lab, gated by the
+                -- trusted X-OTP-Guard header). The forgotten beta vhost
+                -- (beta.api.careotter.lab) has neither the edge limit nor the cap,
+                -- so the code is brute-forceable by pivoting to it. Secure mode 404s
+                -- beta. See docs/.../API9_Improper_Inventory_Management.md
+                CREATE TABLE IF NOT EXISTS password_reset_otp (
+                    username   TEXT PRIMARY KEY,
+                    otp_code   TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    used       INTEGER NOT NULL DEFAULT 0,
+                    attempts   INTEGER NOT NULL DEFAULT 0   -- API9 secure mechanism: per-account attempt cap
+                );
             ''')
             conn.commit()
 
@@ -298,6 +315,17 @@ class DatabaseService:
                         "  WHERE booked_by = users.username AND status = 'booked')")
                     conn.commit()
                     logger.info("[DB] Migration: backfilled active_appointments from bookings")
+
+            # Migration: add attempts to password_reset_otp (API9 secure mechanism =
+            # per-account attempt cap). The table is created by _init_db; older DBs
+            # (persisted volume) have it without this column.
+            otp_cols = {row[1] for row in
+                        conn.execute('PRAGMA table_info(password_reset_otp)').fetchall()}
+            if otp_cols and 'attempts' not in otp_cols:
+                logger.info("[DB] Migration: adding attempts to password_reset_otp")
+                conn.execute(
+                    "ALTER TABLE password_reset_otp ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+                conn.commit()
 
             # Migration: create caregiver_assignments if missing
             existing_tables = {row[0] for row in
@@ -1071,6 +1099,81 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error updating password: {e}")
             return False
+
+    # ── API9:2023 password-reset OTP store ───────────────────────────────────
+    # One active 6-digit code per user. Stored server-side and never returned to
+    # the client — the legitimate user reads it out-of-band (in this lab: the
+    # container log, written by app.py). `attempts` backs the SECURE mechanism's
+    # per-account lockout (api.careotter.lab); the precarious beta host never reads
+    # or increments it, so a lock on the secure side does not protect beta (API9).
+    def create_otp(self, username: str, code: str, expires_at: float) -> bool:
+        """Store (replacing any prior) the active reset OTP for a user."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'INSERT OR REPLACE INTO password_reset_otp '
+                    '(username, otp_code, created_at, expires_at, used) '
+                    'VALUES (?, ?, ?, ?, 0)',
+                    (username, code, time.time(), expires_at)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error creating reset OTP: {e}")
+            return False
+
+    def get_active_otp(self, username: str) -> Optional[Dict]:
+        """Return the stored OTP row for a user (or None). Expiry/used are NOT
+        filtered here — the caller (app.py) checks them, so verification stays a
+        single, explicit code path."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    'SELECT username, otp_code, created_at, expires_at, used, attempts '
+                    'FROM password_reset_otp WHERE username = ?',
+                    (username,)
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[DB] Error fetching reset OTP: {e}")
+            return None
+
+    def mark_otp_used(self, username: str) -> bool:
+        """Consume the active OTP after a successful reset."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'UPDATE password_reset_otp SET used = 1 WHERE username = ?',
+                    (username,)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[DB] Error marking reset OTP used: {e}")
+            return False
+
+    def increment_otp_attempts(self, username: str) -> int:
+        """Count one failed verification and return the new attempt total. Used by
+        the SECURE mechanism (api.careotter.lab) to lock the OTP after too many
+        wrong codes — per account, persisted, so a page reload or IP change does not
+        grant fresh tries. The PRECARIOUS beta mechanism never calls this."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'UPDATE password_reset_otp SET attempts = attempts + 1 WHERE username = ?',
+                    (username,)
+                )
+                conn.commit()
+                row = conn.execute(
+                    'SELECT attempts FROM password_reset_otp WHERE username = ?',
+                    (username,)
+                ).fetchone()
+                return int(row[0]) if row else 0
+        except Exception as e:
+            logger.error(f"[DB] Error incrementing reset OTP attempts: {e}")
+            return 0
 
     def set_display_name(self, username: str, display_name: str) -> bool:
         """Set the friendly display name shown in the UI (distinct from the

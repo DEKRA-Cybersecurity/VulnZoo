@@ -49,7 +49,7 @@ No sophisticated laboratory is needed. The token leaks through everyday channels
 
 | Path                            | Tool                                               | Evidence                                                       |
 | ------------------------------- | -------------------------------------------------- | -------------------------------------------------------------- |
-| **A — Firmware strings**        | `strings /opt/careotter/careservice \| grep Otter` | `OtterMobile2026` in plaintext                                 |
+| **A — Firmware strings**        | `strings /opt/careservice/careservice \| grep Otter` | `OtterMobile2026` in plaintext                                 |
 | **B — APK reverse engineering** | `jadx`, `grep ENCODED_TOKEN`                       | XOR-obfuscated token (key `0x5A`) decodes to the same string   |
 | **C — Passive network capture** | `tcpdump -i any -w careotter.pcap 'tcp port 9999'` | Token visible in every AUTHENTICATE frame                      |
 | **D — Cloud API error oracles** | Trigger verbose error paths (API-03, API-04)       | Raw IGP frames or stack traces leak the magic + opcode mapping |
@@ -83,7 +83,7 @@ The most direct route when the attacker has, or can obtain, the binary (SD-card 
 Most literals jump out immediately from the `.rodata` section:
 
 ```bash
-strings /opt/careotter/careservice | grep -Ei "otter|auth|magic|care|deauth|wifi"
+strings /opt/careservice/careservice | grep -Ei "otter|auth|magic|care|deauth|wifi"
 ```
 
 **Expected output (excerpt):**
@@ -102,7 +102,7 @@ CARE                 ← the 4 magic bytes appear as ASCII in .rodata
 Use `radare2`, `Ghidra`, or `objdump` to inspect the binary:
 
 ```bash
-aarch64-linux-gnu-objdump -d /opt/careotter/careservice | less
+aarch64-linux-gnu-objdump -d /opt/careservice/careservice | less
 ```
 
 Look for the pattern:
@@ -392,7 +392,7 @@ Once the header layout (`[Magic(4)][Cmd(1)][Status(1)][Len(2)]`) and opcode tabl
 
 ```bash
 # Method A: static extraction from binary
-strings /opt/careotter/careservice | grep -i otter
+strings /opt/careservice/careservice | grep -i otter
 
 # Method B: direct test via IGP (Python helper)
 python3 -c '

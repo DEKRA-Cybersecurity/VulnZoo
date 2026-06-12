@@ -1047,6 +1047,136 @@ def login_patient():
     return resp, 200
 
 
+# ── API9:2023 password-reset OTP (Improper Inventory Management) ──────────────
+# A 6-digit one-time code resets a patient password. The SECURE host
+# (api.careotter.lab) has TWO controls: the edge nginx limit_req AND an app-level
+# per-account attempt cap (see password_reset_verify — locks the OTP after
+# MAX_OTP_ATTEMPTS wrong codes, persisted so a reload/IP change grants no new tries).
+# The forgotten beta host (beta.api.careotter.lab) serves the SAME app with NEITHER
+# (no limit_req, and the proxy clears X-OTP-Guard so the app skips the cap), so the
+# code is brute-forceable by pivoting to it → account takeover. That gap — a second,
+# un-inventoried host missing the controls the official one has — is API9. Secure
+# mode decommissions the beta host (404).
+#
+# The code is stored server-side and NEVER returned to the client. The legitimate
+# user obtains it out-of-band; in this lab the operator reads it from the
+# container log line below (`./cloudctl.sh logs careotter-api`), which stands in
+# for the patient's email/SMS inbox. The attacker has no such channel, so guessing
+# is the only path.
+#
+# TTL is tied to VULNERABLE so the brute-force is actually completable in vuln
+# mode (24h ≈ valid-until-used for a lab session) and irrelevant in secure mode
+# (15min, and the edge throttles anyway).
+OTP_TTL_SECONDS = 24 * 3600 if Config.VULNERABLE == 1 else 15 * 60
+# SECURE mechanism (api.careotter.lab): per-account attempt cap. After this many
+# wrong codes the OTP is LOCKED (persisted in the DB) — a reload or IP change does
+# not grant more tries. The PRECARIOUS beta mechanism omits this (and the edge limit).
+MAX_OTP_ATTEMPTS = 5
+
+
+@app.after_request
+def _password_reset_cors(resp):
+    """CORS for the OTP flow. The patient portal may be served from a different
+    origin than the auth API (api.careotter.lab), so the browser must be allowed to
+    read these cross-origin responses. The endpoints are pre-auth (no cookies), so a
+    permissive Allow-Origin is enough — and intentional for the lab, where the point
+    is that the OTP auth lives on a separate, fuzzable API host."""
+    if request.path.startswith('/api/auth/password-reset/'):
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
+
+
+@app.route('/api/auth/password-reset/request', methods=['POST'])
+def password_reset_request():
+    """Issue a 6-digit reset code for a username.
+
+    Always returns a generic 200 (no user-existence oracle — the seeded patient
+    is already publicly discoverable, so this adds none). The code is logged
+    server-side and never sent back to the client.
+
+    Body JSON: {"username": "john_doe"}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username', '').strip()
+    generic = jsonify({
+        'ok': True,
+        'message': 'If the account exists, a reset code has been sent.'
+    })
+    if not username or db is None:
+        return generic, 200
+
+    account = db.get_user_by_username(username)
+    if account is not None:
+        code = f"{secrets.randbelow(1000000):06d}"
+        db.create_otp(username, code, time.time() + OTP_TTL_SECONDS)
+        # Out-of-band delivery channel for the lab: the operator reads this from
+        # the container log. Stands in for the patient's email/SMS inbox.
+        logger.info(f"[password-reset] OTP for {username}: {code}")
+
+    return generic, 200
+
+
+@app.route('/api/auth/password-reset/verify', methods=['POST'])
+def password_reset_verify():
+    """Verify a reset code and set a new password.
+
+    Two mechanisms share this handler, selected by the trusted X-OTP-Guard header
+    that the reverse proxy sets (the client cannot forge it — nginx overwrites it):
+
+      * SECURE  (api.careotter.lab) sends `X-OTP-Guard: on`. The app enforces a
+        per-account attempt cap: after MAX_OTP_ATTEMPTS wrong codes the OTP is
+        LOCKED in the DB, so a page reload or IP change grants no fresh tries. The
+        nginx limit_req on this host adds edge throttling on top.
+      * PRECARIOUS (beta.api.careotter.lab) — INTENTIONAL API9 — omits the guard.
+        The app then neither counts nor checks the cap, and the beta host has no
+        limit_req either, so the 6-digit code is brute-forceable. The beta vhost is
+        only served when VULNERABLE=1 (in secure mode it returns 404), and the skip
+        is additionally gated on VULNERABLE so secure mode is never precarious.
+
+    Body JSON: {"username": "john_doe", "otp": "123456", "new_password": "new"}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    username = data.get('username', '').strip()
+    otp = str(data.get('otp', '')).strip()
+    new_password = data.get('new_password', '')
+
+    if not username or not otp or not new_password:
+        return jsonify({'error': 'Fields "username", "otp" and "new_password" required',
+                        'code': 'MISSING_FIELD'}), 400
+    if db is None:
+        return jsonify({'error': 'Database unavailable', 'code': 'DB_ERROR'}), 503
+
+    # Secure mechanism unless this request arrived through the precarious beta edge
+    # (no guard header) while the lab is in VULNERABLE mode.
+    enforce_cap = (Config.VULNERABLE == 0) or (request.headers.get('X-OTP-Guard') == 'on')
+
+    record = db.get_active_otp(username)
+    if (record is None
+            or record.get('used')
+            or time.time() >= record.get('expires_at', 0)):
+        return jsonify({'error': 'Invalid or expired code', 'code': 'OTP_INVALID'}), 401
+
+    # Account lockout — secure mechanism only. A LOCKED OTP rejects every code (even
+    # the correct one) until a fresh code is requested. Beta never reaches this check.
+    if enforce_cap and record.get('attempts', 0) >= MAX_OTP_ATTEMPTS:
+        return jsonify({'error': 'Too many attempts. Request a new code.', 'code': 'OTP_LOCKED'}), 403
+
+    if record.get('otp_code') == otp:
+        db.update_password(username, new_password)
+        db.mark_otp_used(username)
+        logger.info(f"[password-reset] password reset for {username} via OTP")
+        return jsonify({'ok': True, 'message': 'Password updated. You can log in now.'}), 200
+
+    # Wrong code. The secure mechanism counts it toward the lockout; the precarious
+    # beta mechanism does NOT (so brute-force there is unhindered, and a prior
+    # api.-driven lock cannot block it — beta never reads `attempts`).
+    if enforce_cap:
+        attempts = db.increment_otp_attempts(username)
+        if attempts >= MAX_OTP_ATTEMPTS:
+            return jsonify({'error': 'Too many attempts. Request a new code.', 'code': 'OTP_LOCKED'}), 403
+    return jsonify({'error': 'Invalid or expired code', 'code': 'OTP_INVALID'}), 401
+
+
 # ── Patient caregiver management ──────────────────────────────────────────────
 
 @app.route('/api/patient/caregivers', methods=['POST'])
@@ -2322,9 +2452,9 @@ def initialize_iot():
 
     pi_device = {
         'mac':              pi_mac,
-        'auth_hash':        db.EXPECTED_DEVICE_SIGNATURE,  # "9C0C306DEF2A"
+        'auth_hash':        db.EXPECTED_DEVICE_SIGNATURE,  # "9C0C306DEF2A" (config.json device_hash)
         'device_name':      'CareOtter_HR',
-        'patient_username': '',
+        'patient_username': 'john_doe',   # own the Pi device for john_doe at lab init
         'ip':               device_ip,
     }
 

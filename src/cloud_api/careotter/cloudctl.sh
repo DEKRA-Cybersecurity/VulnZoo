@@ -10,6 +10,7 @@
 #   ./cloudctl.sh start                 # build + up -d (VULNERABLE mode, default)
 #   ./cloudctl.sh start --secure        # build + up -d in SECURE mode (VULNERABLE=0)
 #   ./cloudctl.sh start --no-wifi       # up -d without pushing WiFi credentials
+#   ./cloudctl.sh start --no-hosts      # don't write /etc/hosts (skip the sudo DNS step)
 #   ./cloudctl.sh stop                  # docker compose down (KEEPS the data volume)
 #   ./cloudctl.sh restart [--secure]    # stop + start (non-destructive; data preserved)
 #   ./cloudctl.sh reset                 # docker compose down -v (DROPS the seeded DB)
@@ -81,19 +82,48 @@ detect_host_wifi_ip() {
         | awk '{split($4, a, "/"); print a[1]; exit}'
 }
 
+# Map api.careotter.lab + beta.api.careotter.lab → the given IP in /etc/hosts (sudo).
+# The portal posts the OTP to the absolute api.careotter.lab, so the browser/Burp and
+# tools must resolve the names. Idempotent: removes any prior entry for these names
+# (so a WiFi IP change is picked up) and writes one fresh line. Rewrites /etc/hosts in
+# place via cat (preserves owner/perms). Requires sudo to write the root-owned file.
+add_hosts_entry() {
+    local ip="$1"
+    local marker="# careotter-lab (managed by cloudctl)"
+    local line="${ip}  api.careotter.lab beta.api.careotter.lab  ${marker}"
+    if [ -z "$ip" ]; then
+        warn "No WiFi (wlan) IP detected — not touching /etc/hosts."
+        warn "Add manually:  <wifi-ip>  api.careotter.lab beta.api.careotter.lab"
+        return
+    fi
+    if grep -qxF "$line" /etc/hosts 2>/dev/null; then
+        log "/etc/hosts already maps api.careotter.lab + beta.api.careotter.lab → ${ip}"
+        return
+    fi
+    log "Updating /etc/hosts (sudo) → ${ip}  api.careotter.lab beta.api.careotter.lab"
+    sudo sh -c "{ grep -vF 'api.careotter.lab' /etc/hosts 2>/dev/null || true; } > /etc/hosts.cloudctl && printf '%s\n' '${line}' >> /etc/hosts.cloudctl && cat /etc/hosts.cloudctl > /etc/hosts && rm -f /etc/hosts.cloudctl"
+    if grep -qxF "$line" /etc/hosts 2>/dev/null; then
+        log "/etc/hosts updated — api.careotter.lab + beta.api.careotter.lab → ${ip}"
+    else
+        warn "Could not update /etc/hosts (sudo failed?)."
+        warn "Add manually:  ${ip}  api.careotter.lab beta.api.careotter.lab"
+    fi
+}
+
 # ── Actions ────────────────────────────────────────────────────────────────────
 
 action_start() {
     require docker
     docker compose version >/dev/null 2>&1 || die "docker compose plugin not installed"
 
-    local push_wifi=1 vulnerable=1
+    local push_wifi=1 vulnerable=1 push_hosts=1
     while [ $# -gt 0 ]; do
         case "$1" in
             --no-wifi)            push_wifi=0 ;;
+            --no-hosts)           push_hosts=0 ;;
             --secure)             vulnerable=0 ;;
             --vulnerable|--vuln)  vulnerable=1 ;;
-            *) die "Unknown option for start: $1 (try: --secure | --vulnerable | --no-wifi)" ;;
+            *) die "Unknown option for start: $1 (try: --secure | --vulnerable | --no-wifi | --no-hosts)" ;;
         esac
         shift
     done
@@ -146,7 +176,22 @@ action_start() {
     local url_host="${host_ip:-localhost}"
     [ -n "$url_host" ] || url_host=localhost
     log "Mode: $mode_label"
-    log "API reachable at http://${url_host}:5002  (external :5002 is the nginx proxy → API internal-only)"
+    log "Production  http://api.careotter.lab/      (also http://${url_host}:5002 — default host, legacy)"
+    if [ "$vulnerable" -eq 1 ]; then
+        log "Beta host   http://beta.api.careotter.lab/"
+    fi
+
+    # Write both names → this host's WiFi (wlan) IP in /etc/hosts (sudo) so the
+    # browser/Burp resolve them (the OTP flow posts to the absolute api.careotter.lab,
+    # and the attacker pivots to beta.api.careotter.lab). Detected fresh so it works
+    # even with --no-wifi. Skip with --no-hosts.
+    if [ "$push_hosts" -eq 1 ]; then
+        local hosts_ip="${host_ip}"
+        [ -n "$hosts_ip" ] || hosts_ip="$(detect_host_wifi_ip "$(detect_wifi_iface || true)" || true)"
+        add_hosts_entry "$hosts_ip"
+    else
+        log "--no-hosts: skipping /etc/hosts. Add manually: <wifi-ip>  api.careotter.lab beta.api.careotter.lab"
+    fi
 }
 
 action_stop() {
@@ -198,13 +243,21 @@ case "${1:-}" in
         cat >&2 <<EOF
 Usage: $0 {start|stop|restart|reset|status|logs} [options]
 
-  start [--secure|--vulnerable] [--no-wifi]
+  start [--secure|--vulnerable] [--no-wifi] [--no-hosts]
            Build the image and bring the stack up (detached). Default mode is
            VULNERABLE (API8 proxy ACL bypassable via trailing slash); pass
            --secure to launch with VULNERABLE=0 (normalized ACL, bypass closed).
            Auto-detects the host's WiFi interface and exports WIFI_SSID,
            WIFI_PSK, HOST_WIFI_IP so /initialize_iot can push the same
            credentials to the Pi; use --no-wifi to skip that.
+
+           The edge serves two name-based vhosts on :80 (and :5002): the
+           production host api.careotter.lab (OTP rate-limited) and the forgotten
+           beta.api.careotter.lab (NOT rate-limited in VULNERABLE mode = API9;
+           --secure restores it). On start it WRITES both names → this host's WiFi
+           (wlan) IP in /etc/hosts via sudo, so the browser/Burp and tools resolve
+           them (the OTP flow posts to the absolute api.careotter.lab, and the
+           attacker pivots to beta.api.careotter.lab). Use --no-hosts to skip that.
 
   stop     docker compose down — stops the stack but KEEPS the careotter_data
            volume (the seeded DB survives).
