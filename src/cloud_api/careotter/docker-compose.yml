@@ -1,11 +1,16 @@
 services:
 
-  # ── Reverse proxy (API8:2023 Security Misconfiguration) ──────────────────────
-  # Publishes the external :5002 and enforces an "internal-only" ACL on the admin
-  # panel + DB-debug + lab-init endpoints. VULNERABLE=1 → exact-match ACL that a
-  # trailing slash bypasses (the API routes slash-insensitively); VULNERABLE=0 →
-  # normalized matching that closes it. The API container is now internal-only:
-  # all external traffic enters through this proxy.
+  # ── Reverse proxy — one edge, two name-based vhosts (API8 + API9) ────────────
+  # Publishes :80 (clean no-port URLs) and :5002 (legacy: the patient portal, the
+  # Android app and the Pi cloud_set all use :5002). Two server_name vhosts front
+  # the SAME internal careotter-api:
+  #   api.careotter.lab      — production: API8 ACL + OTP rate-limit (also default,
+  #                            so localhost:5002 / unknown Host hits the safe host).
+  #   beta.api.careotter.lab — the forgotten host: identical EXCEPT it omits the
+  #                            OTP rate-limit, so the 6-digit code is brute-forceable
+  #                            BY NAME (API9). VULNERABLE=0 restores the limit on it.
+  # The subdomain in the Host header decides — exactly the OWASP api./beta.api. shape.
+  # Map both names to this host via /etc/hosts (cloudctl prints the line).
   careotter-proxy:
     build:
       context: ./proxy
@@ -13,6 +18,7 @@ services:
     environment:
       - VULNERABLE=${VULNERABLE:-1}
     ports:
+      - "0.0.0.0:80:80"
       - "0.0.0.0:5002:5002"
     networks:
       - careotter-net

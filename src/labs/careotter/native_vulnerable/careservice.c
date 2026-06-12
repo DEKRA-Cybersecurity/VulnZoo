@@ -393,6 +393,27 @@ void handle_request(int c_fd) {
 
             send(c_fd, "WIFI_UPDATED", 12, 0);
             log_event("SET_WIFI: configuration applied and connected");
+
+            /* Report the IPv4 the device obtained on the associated WiFi interface */
+            FILE *ipf = popen(
+                "for iface in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do "
+                "  iw dev \"$iface\" link >/dev/null 2>&1 || continue; "
+                "  ip -4 -o addr show dev \"$iface\" | awk '{print $4}' | cut -d/ -f1; "
+                "  break; "
+                "done",
+                "r");
+            char wifi_ip[64] = {0};
+            if (ipf) {
+                if (fgets(wifi_ip, sizeof(wifi_ip), ipf)) {
+                    char *nl = strpbrk(wifi_ip, "\r\n");
+                    if (nl) *nl = '\0';
+                }
+                pclose(ipf);
+            }
+            char ip_log[96];
+            snprintf(ip_log, sizeof(ip_log), "SET_WIFI: wifi interface IP %s",
+                     wifi_ip[0] ? wifi_ip : "unknown");
+            log_event(ip_log);
             break;
         }
 

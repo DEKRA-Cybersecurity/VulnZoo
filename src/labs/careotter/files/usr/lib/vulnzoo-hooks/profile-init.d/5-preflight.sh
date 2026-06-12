@@ -14,12 +14,12 @@ ERRORS=0
 WARNINGS=0
 
 # Check directory structure
-for dir in /root/careotter/core /root/careotter/api /root/careotter/config /root/careotter/data /root/careotter/logs; do
+for dir in /opt/careotter-ftp /opt/careservice /opt/medical-sensor; do
     if [ -d "$dir" ]; then
         log_message "Directory exists: $dir"
     else
-        log_message "Creating directory: $dir"
-        mkdir -p "$dir" || ERRORS=$((ERRORS + 1))
+        log_message "Service directory missing: $dir"
+        ERRORS=$((ERRORS + 1))
     fi
 done
 

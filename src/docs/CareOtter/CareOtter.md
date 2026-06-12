@@ -130,7 +130,7 @@ ok
 
 ### 2. Admin Service — IGP v4 TCP :9999
 
-C daemon (`/opt/careotter/careservice`, source at `labs/careotter/careservice.c`) running on the **bedside monitor**. It implements the IoT Gateway Protocol v4 binary protocol for remote administration of the gateway — including device provisioning, threshold configuration (forwarded to the DAI over I2C), and network management.
+C daemon (`/opt/careservice/careservice`, source at `labs/careotter/careservice.c`) running on the **bedside monitor**. It implements the IoT Gateway Protocol v4 binary protocol for remote administration of the gateway — including device provisioning, threshold configuration (forwarded to the DAI over I2C), and network management.
 
 #### IGP v4 Header Format
 
@@ -567,6 +567,8 @@ cd cloud_api/careotter
 # Admin Panel:    http://localhost:5002/admin/login
 # Patient Portal: http://localhost:5002/patient/login
 ```
+
+> **Friendly hostname (`api.careotter.lab`).** On `start`, `cloudctl.sh` maps **`api.careotter.lab`** to this host in `/etc/hosts` (using your WiFi/`wlan` IP), so you can reach the Cloud API by name instead of a raw `IP:port` — for example `http://api.careotter.lab/api/health`, `http://api.careotter.lab/admin/login` and `http://api.careotter.lab/patient/login` (served on `:80`, no port needed). The `localhost:5002` and `IP:5002` forms keep working. Pass `--no-hosts` to skip the `/etc/hosts` write and add the entry yourself.
 
 > **Vulnerable vs. secure mode.** `start`/`restart` default to **VULNERABLE**
 > (`VULNERABLE=1`): the API8 reverse proxy (`careotter-proxy`) enforces an

@@ -64,8 +64,8 @@ A medical-grade pulse oximeter (CareOtter) has been deployed for patient monitor
 **Purpose**: Device administration with intentional vulnerabilities
 
 **Location**: 
-- Binary: `/opt/careotter/careservice`
-- Source: `/opt/careotter/careservice.c`
+- Binary: `/opt/careservice/careservice`
+- Source: `./native_vulnerable/careservice.c`
 - Init: `/etc/init.d/careservice`
 
 **Vulnerabilities**:
@@ -82,6 +82,19 @@ Header: [Magic(4) | Cmd(1) | Status(1) | Len(2)]
 Magic: 0x43415245 ("CARE")
 Payload: variable
 ```
+
+### 4. Field-Service FTP Daemon - careotter-ftp (Port 21)
+**Purpose**: Legacy vendor field-service FTP for firmware/log transfer (intentionally vulnerable, OWASP IoT I2)
+
+**Location**:
+- Binary: `/opt/careotter-ftp/careotter-ftp`
+- Source: [`./native_vulnerable/careotter-ftp.c`](./native_vulnerable/careotter-ftp.c)
+- Init: `/etc/init.d/careotter-ftp` (`START=72`)
+- Context / details: [`./native_vulnerable/CONTEXT.md`](./native_vulnerable/CONTEXT.md) (careotter-ftp section)
+
+**Vulnerability**: Trojanned **vsftpd 2.3.4** backdoor (CVE-2011-2523). A `USER` argument containing `:)` binds a root `/bin/sh` to TCP `:6200`. The `220 (vsFTPd 2.3.4)` banner is `nmap -sV` fingerprintable and maps to `exploit/unix/ftp/vsftpd_234_backdoor`. CWE-912 (hidden backdoor) / CWE-1104 (unmaintained service).
+
+**Toggle**: UCI `careotter.@careotter[0].ftp_secure=1` decommissions the service (nothing listens on `:21`).
 
 ## BLE Auto-recovery (3-layer self-healing)
 
@@ -264,7 +277,7 @@ printf '\x47\x4F\x41\x54\x02\x00\x00\x0FOtterMobile2026' | nc 127.0.0.1 9999
 | BLE GATT | hci0 | Heart Rate + Pulse Ox services |
 | Admin Service | `:9999` | CareService (vulnerable) |
 | Logs | `/tmp/medical-logs/` | Sensor data logs |
-| Binary | `/opt/careotter/careservice` | Admin service executable |
+| Binary | `/opt/careservice/careservice` | Admin service executable |
 
 ## Vulnerability Testing
 
@@ -317,5 +330,7 @@ The Android app connects to both services:
 ## References
 
 - Client: `CareOtterClient.java` (Protocol IGP v4)
-- Service: `careservice.c` (Vulnerable admin service)
+- Service: `./native_vulnerable/careservice.c` (Vulnerable admin service)
+- FTP service: [`./native_vulnerable/careotter-ftp.c`](./native_vulnerable/careotter-ftp.c) (vsftpd 2.3.4 backdoor, CVE-2011-2523)
+- FTP context: [`./native_vulnerable/CONTEXT.md`](./native_vulnerable/CONTEXT.md) (careotter-ftp section)
 - Docs: `docs/CareOtter/Vulnerabilities.md`

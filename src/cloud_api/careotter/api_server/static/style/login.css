@@ -324,3 +324,62 @@ body {
     .login-wrapper { padding: 16px; }
     .login-card { padding: 36px 24px 32px; }
 }
+
+/* ── Password-reset OTP flow (API9) — fields injected into .recovery-modal ──── */
+.recovery-modal input.otp-field {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #0f172a;
+}
+.recovery-modal input.otp-field:focus {
+    outline: none;
+    border-color: #0891b2;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
+}
+.recovery-modal .otp-msg {
+    min-height: 1.1em;
+    margin: 2px 0 14px;
+    font-size: 0.82rem;
+    color: #dc2626;
+}
+.recovery-modal button.otp-link {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 0;
+    background: none;
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #0891b2;
+    cursor: pointer;
+    text-decoration: underline;
+}
+.recovery-modal button.otp-link:hover { color: #0d9488; }
+
+/* ── Reveal toggle for the leaked password hint (eye like the login field) ──── */
+.leaked-cred-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+.leaked-cred-wrap .leaked-cred { margin-top: 0; }
+.reveal-cred {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    color: #94a3b8;
+    transition: color 0.2s;
+    display: inline-flex;
+    align-items: center;
+}
+.reveal-cred:hover { color: #0891b2; }
+.reveal-cred svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }

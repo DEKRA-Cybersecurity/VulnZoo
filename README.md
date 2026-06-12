@@ -68,6 +68,8 @@ Once the Raspberry Pi is started, the user accesses a web management panel via a
 
 For scenarios that require cloud APIs, VulnZoo uses Docker containers that the user starts with a single command (`docker-compose up`), simulating external servers in an isolated and realistic way. The connection is simply established via Ethernet cable between the user's PC and the Raspberry Pi, without complex network configurations.
 
+For convenience, some cloud APIs can also be reached through a friendly hostname instead of a raw `IP:port`. The **CareOtter** Cloud API, for example, is reachable at **`http://api.careotter.lab`** — its `cloudctl.sh` helper maps the name to the host on startup, mirroring how a real deployment exposes a named API endpoint.
+
 ### Vulnerable/Secure Comparison
 
 Each lab includes the option to apply secure configurations, allowing the user to directly compare the behavior of the system before and after mitigation, reinforcing the learning of best practices and facilitating the security evaluations against relevant standards and regulations.

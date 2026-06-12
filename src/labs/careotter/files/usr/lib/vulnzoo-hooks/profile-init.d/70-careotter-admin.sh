@@ -21,7 +21,7 @@ fi
 
 LOG_FILE="/root/vulnzoo.log"
 PID_FILE="/var/run/careservice.pid"
-CARESERVICE_BIN="/opt/careotter/careservice"
+CARESERVICE_BIN="/opt/careservice/careservice"
 CARESERVICE_PORT=9999
 
 log_message() {

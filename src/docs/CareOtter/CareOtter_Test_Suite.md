@@ -155,7 +155,7 @@ A secure design completely eliminates the notion of a "universal factory passwor
 
 ```bash
 # Method A: static extraction from binary
-strings /opt/careotter/careservice | grep -i otter
+strings /opt/careservice/careservice | grep -i otter
 
 # Method B: direct test via IGP
 python3 igp_helper.py 0x02 "OtterMobile2026"
@@ -184,7 +184,7 @@ The most direct route when the attacker has, or can obtain, the binary (SD-card 
 
 ```bash
 # 1. Static strings — most literals jump out immediately
-strings /opt/careotter/careservice | grep -Ei "otter|auth|magic|care|deauth|wifi"
+strings /opt/careservice/careservice | grep -Ei "otter|auth|magic|care|deauth|wifi"
 
 # Expected output (excerpt):
 #   OtterMobile2026
@@ -196,7 +196,7 @@ strings /opt/careotter/careservice | grep -Ei "otter|auth|magic|care|deauth|wifi
 #   CARE                 ← the 4 magic bytes appear as ASCII in .rodata
 
 # 2. Disassemble main() — radare2 / Ghidra / objdump
-aarch64-linux-gnu-objdump -d /opt/careotter/careservice | less
+aarch64-linux-gnu-objdump -d /opt/careservice/careservice | less
 #   Look for: read(fd, hdr, 8) → cmp against 0x43415245 → switch over byte at hdr+4
 ```
 

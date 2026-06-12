@@ -1,0 +1,95 @@
+#!/bin/sh /etc/rc.common
+#
+# careotter-ftp — CareOtter "field-service" FTP daemon (OWASP IoT I2).
+# Legacy vulnerable FTP on TCP :21 (already firewall-open). Advertises
+# "220 (vsFTPd 2.3.4)" and reproduces the vsftpd 2.3.4 backdoor (CVE-2011-2523):
+# a USER argument containing ":)" binds /bin/sh to :6200 as root.
+#
+# Secure/vulnerable toggle (mirrors careservice's CARESERVICE_SECURE):
+#   UCI careotter.@careotter[0].ftp_secure  (1 = secure, 0/unset = VULNERABLE)
+#   * VULNERABLE (default): start the daemon (backdoor active).
+#   * SECURE: do NOT start it — the I2 remediation is to DECOMMISSION the
+#     unnecessary network service, so nothing listens on :21.
+#
+# Auto-start: START=72 → /etc/rc.d/S72careotter-ftp, created by `enable`
+# (invoked from the 72-careotter-ftp hook) and re-created by boot() every boot
+# as a self-heal, exactly like careservice.
+#
+
+START=72
+STOP=10
+USE_PROCD=1
+
+PROG=/opt/careotter-ftp/careotter-ftp
+PIDFILE=/var/run/careotter-ftp.pid
+
+boot() {
+    enable
+    start "$@"
+}
+
+start_service() {
+    if [ ! -f "$PROG" ]; then
+        logger -t careotter-ftp "ERROR: Binary not found at $PROG"
+        return 1
+    fi
+
+    # Idempotency by binary path (procd's pidfile write is async — same caveat
+    # as careservice).
+    existing_pid=$(pidof "$PROG" 2>/dev/null)
+    if [ -n "$existing_pid" ]; then
+        logger -t careotter-ftp "Service already running (PID: $existing_pid)"
+        return 0
+    fi
+    rm -f "$PIDFILE"
+
+    # Secure/vulnerable toggle. Default 0 (VULNERABLE) when unset.
+    FTP_SECURE=$(uci -q get careotter.@careotter[0].ftp_secure 2>/dev/null)
+    [ "$FTP_SECURE" = "1" ] || FTP_SECURE=0
+
+    if [ "$FTP_SECURE" = "1" ]; then
+        # I2 remediation: the unnecessary legacy service is decommissioned.
+        logger -t careotter-ftp "secure_mode=1 — field-service FTP DECOMMISSIONED (not starting :21)"
+        return 0
+    fi
+
+    logger -t careotter-ftp "Starting field-service FTP on :21 (VULNERABLE — vsftpd 2.3.4 backdoor)"
+
+    procd_open_instance
+    procd_set_param command "$PROG"
+    procd_set_param env CAREOTTER_FTP_SECURE="$FTP_SECURE"
+    # respawn: long crash window, 5s wait, retry=0 (never give up) — like careservice.
+    procd_set_param respawn 3600 5 0
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param pidfile "$PIDFILE"
+    procd_close_instance
+}
+
+stop_service() {
+    logger -t careotter-ftp "Stopping field-service FTP"
+    if [ -f "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE" 2>/dev/null)
+        kill "$pid" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    # Belt-and-suspenders: hunt any lingering instance procd may have lost track of.
+    pidof "$PROG" 2>/dev/null | xargs -r kill 2>/dev/null
+    sleep 1
+    pidof "$PROG" 2>/dev/null | xargs -r kill -9 2>/dev/null
+    # Also kill any open backdoor shell still bound to :6200.
+    fuser -k 6200/tcp 2>/dev/null
+}
+
+reload_service() {
+    stop
+    start
+}
+
+restart() {
+    # Plain stop+start — more reliable than procd_kill after a watchdog reboot
+    # (same rationale as careservice).
+    stop
+    sleep 1
+    start
+}
