@@ -57,6 +57,7 @@ public class LoginActivity extends AppCompatActivity {
     private static final String KEY_API_URL      = "api_url";
     private static final String KEY_API_PREFIX   = "api_prefix";
     private static final String KEY_API_HOST     = "api_host";
+    private static final String KEY_USER_ID      = "user_id";
     private static final String DEFAULT_PREFIX   = "192.168.2.";
     private static final String DEFAULT_HOST     = "2";
     private static final int    API_PORT         = 5002;
@@ -268,12 +269,16 @@ public class LoginActivity extends AppCompatActivity {
                     String token = json.getString("token");
                     String role  = json.optString("role", "patient");
                     String uname = json.optString("username", username);
+                    // Numeric user id from the login response — sent as patient_id
+                    // by the Historical Readings screen (GET /api/vitals/readings).
+                    int    uid   = json.optInt("id", -1);
 
                     // VULNERABILITY: JWT stored unencrypted in SharedPreferences
                     getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                             .putString(KEY_TOKEN,      token)
                             .putString(KEY_ROLE,       role)
                             .putString(KEY_USERNAME,   uname)
+                            .putInt(KEY_USER_ID,       uid)
                             .putString(KEY_API_URL,    apiUrl)
                             .putString(KEY_API_PREFIX, finalPrefix)
                             .putString(KEY_API_HOST,   finalHostOctet)

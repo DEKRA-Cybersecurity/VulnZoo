@@ -15,7 +15,7 @@ RUN apt-get update && \
 WORKDIR /opt/careotter
 
 # Copy source from the labs tree (build context is project root)
-COPY labs/careotter/careservice.c .
+COPY labs/careotter/native_vulnerable/careservice.c .
 
 # Compile natively (no OpenWRT libs needed — careservice.c uses only POSIX)
 RUN gcc -Wall -O2 -o careservice careservice.c
