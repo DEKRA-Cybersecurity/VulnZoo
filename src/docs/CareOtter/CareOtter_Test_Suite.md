@@ -1018,6 +1018,8 @@ The AES-128-ECB key `careotter-key-16` is found in plaintext both in the APK and
 
 ### BLE-07 — CSCP v1 Threshold Forging (M3)
 
+> **Re-classified (2026-06-12):** this BLE CSCP threshold-forging case is now catalogued under OWASP IoT as [`Vulns/IoT/IoT7_Insecure_Data_Transfer_and_Storage.md`](Vulns/IoT/IoT7_Insecure_Data_Transfer_and_Storage.md) (the related hidden provisioning backdoor moved to [`Vulns/IoT/IoT2_Insecure_Network_Services.md`](Vulns/IoT/IoT2_Insecure_Network_Services.md) §2.4). The M3 framing below is retained as the original mobile lens.
+
 **Documentation:** `CareOtter_App.md` M3  
 **OWASP:** Mobile M3 — Insecure Authentication/Authorization
 **Type:** CWE-306 + CWE-20  

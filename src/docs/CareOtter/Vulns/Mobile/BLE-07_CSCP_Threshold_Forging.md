@@ -2,7 +2,7 @@
 id: BLE-07
 title: "Factory Provisioning Channel — Hidden Administrative Backdoor (M3)"
 category: Mobile
-status: DONE
+status: COMPLETADA
 severity: Critical
 owasp: "Mobile M3 — Insecure Authentication/Authorization"
 cwe: "CWE-798 (Hardcoded Credentials) + CWE-307 (Improper Restriction of Excessive Authentication Attempts) + CWE-613 (Insufficient Session Expiration) + CWE-312 (Cleartext Storage of Sensitive Information) + CWE-78 (OS Command Injection) + CWE-918 (SSRF)"
@@ -15,10 +15,10 @@ affected_components:
   - "vulnzoo_apps/careotter_app/app/src/main/java/com/vulnzoo/careotter_app/IgpClient.java"
 verified_date: "2026-05-15"
 ---
-	
+
 # BLE-07 — Factory Provisioning Channel: Hidden Administrative Backdoor (M3)
 
-> **Status:** DONE
+> **Status:** ✅ DONE
 > **Source:** `CareOtter_IoT.md` §3.4 Factory Provisioning Channel
 > **OWASP Mobile:** M3 — Insecure Authentication/Authorization
 > **OWASP IoT:** I3 (primary), I9, I6, I2

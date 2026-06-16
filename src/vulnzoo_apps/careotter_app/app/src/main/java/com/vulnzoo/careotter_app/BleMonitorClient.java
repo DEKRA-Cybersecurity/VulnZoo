@@ -110,7 +110,7 @@ public class BleMonitorClient {
         scanner = bluetoothAdapter.getBluetoothLeScanner();
         if (scanner == null) return;
         scanning = true;
-        listener.onLog("Buscando " + DEVICE_NAME + "…");
+        listener.onLog("Searching " + DEVICE_NAME + "…");
 
         activeScanCallback = new ScanCallback() {
             @Override
@@ -121,7 +121,7 @@ public class BleMonitorClient {
                 // Only react to the exact target name — but name is attacker-controlled
                 if (DEVICE_NAME.equals(name)) {
                     stopScan();
-                    listener.onLog("Found: " + name + " [" + device.getAddress() + "] — connected");
+                    listener.onLog("Found: " + name + " [" + device.getAddress() + "]");
                     connect(device.getAddress());
                 }
             }

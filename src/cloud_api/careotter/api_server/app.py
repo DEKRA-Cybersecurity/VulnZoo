@@ -17,6 +17,7 @@ Operating modes (environment var VULNERABLE):
 """
 
 import os
+import re
 import time
 import threading
 import socket
@@ -952,7 +953,8 @@ def login():
         'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
         'type':       'Bearer',
         'role':       user.get('role'),
-        'username':   username
+        'username':   username,
+        'id':         user.get('id')
     }))
     resp.set_cookie('careotter_token', jwt_token, httponly=True, samesite='Lax', max_age=3600*Config.JWT_EXPIRATION_HOURS)
     return resp, 200
@@ -1041,7 +1043,8 @@ def login_patient():
         'expires_in': f"{Config.JWT_EXPIRATION_HOURS}h",
         'type':       'Bearer',
         'role':       user.get('role'),
-        'username':   username
+        'username':   username,
+        'id':         user.get('id')
     }))
     resp.set_cookie('careotter_token', jwt_token, httponly=True, samesite='Lax', max_age=3600*Config.JWT_EXPIRATION_HOURS)
     return resp, 200
@@ -1697,6 +1700,50 @@ def get_vitals_db_history():
         'total_count': total_count,
         'device_mac':  device_mac,
         'readings':    readings
+    }), 200
+
+
+@app.route('/api/vitals/readings')
+@token_required
+def get_vitals_readings():
+    """Patient reading-history for the mobile app's "Historical Readings" screen.
+    Query param: ?patient_id=<numeric user id>
+
+    Ownership gate (closes the API1 BOLA): a patient may only read their OWN
+    readings. The id is resolved from the bearer token and compared against the
+    request, so a bare cross-user id (e.g. patient_id=6 from another patient's
+    token) is rejected 403.
+
+    INTENTIONAL VULNERABILITY (M4 / CWE-89), deliberately preserved: the gate
+    validates only the LEADING INTEGER of patient_id and still passes the raw
+    string to db.search_readings_by_patient (raw concatenation). So a payload
+    that begins with the caller's own id — e.g. "2 AND 1=0 UNION SELECT ..." —
+    passes the ownership check and reaches the injection sink. There is no
+    try/except, so a sqlite3.OperationalError propagates to the global handler,
+    which under VULNERABLE=1 returns the verbose error (CWE-209) oracle."""
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    current  = g.current_user
+    username = current.get('sub') or current.get('username', '')
+    account  = db.get_user_by_username(username)
+    if not account:
+        return jsonify({'error': 'User not found'}), 404
+
+    patient_id = request.args.get('patient_id', '')
+
+    # BOLA fix: the leading integer of patient_id must be the caller's own id.
+    # (Validating only the leading integer is what leaves the SQLi reachable —
+    # the raw string still flows to the query below.)
+    lead = re.match(r'\s*(\d+)', patient_id)
+    if not lead or int(lead.group(1)) != account['id']:
+        return jsonify({'error': 'Forbidden — you may only read your own readings'}), 403
+
+    readings = db.search_readings_by_patient(patient_id)
+    return jsonify({
+        'patient_id': patient_id,
+        'count':      len(readings),
+        'readings':   readings
     }), 200
 
 

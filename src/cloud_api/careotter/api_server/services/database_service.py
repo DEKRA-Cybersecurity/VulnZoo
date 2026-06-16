@@ -84,6 +84,7 @@ class DatabaseService:
                     patient_username TEXT NOT NULL,
                     device_name TEXT,
                     auth_hash TEXT,
+                    ble_psk TEXT,                  -- M4: hidden device PSK (CTF flag); stripped from API output, reachable only via the /api/vitals/readings SQLi
                     device_ip TEXT,
                     igp_port INTEGER DEFAULT 9999,
                     registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -271,6 +272,24 @@ class DatabaseService:
                 conn.execute("ALTER TABLE devices ADD COLUMN igp_port INTEGER DEFAULT 9999")
                 conn.commit()
                 logger.info("[DB] Migration: igp_port column added")
+
+            # Migration (M4): add ble_psk to devices and seed the CTF flag row.
+            # Runs on EVERY startup, so the flag survives both a kept volume
+            # (cloudctl stop/start) and a dropped one (reset). INSERT OR IGNORE is
+            # idempotent on the UNIQUE mac. The sentinel owner '__ctf__' keeps the
+            # row out of every patient-scoped query, and ble_psk is stripped from
+            # all device serializers (see _public_device) so the value leaves only
+            # through the /api/vitals/readings UNION SQL injection.
+            if 'ble_psk' not in existing_devices:
+                logger.info("[DB] Migration: adding ble_psk to devices")
+                conn.execute("ALTER TABLE devices ADD COLUMN ble_psk TEXT")
+                conn.commit()
+            conn.execute(
+                "INSERT OR IGNORE INTO devices "
+                "(mac, patient_username, device_name, ble_psk) "
+                "VALUES ('FF:FF:FF:FF:FF:FF', '__ctf__', 'CareOtter_Provisioning', "
+                "'FLAG{SQLi_M4_CareOtter_2026}')")
+            conn.commit()
 
             # Migration: add profile_photo + display_name to users if missing
             existing_users = {row[1] for row in
@@ -581,6 +600,15 @@ class DatabaseService:
             return ""
         return stored if stored.startswith(cls.HASH_PREFIX) else cls.HASH_PREFIX + stored
 
+    @staticmethod
+    def _public_device(row) -> Dict:
+        """Serialize a devices row, dropping the injection-only ble_psk secret
+        (the M4 CTF flag) so it never leaves through a device-listing endpoint.
+        The flag is reachable only via the /api/vitals/readings UNION SQLi."""
+        d = dict(row)
+        d.pop('ble_psk', None)
+        return d
+
     def register_device(self, mac: str, patient_username: str,
                         device_name: str = None, auth_hash: str = None,
                         device_ip: str = None, igp_port: int = None) -> bool:
@@ -709,7 +737,7 @@ class DatabaseService:
                 row = conn.execute(
                     'SELECT * FROM devices WHERE auth_hash = ?', (stored,)
                 ).fetchone()
-                return dict(row) if row else None
+                return self._public_device(row) if row else None
         except Exception as e:
             logger.error(f"[DB] Error fetching device by hash: {e}")
             return None
@@ -723,7 +751,7 @@ class DatabaseService:
                 row = conn.execute(
                     'SELECT * FROM devices WHERE mac = ?', (mac,)
                 ).fetchone()
-                return dict(row) if row else None
+                return self._public_device(row) if row else None
         except Exception as e:
             logger.error(f"[DB] Error fetching device: {e}")
             return None
@@ -764,7 +792,7 @@ class DatabaseService:
                 row = conn.execute(
                     'SELECT * FROM devices WHERE patient_username = ?', (username,)
                 ).fetchone()
-                return dict(row) if row else None
+                return self._public_device(row) if row else None
         except Exception as e:
             logger.error(f"[DB] Error fetching device by patient: {e}")
             return None
@@ -799,7 +827,7 @@ class DatabaseService:
                         'SELECT * FROM devices WHERE patient_username = ? ORDER BY registered_at DESC',
                         (username,)
                     ).fetchall()
-                return [dict(r) for r in rows]
+                return [self._public_device(r) for r in rows]
         except Exception as e:
             logger.error(f"[DB] Error fetching devices for {username}: {e}")
             return []
@@ -812,7 +840,7 @@ class DatabaseService:
                 rows = conn.execute(
                     'SELECT * FROM devices ORDER BY registered_at DESC'
                 ).fetchall()
-                return [dict(r) for r in rows]
+                return [self._public_device(r) for r in rows]
         except Exception as e:
             logger.error(f"[DB] Error listing devices: {e}")
             return []
@@ -825,7 +853,7 @@ class DatabaseService:
                 rows = conn.execute(
                     "SELECT * FROM devices WHERE device_ip IS NOT NULL AND device_ip != '' ORDER BY registered_at DESC"
                 ).fetchall()
-                return [dict(r) for r in rows]
+                return [self._public_device(r) for r in rows]
         except Exception as e:
             logger.error(f"[DB] Error listing devices with IP: {e}")
             return []
@@ -1313,6 +1341,34 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"[DB] Error fetching history: {e}")
             return []
+
+    def search_readings_by_patient(self, patient_id) -> List[Dict]:
+        """Return a patient's vitals by numeric user id, for the app's history
+        screen. Backs GET /api/vitals/readings.
+
+        The panel is scoped to the last hour: a ``v.timestamp >= <cutoff>``
+        filter precedes the injectable term, so ``patient_id`` is still the last
+        token before ORDER BY and the injection is unchanged (a UNION'd SELECT is
+        a separate query and is not constrained by the time window).
+
+        INTENTIONAL VULNERABILITY (M4 / CWE-89): ``patient_id`` is concatenated
+        straight into the SQL in a numeric (unquoted) context — no ``?``
+        placeholder, no escaping. Contrast get_vitals_history above, which binds
+        every value. The three-column projection makes the endpoint a clean
+        UNION-injection target (`null,<value>,null`), and the deliberate absence
+        of a try/except lets sqlite3.OperationalError propagate to the global
+        error handler, which echoes the verbose message when VULNERABLE=1."""
+        since = (datetime.now() - timedelta(hours=1)).timestamp()
+        sql = ("SELECT v.bpm, v.spo2, v.timestamp "
+               "FROM vitals_readings v "
+               "JOIN devices d ON v.device_mac = d.mac "
+               "JOIN users u ON d.patient_username = u.username "
+               "WHERE v.timestamp >= " + str(since) + " AND u.id = " + str(patient_id) + " "
+               "ORDER BY v.timestamp DESC LIMIT 500")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql).fetchall()
+            return [dict(r) for r in rows]
 
     def get_vitals_stats(self, hours: int = 24, device_mac: str = None) -> Dict:
         """Aggregated statistics, optionally filtered by device MAC.

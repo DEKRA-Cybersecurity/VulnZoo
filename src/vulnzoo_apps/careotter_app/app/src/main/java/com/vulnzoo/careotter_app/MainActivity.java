@@ -185,6 +185,11 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
             parseThresholds(raw);
         });
 
+        // Historical Readings card → opens the patient's reading history,
+        // which fetches GET /api/vitals/readings?patient_id=<own id>.
+        findViewById(R.id.layoutHistoryCard).setOnClickListener(v ->
+                startActivity(new Intent(this, HistoricalReadingsActivity.class)));
+
         requestPermissions();
         fetchAssignedDevice();
     }

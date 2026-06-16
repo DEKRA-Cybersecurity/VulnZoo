@@ -49,6 +49,11 @@
             android:name=".MainActivity"
             android:exported="false" />
 
+        <!-- Patient reading history — calls GET /api/vitals/readings (M4 SQLi) -->
+        <activity
+            android:name=".HistoricalReadingsActivity"
+            android:exported="false" />
+
         <!-- Admin panel (IGP v4) — reached after login with role=admin -->
         <activity
             android:name=".AdminActivity"
