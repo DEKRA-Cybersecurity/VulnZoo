@@ -111,6 +111,8 @@ class DatabaseService:
                     bpm INTEGER,
                     spo2 INTEGER,
                     source TEXT,
+                    latitude REAL,
+                    longitude REAL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (device_mac) REFERENCES devices(mac)
                 );
@@ -251,6 +253,19 @@ class DatabaseService:
                 conn.commit()
                 n = conn.execute('SELECT COUNT(*) FROM vitals_readings').fetchone()[0]
                 logger.info(f"[DB] Migration: backfilled {n} rows with mac={default_mac}")
+
+            # Migration (M6): add latitude/longitude to vitals_readings for the
+            # mobile app's geolocation over-collection. The phone ships its precise
+            # GPS alongside vitals (PHI); both are persisted verbatim, no masking
+            # (OWASP Mobile M6 Inadequate Privacy Controls).
+            if 'latitude' not in existing_vitals:
+                logger.info("[DB] Migration: adding latitude to vitals_readings")
+                conn.execute("ALTER TABLE vitals_readings ADD COLUMN latitude REAL")
+                conn.commit()
+            if 'longitude' not in existing_vitals:
+                logger.info("[DB] Migration: adding longitude to vitals_readings")
+                conn.execute("ALTER TABLE vitals_readings ADD COLUMN longitude REAL")
+                conn.commit()
 
             # Migration: add auth_hash to devices if missing
             existing_devices = {row[1] for row in
@@ -1292,14 +1307,16 @@ class DatabaseService:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
                     INSERT INTO vitals_readings
-                    (device_mac, timestamp, bpm, spo2, source)
-                    VALUES (?, ?, ?, ?, ?)
+                    (device_mac, timestamp, bpm, spo2, source, latitude, longitude)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     mac,
                     data.get('timestamp'),
                     data.get('bpm'),
                     data.get('spo2'),
-                    data.get('source', 'unknown')
+                    data.get('source', 'unknown'),
+                    float(data.get('lat')) if data.get('lat') is not None else None,
+                    float(data.get('lon')) if data.get('lon') is not None else None
                 ))
                 conn.commit()
                 return True

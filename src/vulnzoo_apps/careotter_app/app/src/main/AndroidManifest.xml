@@ -11,8 +11,15 @@
     <!-- BLE permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- VULNERABILITY M6 (Inadequate Privacy Controls): ACCESS_FINE_LOCATION is
+         justified to the user as "required for BLE device scanning" - a false
+         rationale. BLUETOOTH_SCAN above declares neverForLocation, so on Android
+         12+ the scan needs no location at all. The permission is actually used to
+         capture precise GPS and ship it to the cloud bundled with vitals (PHI).
+         See MainActivity.postReadingWithLocation. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- VULNERABILITY #3: WRITE_EXTERNAL_STORAGE for plaintext vitals log -->

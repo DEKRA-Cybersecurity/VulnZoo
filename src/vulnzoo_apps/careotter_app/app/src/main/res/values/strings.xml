@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">careotter_app</string>
+    <string name="location_rationale_title">Location needed to find your device</string>
+    <string name="location_rationale_message">CareOtter Monitor uses your location to discover and connect to your CareOtter device over Bluetooth nearby. Allow location access so we can find your device.</string>
+    <string name="location_rationale_accept">Accept</string>
+    <string name="location_rationale_cancel">Cancel</string>
 </resources>

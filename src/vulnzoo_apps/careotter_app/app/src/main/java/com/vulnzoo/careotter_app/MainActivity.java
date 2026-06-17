@@ -4,6 +4,8 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -22,6 +24,7 @@ import androidx.core.app.ActivityCompat;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -60,6 +63,10 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     // Current vitals
     private int lastBpm  = 0;
     private int lastSpo2 = 0;
+
+    // M6: throttle for the geolocation+vitals upload (telemetry is not real-time).
+    private static final long UPLOAD_INTERVAL_MS = 15000;
+    private long lastUploadMs = 0;
 
     // Last scanned device address (for quick connect)
     private String lastScannedAddress = null;
@@ -227,6 +234,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     @Override
     public void onBpmUpdated(int bpm) {
         lastBpm = bpm;
+        maybeUploadReading();   // M6: ship vitals + precise GPS to the cloud
         uiHandler.post(() -> {
             try {
                 tvBpm.setText(String.valueOf(bpm));
@@ -241,6 +249,7 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     @Override
     public void onSpo2Updated(int spo2) {
         lastSpo2 = spo2;
+        maybeUploadReading();   // M6: ship vitals + precise GPS to the cloud
         uiHandler.post(() -> {
             try {
                 tvSpo2.setText(spo2 + "%");
@@ -355,12 +364,37 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
     // ── Permissions ───────────────────────────────────────────────────────────
 
     private void requestPermissions() {
+        // VULNERABILITY M6: misleading rationale and grant-or-leave coercion. The
+        // dialog tells the user location is needed to FIND the CareOtter device
+        // over BLE - false on Android 12+ (BLUETOOTH_SCAN is neverForLocation).
+        // Accept proceeds to the location request; Cancel ejects the user back to
+        // the login screen, so the app is unusable without granting. This is a
+        // dark pattern, not a genuine privacy control: it does not gate collection.
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.location_rationale_title)
+                .setMessage(R.string.location_rationale_message)
+                .setCancelable(false)
+                .setPositiveButton(R.string.location_rationale_accept, (d, w) -> doRequestPermissions())
+                .setNegativeButton(R.string.location_rationale_cancel, (d, w) -> redirectToLogin())
+                .show();
+    }
+
+    private void doRequestPermissions() {
         ActivityCompat.requestPermissions(this, new String[]{
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE
         }, REQ_PERMISSIONS);
+    }
+
+    private void redirectToLogin() {
+        // Cancel = log out: clear the session and return to login (mirrors btnLogout).
+        bleClient.disconnect();
+        getSharedPreferences("careotter_prefs", MODE_PRIVATE)
+                .edit().remove("jwt_token").remove("user_role").remove("username").apply();
+        startActivity(new Intent(this, LoginActivity.class));
+        finish();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -370,6 +404,73 @@ public class MainActivity extends AppCompatActivity implements BleMonitorClient.
             String cur = tvOutput.getText().toString();
             tvOutput.setText(cur.isEmpty() ? msg : cur + "\n" + msg);
             scrollOutput.post(() -> scrollOutput.fullScroll(View.FOCUS_DOWN));
+        });
+    }
+
+    // ── M6: geolocation over-collection ───────────────────────────────────────
+    //
+    // VULNERABILITY M6 (Inadequate Privacy Controls): every vitals notification
+    // triggers capture of the phone's PRECISE GPS, which is then shipped to the
+    // cloud bundled with the patient's vitals (PHI) and persisted verbatim. The
+    // location permission was obtained under the false "needed for BLE scanning"
+    // pretext. No masking, no coarsening, no consent gate.
+    private void maybeUploadReading() {
+        long now = System.currentTimeMillis();
+        if (now - lastUploadMs < UPLOAD_INTERVAL_MS) return;
+        lastUploadMs = now;
+        postReadingWithLocation(lastBpm, lastSpo2);
+    }
+
+    private double[] getLastKnownLocation() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return null;
+        }
+        try {
+            LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+            Location loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+            if (loc == null) return null;
+            return new double[]{ loc.getLatitude(), loc.getLongitude() };
+        } catch (Exception e) {
+            Log.w("MainActivity", "getLastKnownLocation: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void postReadingWithLocation(int bpm, int spo2) {
+        SharedPreferences prefs = getSharedPreferences("careotter_prefs", MODE_PRIVATE);
+        String token  = prefs.getString("jwt_token", null);
+        String apiUrl = prefs.getString("api_url", null);
+        String mac    = assignedDeviceMac;
+        if (token == null || apiUrl == null || mac == null) return;
+
+        final double[] loc = getLastKnownLocation();   // precise GPS, unmasked
+        executor.execute(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("device_mac", mac);
+                if (bpm  > 0) body.put("bpm", bpm);
+                if (spo2 > 0) body.put("spo2", spo2);
+                if (loc != null) {
+                    body.put("lat", loc[0]);
+                    body.put("lon", loc[1]);
+                }
+                URL url = new URL(apiUrl + "/api/vitals/readings");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Authorization", "Bearer " + token);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.getOutputStream().write(body.toString().getBytes(StandardCharsets.UTF_8));
+                int code = conn.getResponseCode();
+                Log.d("MainActivity", "reading upload http " + code
+                        + (loc != null ? " gps=" + loc[0] + "," + loc[1] : " (no gps)"));
+            } catch (Exception e) {
+                Log.w("MainActivity", "postReadingWithLocation failed: " + e.getMessage());
+            }
         });
     }
 
