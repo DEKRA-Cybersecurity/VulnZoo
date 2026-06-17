@@ -1747,6 +1747,33 @@ def get_vitals_readings():
     }), 200
 
 
+@app.route('/api/vitals/readings', methods=['POST'])
+@token_required
+def submit_vitals_reading():
+    """Mobile-app reading submission (OWASP Mobile M6 over-collection sink).
+
+    The CareOtter app posts each BLE reading here together with the phone's
+    PRECISE GPS (lat/lon). The coordinates are persisted verbatim onto the
+    vitals row by db.store_vitals, with no masking, no truncation, and no
+    consent check. The location is bundled with PHI because the app collected it
+    under a false "needed for BLE scanning" justification."""
+    if not db:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    device_mac = (data.get('device_mac') or '').upper()
+    if not device_mac:
+        return jsonify({'error': 'device_mac required'}), 400
+
+    # Server clock is authoritative (the phone's may be skewed); REAL column.
+    data['timestamp'] = time.time()
+    data['source'] = data.get('source', 'mobile')
+
+    if not db.store_vitals(data, device_mac=device_mac):
+        return jsonify({'error': 'Could not store reading'}), 500
+    return jsonify({'status': 'ok', 'device_mac': device_mac}), 200
+
+
 @app.route('/api/vitals/db/stats')
 def get_vitals_db_stats():
     """Aggregated vital statistics.

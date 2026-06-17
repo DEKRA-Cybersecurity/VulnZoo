@@ -29,14 +29,14 @@
 
 The source code explicitly documents six vulnerabilities. **VULN #6 is intentionally hidden** — it is not visible in the normal UI and must be discovered through pentesting.
 
-| # | Type | Location | Description | OWASP Mobile Top 10 2024 | CWE |
-|---|------|----------|-------------|--------------------------|-----|
-| 1 | **Missing BLE pairing / bonding** | `BleMonitorClient.startScan()` | Connects to any peripheral advertising the name `CareOtter_HR` without MAC whitelist, pairing, or authentication. | M3: Insecure Authentication/Authorization | CWE-306 |
-| 2 | **Unvalidated GATT writes** | `BleMonitorClient.writeThreshold()` | Raw JSON string is written directly to the `ALERT_THRESHOLD` characteristic without schema or length validation. | M4: Insufficient Input/Output Validation | CWE-20 |
-| 3 | **Plaintext external storage logging** | `VitalsLogger` | All BPM/SpO₂ readings are appended to `/sdcard/careotter_vitals.log` in cleartext. | M9: Insecure Data Storage | CWE-312 |
-| 4 | **Hardcoded thresholds** | `MainActivity.DEFAULT_THRESHOLDS` | Default clinical thresholds (`bpm_min=40`, `bpm_max=120`, `spo2_min=90`) are visible via static analysis / APK decompilation. | M1: Improper Credential Usage | CWE-798 |
-| 5 | **Unencrypted BLE channel** | `BleMonitorClient` | No LE Secure Connections, no encryption, no MITM protection. Data travels in plaintext over 2.4 GHz. | M5: Insecure Communication | CWE-319 |
-| 6 | **Hidden diagnostic panel** | `MainActivity` (hidden) | A secret threshold write panel is locked behind a gesture. Not visible in normal app use — must be discovered via static analysis or BLE enumeration. | M8: Security Misconfiguration | CWE-912 |
+| #   | Type                                   | Location                            | Description                                                                                                                                           | OWASP Mobile Top 10 2024                  | CWE     |
+| --- | -------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------- |
+| 1   | **Missing BLE pairing / bonding**      | `BleMonitorClient.startScan()`      | Connects to any peripheral advertising the name `CareOtter_HR` without MAC whitelist, pairing, or authentication.                                     | M3: Insecure Authentication/Authorization | CWE-306 |
+| 2   | **Unvalidated GATT writes**            | `BleMonitorClient.writeThreshold()` | Raw JSON string is written directly to the `ALERT_THRESHOLD` characteristic without schema or length validation.                                      | M4: Insufficient Input/Output Validation  | CWE-20  |
+| 3   | **Plaintext external storage logging** | `VitalsLogger`                      | All BPM/SpO₂ readings are appended to `/sdcard/careotter_vitals.log` in cleartext.                                                                    | M9: Insecure Data Storage                 | CWE-312 |
+| 4   | **Hardcoded thresholds**               | `MainActivity.DEFAULT_THRESHOLDS`   | Default clinical thresholds (`bpm_min=40`, `bpm_max=120`, `spo2_min=90`) are visible via static analysis / APK decompilation.                         | M1: Improper Credential Usage             | CWE-798 |
+| 5   | **Unencrypted BLE channel**            | `BleMonitorClient`                  | No LE Secure Connections, no encryption, no MITM protection. Data travels in plaintext over 2.4 GHz.                                                  | M5: Insecure Communication                | CWE-319 |
+| 6   | **Hidden diagnostic panel**            | `MainActivity` (hidden)             | A secret threshold write panel is locked behind a gesture. Not visible in normal app use — must be discovered via static analysis or BLE enumeration. | M8: Security Misconfiguration             | CWE-912 |
 
 ---
 
