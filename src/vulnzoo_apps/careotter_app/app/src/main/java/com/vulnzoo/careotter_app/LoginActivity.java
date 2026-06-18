@@ -81,6 +81,11 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
+        // VULNERABILITY (M7): startup attestation. Single bypassable choke point —
+        // a Frida hook on SecurityGuard.isCompromised (spawned with frida -f)
+        // neutralises all four checks before this runs.
+        if (SecurityGuard.enforce(this)) return;
+
         etUsername  = findViewById(R.id.etUsername);
         etPassword  = findViewById(R.id.etPassword);
         btnTogglePassword = findViewById(R.id.btnTogglePassword);
