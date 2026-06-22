@@ -32,6 +32,10 @@
 | owlcam | Camera API | 5000 | HTTP |
 | careotter | Sensor API | 8081 | HTTP |
 | careotter | BLE GATT | - | Bluetooth LE |
+| octobot | Gateway HMI / REST | 8090 | HTTP |
+| octobot | ser2net serial bridge | 2000 | TCP |
+| octobot | Modbus/TCP | 502 | TCP |
+| octobot | Cloud API (PC) | 5003 | HTTP |
 | cloud_api | C2 Server | 5000 | HTTP |
 | cloud_api | MQTT Broker | 1883 | MQTT |
 
