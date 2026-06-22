@@ -89,7 +89,7 @@ printf 'S0:90\n' > /dev/ttyACM0             # base servo to 90 degrees
 
 ## 4. Firmware: Add Remote Serial Control
 
-The shipped Youfang v1.71 sketch only reads joysticks. Its `loop()` calls `move_by_joystick_contrl()` and `learning_actions()`, and the serial port is print-only at 115200. To drive the arm from the Pi, add a newline-terminated command parser and keep the joystick loop intact as a local fallback. Servo names, pins, and per-servo angle clamps are defined in the sketch (`servo_min_angle[]` / `servo_max_angle[]`: base 0-180, left 10-140, right 40-170, claw 5-30).
+The shipped Youfang v1.71 sketch only reads joysticks. Its `loop()` calls `move_by_joystick_contrl()` and `learning_actions()`, and the serial port is print-only at 115200. To drive the arm from the Pi, add a newline-terminated command parser and keep the joystick loop intact as a local fallback. Servo names, pins, and per-servo angle clamps are defined in the sketch (`servo_min_angle[]` / `servo_max_angle[]`: base 65-135, left 80-140, right 70-120, claw 5-30).
 
 | Frame | Effect |
 |---|---|
@@ -202,9 +202,9 @@ Modbus/TCP holding-register map, the protocol contract the cloud master writes (
 
 | Register | Address | Access | Description |
 |---|---|---|---|
-| Base angle | 40001 | R/W | Servo 0, 0-180 |
-| Left angle | 40002 | R/W | Servo 1, 10-140 |
-| Right angle | 40003 | R/W | Servo 2, 40-170 |
+| Base angle | 40001 | R/W | Servo 0, 65-135 |
+| Left angle | 40002 | R/W | Servo 1, 80-140 |
+| Right angle | 40003 | R/W | Servo 2, 70-120 |
 | Claw angle | 40004 | R/W | Servo 3, 5-30 |
 | Command | 40005 | W | 1=RECORD, 2=PLAY, 3=STOP, 4=DEMO |
 | Speed | 40006 | R/W | Playback speed 1-10 |

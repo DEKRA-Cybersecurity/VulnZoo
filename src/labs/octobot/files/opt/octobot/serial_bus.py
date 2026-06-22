@@ -27,8 +27,8 @@ LOG_PATH     = os.environ.get('OCTOBOT_LOG', '/tmp/octobot/operator.log')
 ANGLES_FILE  = '/tmp/octobot/angles'
 
 # servo clamps mirror the firmware (base, left, right, claw)
-MIN_ANGLE = [0, 10, 40, 5]
-MAX_ANGLE = [180, 140, 170, 30]
+MIN_ANGLE = [65, 80, 70, 5]
+MAX_ANGLE = [135, 140, 120, 30]
 
 # Shared actual servo angles, updated from firmware ANG: reports.
 current_angles = [90, 90, 90, 30]

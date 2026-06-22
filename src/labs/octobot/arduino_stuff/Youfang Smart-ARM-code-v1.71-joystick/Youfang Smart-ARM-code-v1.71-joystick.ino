@@ -84,15 +84,15 @@ unsigned long last_angle_report = 0;
 
 // demo_actions属于预设的动作序列，要根据您自己需求做调整，下面只是范例。
 int demo_actions[9][SERVOS] = {
-  { 90,  55, 165, CLAW_CLOSE_ANGLE},
-  { 45, 145,  90,  CLAW_OPEN_ANGLE},
-  { 90,  55, 165,  CLAW_CLOSE_ANGLE},
-  {135, 145,  90, CLAW_OPEN_ANGLE},
-  { 90,  55, 165, CLAW_CLOSE_ANGLE},
-  {135, 145,  90,  CLAW_OPEN_ANGLE},
-  { 90,  55, 165,  CLAW_CLOSE_ANGLE},
-  { 45, 145,  90, CLAW_OPEN_ANGLE},
-  { 90,  55, 165, CLAW_CLOSE_ANGLE}
+  { 90,  80, 120, CLAW_CLOSE_ANGLE},
+  { 65, 140,  90,  CLAW_OPEN_ANGLE},
+  { 90,  80, 120,  CLAW_CLOSE_ANGLE},
+  {135, 140,  90, CLAW_OPEN_ANGLE},
+  { 90,  80, 120, CLAW_CLOSE_ANGLE},
+  {135, 140,  90,  CLAW_OPEN_ANGLE},
+  { 90,  80, 120,  CLAW_CLOSE_ANGLE},
+  { 65, 140,  90, CLAW_OPEN_ANGLE},
+  { 90,  80, 120, CLAW_CLOSE_ANGLE}
 };
 
 #define MAXSPEED    (10)    // 舵机最大旋转速度
@@ -162,18 +162,18 @@ void loop() {
 
 void initialization() {
   servo_pins[0] = 11;           // pin 11 -- Servo base   底座舵机
-  servo_min_angle[0] = 0;       // 允许舵机旋转到达的最小值
-  servo_max_angle[0] = 180;     // 允许舵机旋转到达的最大值
+  servo_min_angle[0] = 65;      // 允许舵机旋转到达的最小值
+  servo_max_angle[0] = 135;     // 允许舵机旋转到达的最大值
   servo_init_angle[0] = 90;     // 刚上电时，舵机的初始角度
 
   servo_pins[1] = 10;           // 10 : Servo left   左臂舵机
-  servo_min_angle[1] = 10;      // 允许舵机旋转到达的最小值
+  servo_min_angle[1] = 80;      // 允许舵机旋转到达的最小值
   servo_max_angle[1] = 140;     // 允许舵机旋转到达的最大值
   servo_init_angle[1] = 90;     // 刚上电时，舵机的初始角度
 
   servo_pins[2] = 9;            //  9 : Servo right  右臂舵机
-  servo_min_angle[2] = 40;      // 允许舵机旋转到达的最小值
-  servo_max_angle[2] = 170;     // 允许舵机旋转到达的最大值
+  servo_min_angle[2] = 70;      // 允许舵机旋转到达的最小值
+  servo_max_angle[2] = 120;     // 允许舵机旋转到达的最大值
   servo_init_angle[2] = 90;     // 刚上电时，舵机的初始角度
 
   servo_pins[3] = 5;                        //  5 : Servo claw   爪子舵机
@@ -543,10 +543,20 @@ void process_command(String cmd) {
     play_demo_mode = true; play_demo(); play_demo_mode = false;
   } else if (cmd == "LEARN") {
     learning_mode = true; learn_action_count = 0;
+  } else if (cmd == "RECORD") {
+    // [OctoBot] append the current servo pose to the learn sequence (remote teach).
+    if (learn_action_count < LEARN_MAX_ACTIONS) {
+      for (int i = 0; i < SERVOS; i++) learn_actions[learn_action_count][i] = arm_servos[i].read();
+      learn_action_count++;
+      Serial.print("OK RECORD "); Serial.println(learn_action_count);
+    } else {
+      Serial.println("ERR FULL");
+    }
   } else if (cmd == "PLAY") {
     repeat_mode = true; play_learned_actions();
   } else if (cmd == "STOP") {
     learning_mode = false; repeat_mode = false; play_demo_mode = false;
+    learn_action_count = 0;   // [OctoBot] also clear the recorded sequence
   } else if (cmd.startsWith("SPD:")) {
     demo_speed = constrain(cmd.substring(4).toInt(), 1, MAXSPEED);
   } else if (cmd.length() > 0) {

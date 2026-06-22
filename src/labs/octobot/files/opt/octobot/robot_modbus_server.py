@@ -19,8 +19,8 @@ BUS_HOST = '127.0.0.1'
 BUS_PORT = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 MODBUS_PORT = int(os.environ.get('OCTOBOT_MODBUS_PORT', '502'))
 ANGLES_FILE = '/tmp/octobot/angles'
-MIN_ANGLE = [0, 10, 40, 5]
-MAX_ANGLE = [180, 140, 170, 30]
+MIN_ANGLE = [65, 80, 70, 5]
+MAX_ANGLE = [135, 140, 120, 30]
 
 # holding registers: 40001-40004 command angles, 40005 command, 40006 speed,
 # 40011-40014 actual feedback angles (initialised to the arm's power-on pose).
