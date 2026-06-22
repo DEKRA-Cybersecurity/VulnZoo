@@ -1,0 +1,42 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Base.Theme.Octobot" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/dekra_green</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimaryContainer">@color/dekra_green_dark</item>
+        <item name="colorOnPrimaryContainer">@color/white</item>
+    </style>
+
+    <style name="Theme.Octobot" parent="Base.Theme.Octobot" />
+
+    <!-- control panel servo-row styles -->
+    <style name="ServoRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:layout_marginTop">14dp</item>
+    </style>
+
+    <style name="ServoLabel">
+        <item name="android:layout_width">64dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/dekra_navy</item>
+    </style>
+
+    <style name="ServoBar">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+    </style>
+
+    <style name="ServoValue">
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">end</item>
+        <item name="android:textColor">@color/dekra_green_dark</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:text">-</item>
+    </style>
+</resources>

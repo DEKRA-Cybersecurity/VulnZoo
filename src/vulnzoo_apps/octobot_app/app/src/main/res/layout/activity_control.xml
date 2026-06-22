@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/octo_bg">
+
+    <!-- top bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/dekra_green"
+        android:padding="14dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/app_name"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvServer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnLogout"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Log out"
+            android:textColor="@color/white" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <!-- Base -->
+            <LinearLayout style="@style/ServoRow">
+                <TextView style="@style/ServoLabel" android:text="Base" />
+                <SeekBar android:id="@+id/sbBase" style="@style/ServoBar" />
+                <TextView android:id="@+id/vBase" style="@style/ServoValue" />
+            </LinearLayout>
+
+            <!-- Left -->
+            <LinearLayout style="@style/ServoRow">
+                <TextView style="@style/ServoLabel" android:text="Left" />
+                <SeekBar android:id="@+id/sbLeft" style="@style/ServoBar" />
+                <TextView android:id="@+id/vLeft" style="@style/ServoValue" />
+            </LinearLayout>
+
+            <!-- Right -->
+            <LinearLayout style="@style/ServoRow">
+                <TextView style="@style/ServoLabel" android:text="Right" />
+                <SeekBar android:id="@+id/sbRight" style="@style/ServoBar" />
+                <TextView android:id="@+id/vRight" style="@style/ServoValue" />
+            </LinearLayout>
+
+            <!-- Claw -->
+            <LinearLayout style="@style/ServoRow">
+                <TextView style="@style/ServoLabel" android:text="Claw" />
+                <SeekBar android:id="@+id/sbClaw" style="@style/ServoBar" />
+                <TextView android:id="@+id/vClaw" style="@style/ServoValue" />
+            </LinearLayout>
+
+            <!-- commands -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="24dp"
+                android:gravity="center">
+
+                <Button android:id="@+id/btnRecord"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="4dp" android:text="Record" />
+                <Button android:id="@+id/btnPlay"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="4dp" android:text="Play" />
+                <Button android:id="@+id/btnStop"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="4dp" android:text="Stop"
+                    android:backgroundTint="@color/dekra_orange" />
+                <Button android:id="@+id/btnDemo"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="4dp" android:text="Demo" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="Connecting…"
+                android:textColor="#607D8B" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
