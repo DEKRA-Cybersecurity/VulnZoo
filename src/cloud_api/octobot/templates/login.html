@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OctoBot - Operator Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="brand"><span class="brand-octo">Octo</span><span class="brand-bot">Bot</span></div>
+    <p class="subtitle">Robot Arm Operator Console</p>
+
+    {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('login') }}" autocomplete="off">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required autofocus spellcheck="false">
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required>
+
+      <button class="btn btn-block" type="submit">Log in</button>
+    </form>
+
+    <div class="login-footer">VulnZoo &middot; OctoBot Industrial Lab</div>
+  </div>
+</body>
+</html>

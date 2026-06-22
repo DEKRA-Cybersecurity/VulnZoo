@@ -6,15 +6,15 @@ OctoBot is the VulnZoo industrial/ICS lab. A 4-DOF robot arm (HU-M16 shield on a
 
 ## Quick facts
 
-| | |
-|---|---|
-| Domain | Industrial control system (robotic arm) |
-| Platform | OpenWRT v24.10.2 on Raspberry Pi 3B+ |
-| Real-time controller | Arduino UNO + HU-M16 shield, 4 servos (SG90/MG90S) |
-| Pi <-> Arduino link | USB serial 115200, `Sx:angle` frames |
-| Industrial protocol | Modbus/TCP (`:502`) PC master -> Pi gateway |
-| Cloud | Dockerized Flask REST + web UI (`:5003`) |
-| Network | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet |
+|                      |                                                                          |
+| -------------------- | ------------------------------------------------------------------------ |
+| Domain               | Industrial control system (robotic arm)                                  |
+| Platform             | OpenWRT v24.10.2 on Raspberry Pi 3B+                                     |
+| Real-time controller | Arduino UNO + HU-M16 shield, 4 servos (SG90/MG90S)                       |
+| Pi <-> Arduino link  | USB serial 115200, `Sx:angle` frames                                     |
+| Industrial protocol  | Modbus/TCP (`:502`) PC master -> Pi gateway                              |
+| Cloud                | Dockerized Flask REST + web UI (`:5003`), single-operator login (SQLite) |
+| Network              | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet                   |
 
 ## Documents
 
@@ -71,7 +71,7 @@ uci show octobot
 ```sh
 cd src/cloud_api/octobot   # docker-compose.yml sets MODBUS_HOST=192.168.2.1
 docker compose up --build -d
-# operator UI at http://localhost:5003
+# log in at http://localhost:5003 (default operator / octobot) to reach the console
 ```
 
 ### 5. Verify the control paths

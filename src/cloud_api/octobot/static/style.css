@@ -1,0 +1,100 @@
+/* OctoBot cloud - DEKRA brand palette
+   green predominant (#008143 / #006B52 / #64B32C), accents (orange) sparingly */
+:root {
+  --green: #008143;
+  --green-dark: #006B52;
+  --green-light: #64B32C;
+  --navy: #002E55;
+  --grey: #D5D5D5;
+  --grey-bg: #f4f6f5;
+  --orange: #EF7C00;
+  --ink: #1a1a1a;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--grey-bg);
+}
+
+.brand-octo { color: var(--navy); font-weight: 800; }
+.brand-bot  { color: var(--green); font-weight: 800; }
+
+/* --- top bar (control page) --- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--green);
+  color: #fff;
+  padding: 14px 28px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+}
+.topbar-title { font-size: 1.4em; font-weight: 700; }
+.topbar-title .brand-octo { color: #fff; }
+.topbar-title .brand-bot  { color: #ffcc00; }   /* small accent on the logo only */
+.topbar-user { font-size: .95em; }
+.topbar-user a { color: #fff; text-decoration: underline; margin-left: 6px; }
+
+/* --- control panel --- */
+.panel { max-width: 760px; margin: 32px auto; background: #fff;
+  border: 1px solid var(--grey); border-radius: 8px; padding: 28px 32px; }
+.servo-row { margin: 22px 0; display: flex; align-items: center; gap: 16px; }
+.servo-row label { font-weight: 700; width: 70px; color: var(--navy); }
+.servo-row input[type=range] {
+  flex: 1; height: 36px; accent-color: var(--green); cursor: pointer;
+}
+.servo-row .value {
+  font-family: "Consolas", monospace; font-size: 1.4em;
+  min-width: 56px; text-align: right; color: var(--green-dark);
+}
+
+.cmd-row { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+#status { margin-top: 18px; color: #6a6a6a; font-size: .9em; }
+
+/* --- buttons --- */
+.btn {
+  font-size: 1.05em; padding: 10px 22px; border: none; border-radius: 6px;
+  background: var(--green); color: #fff; cursor: pointer; font-weight: 600;
+}
+.btn:hover { background: var(--green-dark); }
+.btn-accent { background: var(--orange); }      /* Stop, used sparingly */
+.btn-accent:hover { background: #cc6a00; }
+.btn-block { width: 100%; }
+
+/* --- login page --- */
+.login-page {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
+}
+.login-card {
+  width: 100%; max-width: 380px; background: #fff;
+  border-radius: 10px; padding: 36px 34px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  border-top: 5px solid var(--green-light);
+}
+.login-card .brand { font-size: 2.1em; text-align: center; }
+.login-card .subtitle {
+  text-align: center; color: #6a6a6a; margin: 4px 0 24px; font-size: .95em;
+}
+.login-card label {
+  display: block; font-weight: 600; color: var(--navy);
+  margin: 14px 0 6px; font-size: .9em;
+}
+.login-card input {
+  width: 100%; padding: 11px 12px; border: 1px solid var(--grey);
+  border-radius: 6px; font-size: 1em;
+}
+.login-card input:focus { outline: 2px solid var(--green-light); border-color: var(--green); }
+.login-card .btn { margin-top: 22px; }
+.alert {
+  background: #fdecea; border: 1px solid var(--orange);
+  color: #a23b00; padding: 10px 12px; border-radius: 6px;
+  font-size: .9em; margin-bottom: 6px;
+}
+.login-footer {
+  text-align: center; color: #9a9a9a; font-size: .8em; margin-top: 22px;
+}
