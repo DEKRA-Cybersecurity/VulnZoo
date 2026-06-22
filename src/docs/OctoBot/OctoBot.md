@@ -80,7 +80,7 @@ docker compose up --build -d
 printf 'S0:90\n' | nc 192.168.2.1 2000                                   # raw serial bus
 curl -s 'http://192.168.2.1:8090/api/move?servo=0&angle=45'              # HMI / REST
 python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",port=502); c.connect(); c.write_register(0,120); c.close()'   # Modbus
-mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S3:0'                     # MQTT
+mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S3:5'                     # MQTT
 curl -s -X POST http://localhost:5003/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}'   # cloud
 curl -s http://192.168.2.1:8090/logs                                     # operator log (IoT:I6)
 ```

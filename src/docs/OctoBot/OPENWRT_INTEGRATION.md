@@ -89,12 +89,12 @@ printf 'S0:90\n' > /dev/ttyACM0             # base servo to 90 degrees
 
 ## 4. Firmware: Add Remote Serial Control
 
-The shipped Youfang v1.71 sketch only reads joysticks. Its `loop()` calls `move_by_joystick_contrl()` and `learning_actions()`, and the serial port is print-only at 115200. To drive the arm from the Pi, add a newline-terminated command parser and keep the joystick loop intact as a local fallback. Servo names, pins, and per-servo angle clamps are defined in the sketch (`servo_min_angle[]` / `servo_max_angle[]`: base 0-180, left 10-140, right 40-170, claw 0-20).
+The shipped Youfang v1.71 sketch only reads joysticks. Its `loop()` calls `move_by_joystick_contrl()` and `learning_actions()`, and the serial port is print-only at 115200. To drive the arm from the Pi, add a newline-terminated command parser and keep the joystick loop intact as a local fallback. Servo names, pins, and per-servo angle clamps are defined in the sketch (`servo_min_angle[]` / `servo_max_angle[]`: base 0-180, left 10-140, right 40-170, claw 5-30).
 
 | Frame | Effect |
 |---|---|
 | `S0:90` | Set servo 0 (base) to 90 degrees, clamped to that servo's range |
-| `S1:45` / `S2:120` / `S3:0` | Set servo 1 (left) / 2 (right) / 3 (claw) |
+| `S1:45` / `S2:120` / `S3:5` | Set servo 1 (left) / 2 (right) / 3 (claw) |
 | `DEMO` | Run the built-in `demo_actions` sequence |
 | `LEARN` / `RECORD` / `PLAY` / `STOP` | Teach-and-repeat: enter learning, save pose, replay, halt |
 | `SPD:n` | Set playback speed 1..`MAXSPEED` |
@@ -205,7 +205,7 @@ Modbus/TCP holding-register map, the protocol contract the cloud master writes (
 | Base angle | 40001 | R/W | Servo 0, 0-180 |
 | Left angle | 40002 | R/W | Servo 1, 10-140 |
 | Right angle | 40003 | R/W | Servo 2, 40-170 |
-| Claw angle | 40004 | R/W | Servo 3, 0-20 |
+| Claw angle | 40004 | R/W | Servo 3, 5-30 |
 | Command | 40005 | W | 1=RECORD, 2=PLAY, 3=STOP, 4=DEMO |
 | Speed | 40006 | R/W | Playback speed 1-10 |
 | Status | 40007 | R | 0=idle, 1=moving, 2=learning, 3=playing |
@@ -281,7 +281,7 @@ mv octobot.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz
 
 Each scenario uses the arm as a safe, visible victim process and maps to one OWASP IoT item.
 
-- **Unauthenticated remote access (`IoT:I2`).** `telnet 192.168.2.1 2000` then type `S3:0` to close the claw, or `curl` the no-auth `/api/move`.
+- **Unauthenticated remote access (`IoT:I2`).** `telnet 192.168.2.1 2000` then type `S3:5` to close the claw, or `curl` the no-auth `/api/move`.
 - **Command/template injection (`IoT:I3`).** SSTI `{{7*7}}` in `/admin?msg=`, or shell metacharacters if a CGI shells out to the serial device unsanitized.
 - **Replay (`IoT:I7`).** Capture a legitimate `Sx:angle` sequence with `tcpdump`, replay it later with no knowledge of the protocol.
 - **Actuator denial of service (`IoT:I8`).** Rapid-fire `while true; do printf "S0:$((RANDOM%180))\n" > /dev/ttyACM0; done`, or out-of-range values, to make the servos jitter or stall.

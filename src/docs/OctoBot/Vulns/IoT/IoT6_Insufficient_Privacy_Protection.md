@@ -44,9 +44,9 @@ def logs():
 
 ```bash
 # A direct bus command logs the real client IP; then read the history with no credential
-printf 'S3:0\n' | nc 192.168.2.1 2000
+printf 'S3:5\n' | nc 192.168.2.1 2000
 curl -s http://192.168.2.1:8090/logs
-# -> 2026-06-18T12:15:40 192.168.2.50 S3:0
+# -> 2026-06-18T12:15:40 192.168.2.50 S3:5
 #    ... full command history with timestamps
 # Note: commands relayed via the gateway / Modbus / MQTT log as 127.0.0.1, since
 # those services are the bus client; only direct :2000 clients log a real remote IP.

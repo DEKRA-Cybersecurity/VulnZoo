@@ -19,12 +19,12 @@ BUS_HOST = '127.0.0.1'
 BUS_PORT = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 MODBUS_PORT = int(os.environ.get('OCTOBOT_MODBUS_PORT', '502'))
 ANGLES_FILE = '/tmp/octobot/angles'
-MIN_ANGLE = [0, 10, 40, 0]
-MAX_ANGLE = [180, 140, 170, 20]
+MIN_ANGLE = [0, 10, 40, 5]
+MAX_ANGLE = [180, 140, 170, 30]
 
 # holding registers: 40001-40004 command angles, 40005 command, 40006 speed,
 # 40011-40014 actual feedback angles (initialised to the arm's power-on pose).
-regs = [90, 90, 90, 20, 0, 1, 0, 0, 0, 0] + [90, 90, 90, 20] + [0] * 6   # pose at 40011-40014 (offsets 10-13)
+regs = [90, 90, 90, 30, 0, 1, 0, 0, 0, 0] + [90, 90, 90, 30] + [0] * 6   # pose at 40011-40014 (offsets 10-13)
 lock = threading.Lock()
 
 

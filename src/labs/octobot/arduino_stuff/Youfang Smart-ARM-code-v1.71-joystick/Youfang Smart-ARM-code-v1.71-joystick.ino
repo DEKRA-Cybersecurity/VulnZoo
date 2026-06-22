@@ -57,8 +57,8 @@ int joystick_value[SERVOS];
 #define JOYSTICK_MIN_THRESH     (300)   // 摇杆ADC值的最小阈值，用于判断摇杆向哪边推动了
 #define JOYSTICK_MAX_THRESH     (700)   // 摇杆ADC值的最大阈值，用于判断摇杆向哪边推动了
 
-#define CLAW_OPEN_ANGLE     (20)    // 爪子张开时的舵机角度
-#define CLAW_CLOSE_ANGLE    (0)    // 爪子闭合时的舵机角度
+#define CLAW_OPEN_ANGLE     (30)    // 爪子张开时的舵机角度
+#define CLAW_CLOSE_ANGLE    (5)    // 爪子闭合时的舵机角度
 #define CLAW_SERVO_INDEX    (SERVOS-1)  // 爪子舵机的序号，倒数第一个
 
 #define LEARN_MAX_ACTIONS   (100)   // 学习模式最多可记录的动作个数

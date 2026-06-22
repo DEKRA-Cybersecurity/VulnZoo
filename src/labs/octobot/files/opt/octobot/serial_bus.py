@@ -27,11 +27,11 @@ LOG_PATH     = os.environ.get('OCTOBOT_LOG', '/tmp/octobot/operator.log')
 ANGLES_FILE  = '/tmp/octobot/angles'
 
 # servo clamps mirror the firmware (base, left, right, claw)
-MIN_ANGLE = [0, 10, 40, 0]
-MAX_ANGLE = [180, 140, 170, 20]
+MIN_ANGLE = [0, 10, 40, 5]
+MAX_ANGLE = [180, 140, 170, 30]
 
 # Shared actual servo angles, updated from firmware ANG: reports.
-current_angles = [90, 90, 90, 20]
+current_angles = [90, 90, 90, 30]
 angles_lock = threading.Lock()
 
 
@@ -51,7 +51,7 @@ def update_angles(angles):
 class SimSerial:
     """Stand-in when no Arduino is attached so the lab runs on a bare Pi."""
     def __init__(self):
-        self.angle = [90, 90, 90, 20]
+        self.angle = [90, 90, 90, 30]
         self._buf = b''
 
     def write(self, data):

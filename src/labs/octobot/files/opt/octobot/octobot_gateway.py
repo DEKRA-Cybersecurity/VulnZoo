@@ -36,7 +36,7 @@ def move():
 @app.route('/api/claw')
 def claw():
     state = request.args.get('state', 'CLOSE').upper()
-    bus_send('S3:0' if state == 'CLOSE' else 'S3:20')
+    bus_send('S3:5' if state == 'CLOSE' else 'S3:30')
     return jsonify(ok=True, state=state)
 
 
