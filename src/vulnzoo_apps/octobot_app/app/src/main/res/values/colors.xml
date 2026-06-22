@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <!-- DEKRA brand palette (green predominant; accents sparingly) -->
+    <color name="dekra_green">#FF008143</color>
+    <color name="dekra_green_dark">#FF006B52</color>
+    <color name="dekra_green_light">#FF64B32C</color>
+    <color name="dekra_navy">#FF002E55</color>
+    <color name="dekra_grey">#FFD5D5D5</color>
+    <color name="dekra_orange">#FFEF7C00</color>
+    <color name="octo_bg">#FFF4F6F5</color>
+</resources>

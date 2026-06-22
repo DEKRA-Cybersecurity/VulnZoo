@@ -14,6 +14,7 @@ OctoBot is the VulnZoo industrial/ICS lab. A 4-DOF robot arm (HU-M16 shield on a
 | Pi <-> Arduino link  | USB serial 115200, `Sx:angle` frames                                     |
 | Industrial protocol  | Modbus/TCP (`:502`) PC master -> Pi gateway                              |
 | Cloud                | Dockerized Flask REST + web UI (`:5003`), single-operator login (SQLite) |
+| Mobile               | Android control app (Java, cloud REST) under `../../vulnzoo_apps/octobot_app/` |
 | Network              | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet                   |
 
 ## Documents

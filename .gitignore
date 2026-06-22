@@ -25,9 +25,9 @@ src/vulnzoo_interface/
 .qwen*
 
 # Android IDE and Gradle caches
-vulnzoo_apps/**/.idea/
-vulnzoo_apps/**/.gradle/
-vulnzoo_apps/**/gradle/gradle-daemon-jvm.properties
+src/vulnzoo_apps/**/.idea/
+src/vulnzoo_apps/**/.gradle/
+src/vulnzoo_apps/**/gradle/gradle-daemon-jvm.properties
 
 # OctoBot compiled firmware (build artifact; the deployable octobot.tar.gz carries it)
 src/labs/octobot/files/opt/octobot/firmware/robot_arm.hex
