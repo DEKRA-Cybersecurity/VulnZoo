@@ -9,6 +9,7 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 | `careotter` | `CareOtter/` | Medical (ICD + bedside monitor) |
 | `routcoon` | `Router/` | Home/enterprise router |
 | `owlcam` | `IP Camera/` | IP camera surveillance |
+| `octobot` | `OctoBot/` | Industrial (robotic arm, ICS) |
 
 ## Service ports
 
@@ -23,6 +24,11 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 | careotter | Sensor API | 8081 | HTTP |
 | careotter | IGP v4 (admin) | 9999 | TCP |
 | careotter | Cloud API | 5002 | HTTP |
+| octobot | Gateway HMI / REST | 8090 | HTTP |
+| octobot | ser2net serial bridge | 2000 | TCP |
+| octobot | MQTT broker | 1883 | MQTT |
+| octobot | Modbus/TCP | 502 | TCP |
+| octobot | Cloud API (PC) | 5003 | HTTP |
 
 ## Key terms
 

@@ -1,0 +1,10 @@
+services:
+  octobot-api:
+    build: .
+    ports:
+      - "5003:5003"
+    environment:
+      - MODBUS_HOST=192.168.2.1   # Raspberry Pi gateway
+      - MODBUS_PORT=502
+      - HTTP_PORT=5003
+    restart: unless-stopped

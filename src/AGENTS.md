@@ -43,7 +43,7 @@ src/
 ├── AGENTS.md          ← Layer 0 (this file)
 ├── CLAUDE.md / KIMI.md ← Layer 1 entry points
 ├── MWP_README.md      ← MWP methodology guide
-├── labs/              ← OpenWRT image + lab overlays (.tar.gz): vulnzoo, careotter, routcoon, owlcam
+├── labs/              ← OpenWRT image + lab overlays (.tar.gz): vulnzoo, careotter, routcoon, owlcam, octobot
 ├── cloud_api/         ← Dockerized Flask backends: careotter (SQLite+IGP), owlcam (MongoDB+C2/SSE)
 ├── vulnzoo_apps/      ← Android apps: careotter_app (Java/BLE), owlcam_app (Kotlin/Compose)
 └── docs/              ← Layer 3 reference: per-device vulnerability docs (OWASP-mapped)
@@ -66,6 +66,7 @@ src/
 | `careotter` (medical) | [`docs/CareOtter/`](docs/CareOtter/) |
 | `routcoon` (router) | [`docs/Router/`](docs/Router/) |
 | `owlcam` (IP camera) | [`docs/IP Camera/`](docs/IP%20Camera/) |
+| `octobot` (industrial) | [`docs/OctoBot/`](docs/OctoBot/) |
 
 ## Global conventions
 

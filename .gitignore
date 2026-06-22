@@ -29,6 +29,9 @@ vulnzoo_apps/**/.idea/
 vulnzoo_apps/**/.gradle/
 vulnzoo_apps/**/gradle/gradle-daemon-jvm.properties
 
+# OctoBot compiled firmware (build artifact; the deployable octobot.tar.gz carries it)
+src/labs/octobot/files/opt/octobot/firmware/robot_arm.hex
+
 # Slideshows
 Slideshows_001.pptx
 VulnZoo_CareOtter.pptx

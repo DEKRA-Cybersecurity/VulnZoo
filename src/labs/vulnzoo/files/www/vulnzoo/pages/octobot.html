@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VulnZoo — OctoBot Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="../assets/images/vulnzoo.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+  <div id="navbar">
+    <div id="logo">
+      <a href="../index.html" style="text-decoration:none; display:flex; align-items:center; gap:14px;">
+        <img src="../assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+        <h1>VulnZoo</h1>
+      </a>
+    </div>
+    <div id="nav-menus">
+      <a href="../index.html" class="nav-link">Overview</a>
+      <a href="devices.html" class="nav-link">Devices</a>
+      <a href="admin.html" class="nav-link">Admin</a>
+      <a href="https://github.com/DEKRA-Cybersecurity/VulnZoo" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="page-wrap">
+
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">vulnzoo / device / industrial</div>
+          <h2>OctoBot</h2>
+        </div>
+        <span id="device-status" class="status stopped">Stop</span>
+      </div>
+
+      <div class="content-section">
+        <h2>Device status</h2>
+        <p>Active device: <span id="active-device">None</span></p>
+      </div>
+
+      <div class="content-section">
+        <h2>OctoBot control</h2>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="loadDevice('octobot')">Load OctoBot</button>
+          <button class="btn btn-danger" onclick="resetCurrentDevice()">RESET DEVICE</button>
+          <a href="admin.html" class="btn">VulnZoo admin</a>
+          <button class="btn" onclick="window.open('http://localhost:5003', '_blank')">Open API Cloud interface</button>
+        </div>
+      </div>
+
+      <div class="content-section">
+        <h2>What is this environment?</h2>
+        <p><strong>OctoBot</strong> is a vulnerable industrial control system (ICS) simulator built around a real 4-DOF robot arm. It models a small industrial cell where a network attacker who exploits a web or protocol flaw ends up moving physical hardware. It is composed of three layers:</p>
+        <p><strong>1. Robot arm + controller</strong> — a 4-servo arm (HU-M16 shield on an <strong>Arduino UNO</strong>) driven in real time by the Arduino. The Arduino plays the role of a real-time controller (a "PLC/microcontroller") and keeps its local joystick control as a manual fallback. It accepts remote <code>Sx:angle</code> commands over USB serial.</p>
+        <p><strong>2. Field gateway</strong> — a <strong>Raspberry Pi 3B+ running OpenWRT</strong> that sits on top as the OT field gateway. It translates network protocols into the serial command bus and carries the entire OWASP IoT attack surface: a raw serial bus, MQTT, Modbus/TCP, an HMI/REST panel, and an unsigned OTA firmware-flash path.</p>
+        <p><strong>3. Cloud controller</strong> — a <strong>Dockerized Flask</strong> service on the PC that hosts the operator web UI and REST API and acts as the Modbus/TCP master that drives the Pi.</p>
+        <p>The lab runs <strong>with or without the physical arm</strong>: when no Arduino is attached, the gateway simulates the serial line so every network path and vulnerability is still reproducible.</p>
+      </div>
+
+      <div class="content-section">
+        <h2>Where to start?</h2>
+        <p><strong>Click "Load OctoBot" to deploy the lab on the Raspberry Pi.</strong> The init hooks install dependencies, detect the arm (or fall back to simulation), and start the services on the Pi.</p>
+        <p><strong>Then launch the cloud controller</strong> from the VulnZoo repository: <code>cd cloud_api/octobot &amp;&amp; docker compose up --build -d</code>, and open <code>http://localhost:5003</code> for the operator panel.</p>
+        <p>Detailed launch, service checks, and per-vulnerability reproduction live in the repo docs: <code>docs/OctoBot/OctoBot.md</code> (launch &amp; verify) and <code>docs/OctoBot/Vulns/</code> (OWASP IoT catalog).</p>
+      </div>
+
+      <div class="content-section">
+        <h2>Lab prerequisites</h2>
+        <ul>
+          <li><strong>Ethernet</strong> — a <strong>direct cable</strong> between Raspberry Pi and PC (Pi <code>192.168.2.1</code>, PC static <code>192.168.2.2/24</code>) for the cloud-to-Pi Modbus/TCP link and all network attacks.</li>
+          <li><strong>Docker</strong> — on the attacker PC, to run the cloud controller (<code>:5003</code>).</li>
+          <li><strong>Robot arm (optional)</strong> — Arduino UNO + HU-M16 shield + 4 servos, connected to the Pi by USB. Without it the lab runs in simulation.</li>
+          <li><strong>Servo power (with the arm)</strong> — an <strong>external 5 V / 2-3 A</strong> supply to the HU-M16 servo rail with a <strong>common GND</strong> across PSU, Arduino, and Pi. Do not power four moving servos from the USB rail.</li>
+          <li><strong>Isolation</strong> — run on a <strong>dedicated, air-gapped LAN</strong>. This is deliberately vulnerable and physically moves hardware.</li>
+        </ul>
+      </div>
+
+      <div class="content-section">
+        <h2>Device architecture</h2>
+        <ul>
+          <li><strong>Arduino UNO</strong> — real-time servo controller, PWM to the arm, local joystick fallback, remote <code>Sx:angle</code> serial protocol at 115200.</li>
+          <li><strong>Serial bus</strong> (<code>:2000</code>) — single owner of the Arduino serial line (or a simulator when no arm is present), exposed as an unauthenticated raw TCP gateway.</li>
+          <li><strong>HMI / REST gateway</strong> (<code>:8090</code>) — Flask panel with <code>/api/move</code>, <code>/api/claw</code>, <code>/admin</code>, <code>/logs</code>, and the OTA <code>/update</code> endpoint.</li>
+          <li><strong>Modbus/TCP</strong> (<code>:502</code>) — holding registers mapped to servo angles and commands, driven by the cloud master.</li>
+          <li><strong>MQTT</strong> (<code>:1883</code>) — no-auth broker plus a bridge forwarding <code>cell01/cmd</code> to the serial bus.</li>
+          <li><strong>Cloud controller</strong> (<code>:5003</code>) — Flask REST + web UI + Modbus/TCP master, the only surface the operator and app talk to.</li>
+        </ul>
+      </div>
+
+      <div class="content-section">
+        <h2>Security training focus</h2>
+        <p>OctoBot implements the <strong>OWASP IoT Top 10</strong> (<code>IoT:I1</code>..<code>IoT:I10</code>), each behind a <code>VULNERABLE</code>/<code>SECURE</code> config toggle so you can enable one flaw at a time and compare before/after remediation.</p>
+        <ul>
+          <li><strong>I1 / I9</strong> — default credentials (<code>admin/admin</code>), hardcoded API key, insecure defaults, permissive firewall.</li>
+          <li><strong>I2 / I7</strong> — unauthenticated serial bus, Modbus, and MQTT, all cleartext, with secrets stored in cleartext config.</li>
+          <li><strong>I3</strong> — no-auth REST, servo IDOR, and Server-Side Template Injection in the <code>/admin</code> panel.</li>
+          <li><strong>I4</strong> — unsigned OTA firmware flash over plain HTTP that can defeat the servo safety clamps.</li>
+          <li><strong>I6 / I8 / I10</strong> — cleartext operator log, no rate-limiting or monitoring, and physical exposure (USB reflash, SD secrets).</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener">VulnZoo Project © 2025 · github.com/VulnZoo</a></p>
+  </footer>
+
+  <script src="../assets/js/vulnzoo.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+#!/bin/sh
+# /etc/hotplug.d/tty/20-octobot - autodetect the Arduino when it is hot-plugged
+# after the services are already running. OpenWRT runs this on tty uevents, so
+# the device node already exists by the time it fires (no settle race).
+[ "$ACTION" = add ] || exit 0
+dev="${DEVICENAME:-$DEVNAME}"
+case "$dev" in ttyACM*|ttyUSB*) ;; *) exit 0 ;; esac
+[ "$(uci -q get vulnzoo.state.current_device)" = octobot ] || exit 0
+
+logger -t octobot "tty $dev added, re-detecting arm"
+sh /usr/lib/vulnzoo-hooks/profile-init.d/05-octobot-preflight.sh
+/etc/init.d/octobot-serialbus restart
