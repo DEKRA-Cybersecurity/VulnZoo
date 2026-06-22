@@ -7,4 +7,14 @@ services:
       - MODBUS_HOST=192.168.2.1   # Raspberry Pi gateway
       - MODBUS_PORT=502
       - HTTP_PORT=5003
+      - SECRET_KEY=octobot-cloud-secret-2026
+      - OPERATOR_USER=operator
+      - OPERATOR_PASSWORD=octobot
+      - DB_PATH=/app/data/octobot.db
+    volumes:
+      - octobot_data:/app/data
     restart: unless-stopped
+
+volumes:
+  octobot_data:
+    driver: local

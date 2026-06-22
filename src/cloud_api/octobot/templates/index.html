@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OctoBot - Robot Arm Control</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title"><span class="brand-octo">Octo</span><span class="brand-bot">Bot</span> Robot Arm Control</div>
+    <div class="topbar-user">{{ username }} &middot; <a href="{{ url_for('logout') }}">Log out</a></div>
+  </header>
+
+  <main class="panel">
+    <div class="servo-row">
+      <label>Base</label>
+      <input id="s1" type="range" min="65" max="135" oninput="setServo(1, this.value)">
+      <span class="value" id="v1">-</span>
+    </div>
+    <div class="servo-row">
+      <label>Left</label>
+      <input id="s2" type="range" min="80" max="140" oninput="setServo(2, this.value)">
+      <span class="value" id="v2">-</span>
+    </div>
+    <div class="servo-row">
+      <label>Right</label>
+      <input id="s3" type="range" min="70" max="120" oninput="setServo(3, this.value)">
+      <span class="value" id="v3">-</span>
+    </div>
+    <div class="servo-row">
+      <label>Claw</label>
+      <input id="s4" type="range" min="5" max="30" oninput="setServo(4, this.value)">
+      <span class="value" id="v4">-</span>
+    </div>
+
+    <div class="cmd-row">
+      <button class="btn" onclick="cmd('record')">Record</button>
+      <button class="btn" onclick="cmd('play')">Play</button>
+      <button class="btn btn-accent" onclick="cmd('stop')">Stop</button>
+      <button class="btn" onclick="cmd('demo')">Demo</button>
+    </div>
+
+    <div id="status"></div>
+  </main>
+
+  <script>
+    const SERVO_MAP = {base: 1, left: 2, right: 3, claw: 4};
+
+    function gotoLogin() { location.href = '/login'; }
+
+    async function setServo(n, angle) {
+      document.getElementById('v' + n).textContent = angle;
+      const r = await fetch(`/api/servo/${n}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({angle: Number(angle)})
+      });
+      if (r.status === 401) gotoLogin();
+    }
+
+    async function cmd(name) {
+      const r = await fetch(`/api/command/${name}`, {method: 'POST'});
+      if (r.status === 401) gotoLogin();
+    }
+
+    async function updateState() {
+      try {
+        const r = await fetch('/api/state');
+        if (r.status === 401) { gotoLogin(); return; }
+        if (!r.ok) throw new Error(r.statusText);
+        const s = await r.json();
+        // feedback[0..3] = actual base/left/right/claw angles reported by the firmware
+        const feedback = Array.isArray(s.feedback) && s.feedback.length >= 4 ? s.feedback : [s.base, s.left, s.right, s.claw];
+        const idxMap = {base: 0, left: 1, right: 2, claw: 3};
+        for (const [key, n] of Object.entries(SERVO_MAP)) {
+          const val = feedback[idxMap[key]];
+          const slider = document.getElementById('s' + n);
+          const display = document.getElementById('v' + n);
+          if (slider && display && val !== undefined) {
+            slider.value = val;
+            display.textContent = val;
+          }
+        }
+        document.getElementById('status').textContent =
+          `Last update: ${new Date().toLocaleTimeString()} | command=${s.command} speed=${s.speed} status=${s.status}`;
+      } catch (e) {
+        document.getElementById('status').textContent = 'State update failed: ' + e.message;
+      }
+    }
+
+    updateState();
+    setInterval(updateState, 1000);
+  </script>
+</body>
+</html>

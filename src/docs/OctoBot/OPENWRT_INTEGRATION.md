@@ -219,7 +219,7 @@ Feedback path: the Arduino reports its live servo angles every 250 ms as `ANG:ba
 
 ## 6. Cloud API & Mobile (IT plane)
 
-The PC runs a Dockerized cloud that owns the operator-facing plane and is the Modbus/TCP master to the Pi. It exposes a REST API and a static web UI, and is the only thing the Android app talks to. The container, `app.py`, `docker-compose.yml`, and `static/` are produced in `stages/02_implement/output/code/` and promoted to `src/cloud_api/octobot/` (see promotion map).
+The PC runs a Dockerized cloud that owns the operator-facing plane and is the Modbus/TCP master to the Pi. It exposes a login-gated REST API and web UI (a single operator account stored in SQLite, signed-session auth), and is the only thing the Android app talks to. The container, `app.py`, `docker-compose.yml`, and `static/` are produced in `stages/02_implement/output/code/` and promoted to `src/cloud_api/octobot/` (see promotion map).
 
 REST endpoints the web UI and the app consume:
 
