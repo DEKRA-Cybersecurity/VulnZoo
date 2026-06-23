@@ -9,9 +9,9 @@
 
 ## How to Use This Index
 
-This directory follows MWP Layer 3 conventions. Each vulnerability has its own file under `IoT/`. Implementation details and how-to-test steps are also summarized in [`../OPENWRT_INTEGRATION.md`](../OPENWRT_INTEGRATION.md) Section 7.
+This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by category under `IoT/` and `API/`. Implementation details and how-to-test steps are also summarized in [`../OPENWRT_INTEGRATION.md`](../OPENWRT_INTEGRATION.md) Section 7.
 
-> **Agent instruction:** When a task mentions a vulnerability ID (e.g., "verify IoT:I4"), read the corresponding `IoT/` file directly.
+> **Agent instruction:** When a task mentions a vulnerability ID (e.g., "verify IoT:I4"), read the corresponding file directly.
 
 ---
 
@@ -29,6 +29,12 @@ This directory follows MWP Layer 3 conventions. Each vulnerability has its own f
 | [IoT:I8](IoT/IoT8_Lack_of_Device_Management.md) | Lack of device management (no rate-limit, audit, monitoring) | IoT | IN PROGRESS | Medium | CWE-778 / CWE-770 |
 | [IoT:I9](IoT/IoT9_Insecure_Default_Settings.md) | Insecure default settings (default creds, permissive firewall) | IoT | IN PROGRESS | High | CWE-1188 / CWE-16 |
 | [IoT:I10](IoT/IoT10_Lack_of_Physical_Hardening.md) | Lack of physical hardening (USB reflash, exposed UART, SD secrets) | IoT | IN PROGRESS | Medium | CWE-1263 / CWE-1191 |
+
+## API Vulnerabilities
+
+| ID | Title | Category | Status | Severity | CWE |
+|----|-------|----------|--------|----------|-----|
+| [API5:2023](API/API5_Broken_Function_Level_Authorization.md) | Broken Function Level Authorization (downgrade to unauthenticated v1 firmware endpoint) | API | IN PROGRESS | High | CWE-285 |
 
 ---
 

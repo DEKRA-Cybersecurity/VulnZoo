@@ -16,6 +16,7 @@ affected_components:
   - "labs/octobot/arduino_stuff/Youfang Smart-ARM-code-v1.71-joystick/Youfang Smart-ARM-code-v1.71-joystick.ino"
   - "labs/octobot/files/opt/octobot/serial_bus.py"
   - "labs/octobot/files/opt/octobot/firmware/robot_arm.hex"
+  - "cloud_api/octobot/app.py"
 verified_date: ""
 ---
 
@@ -80,6 +81,8 @@ def authenticate(cmd):
 
 The broker is the only component that talks to the Arduino over USB serial, so the password is shared one-to-one between firmware and broker. Because it is a compile-time constant on both sides, it is recoverable from the overlay, the firmware source, or the flashed `.hex` image.
 
+The cloud API makes the image even easier to obtain. The unauthenticated endpoint `GET /api/v1/firmware` returns the compiled firmware to anyone who can reach the cloud container, so an external attacker does not need filesystem access to the Pi or the overlay to extract the password.
+
 ## Steps to Reproduce
 
 ```bash
@@ -107,11 +110,16 @@ PASS:OctoSuperBot2026 S0:90
 # 6. Pi broker injects the password transparently from any network path
 printf 'S0:90\n' | nc 192.168.2.1 2000
 # The arm moves because serial_bus.py prepends PASS:OctoSuperBot2026 before forwarding.
+
+# 7. Download the firmware from the unauthenticated cloud endpoint and extract the password
+curl -s http://localhost:5003/api/v1/firmware -o robot_arm.hex
+strings robot_arm.hex | grep -i octosuperbot
+# -> OctoSuperBot2026
 ```
 
 ## Expected Result
 
-`/login` returns `{"ok": true}` for `admin/admin`, and the API key plus admin password appear in plaintext in both the gateway script and `uci show octobot`. The firmware-serial password `OctoSuperBot2026` appears in plaintext in `serial_bus.py`, in the Arduino source, and can be recovered from the compiled firmware image. Direct serial movement commands without the `PASS:` prefix are rejected with `ERR AUTH`, while commands prefixed with `PASS:OctoSuperBot2026 ` are executed. Network paths that terminate at the Pi broker continue to move the arm because the broker adds the password transparently.
+`/login` returns `{"ok": true}` for `admin/admin`, and the API key plus admin password appear in plaintext in both the gateway script and `uci show octobot`. The firmware-serial password `OctoSuperBot2026` appears in plaintext in `serial_bus.py`, in the Arduino source, and can be recovered from the compiled firmware image or by downloading it from `GET /api/v1/firmware`. Direct serial movement commands without the `PASS:` prefix are rejected with `ERR AUTH`, while commands prefixed with `PASS:OctoSuperBot2026 ` are executed. Network paths that terminate at the Pi broker continue to move the arm because the broker adds the password transparently.
 
 ## How It Should Be
 
@@ -140,3 +148,9 @@ For the actuator boundary, do not rely on a static password inside the firmware.
 - [ ] Direct `PASS:OctoSuperBot2026 S0:90` to the Arduino replies `OK S0:90` and moves the arm
 - [ ] `printf 'S0:90\n' | nc 192.168.2.1 2000` moves the arm via the broker-injected password
 - [ ] The compiled `robot_arm.hex` flashes successfully and enforces the password on the real Arduino
+- [ ] `GET /api/v1/firmware` returns the firmware image and `strings` recovers `OctoSuperBot2026`
+
+## Related Vulnerabilities
+
+- [IoT:I4 — Lack of Secure Update Mechanism](IoT4_Lack_of_Secure_Update_Mechanism.md): the unauthenticated `GET /api/v1/firmware` endpoint is the download vector that exposes the compiled firmware image.
+- [API5:2023 — Broken Function Level Authorization](../API/API5_Broken_Function_Level_Authorization.md): the same v1 endpoint bypasses the session check that gates v2.
