@@ -550,11 +550,20 @@ void process_command(String cmd) {
   cmd.trim();
   if (cmd.length() == 0) return;
 
-  if (is_movement_command(cmd)) {
+  if (cmd.startsWith("PASS:")) {
+    // Authenticated command: validate password, then strip the prefix.
     if (!check_password(cmd)) {
       Serial.println("ERR AUTH");
       return;
     }
+    if (!is_movement_command(cmd)) {
+      Serial.println("ERR UNKNOWN");
+      return;
+    }
+  } else if (is_movement_command(cmd)) {
+    // Movement commands must carry the password prefix.
+    Serial.println("ERR AUTH");
+    return;
   }
 
   if (cmd.startsWith("S") && cmd.indexOf(':') == 2) {
