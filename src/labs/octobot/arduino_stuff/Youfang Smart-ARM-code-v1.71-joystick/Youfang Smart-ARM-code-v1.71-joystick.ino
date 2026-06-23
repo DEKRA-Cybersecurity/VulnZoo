@@ -14,6 +14,9 @@
 #include <Servo.h>
 
 
+const char* HARD_CODED_PASSWORD = "OctoSuperBot2026";  // [IoT:I1] hardcoded actuator password
+
+
 #define SERVOS      (4)     // 机械臂需要的舵机个数
 
 Servo arm_servos[SERVOS];   // 声明SERVOS个舵机
@@ -523,11 +526,37 @@ bool is_btn_pressed()
 // === [OctoBot] remote serial control (added v1.71 -> v1.80) =================
 // Newline-terminated ASCII command parser. Keeps the local joystick loop intact
 // as a manual fallback; the OpenWRT serial bus drives the arm remotely.
-//   Sx:angle  set servo x (0..3) to angle, clamped to servo_min/max_angle
-//   DEMO LEARN PLAY STOP   teach-and-repeat modes
-//   SPD:n     playback speed 1..MAXSPEED
+//   PASS:<pw> Sx:angle  set servo x (0..3) to angle, clamped to servo_min/max_angle
+//   PASS:<pw> DEMO LEARN PLAY STOP   teach-and-repeat modes
+//   PASS:<pw> SPD:n     playback speed 1..MAXSPEED
+// Movement commands must carry PASS:OctoSuperBot2026 or the firmware replies ERR AUTH.
+
+bool is_movement_command(const String& cmd) {
+  return (cmd.startsWith("S") && cmd.indexOf(':') == 2) ||
+         cmd == "RECORD" || cmd == "PLAY" || cmd == "STOP" ||
+         cmd == "DEMO" || cmd.startsWith("SPD:");
+}
+
+bool check_password(String& cmd) {
+  String prefix = "PASS:" + String(HARD_CODED_PASSWORD) + " ";
+  if (cmd.startsWith(prefix)) {
+    cmd = cmd.substring(prefix.length());
+    return true;
+  }
+  return false;
+}
+
 void process_command(String cmd) {
   cmd.trim();
+  if (cmd.length() == 0) return;
+
+  if (is_movement_command(cmd)) {
+    if (!check_password(cmd)) {
+      Serial.println("ERR AUTH");
+      return;
+    }
+  }
+
   if (cmd.startsWith("S") && cmd.indexOf(':') == 2) {
     int servo = cmd.charAt(1) - '0';
     int angle = cmd.substring(3).toInt();
