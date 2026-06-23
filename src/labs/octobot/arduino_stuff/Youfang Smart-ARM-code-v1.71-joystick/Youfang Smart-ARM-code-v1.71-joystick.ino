@@ -15,6 +15,13 @@
 
 
 const char* HARD_CODED_PASSWORD = "OctoSuperBot2026";  // [IoT:I1] hardcoded actuator password
+const char FIRMWARE_VERSION[] PROGMEM = "OCTOBOT_FW_VERSION:v1.0.0";  // firmware version marker embedded in flash
+
+void print_firmware_version() {
+  // Reference the PROGMEM string so the linker keeps it in the image.
+  Serial.println((__FlashStringHelper*)FIRMWARE_VERSION);
+}
+
 
 
 #define SERVOS      (4)     // 机械臂需要的舵机个数
@@ -120,6 +127,7 @@ void setup() {
   digitalWrite(JOYSTICK_LED, HIGH); // 亮灯
 
   Serial.println("System Running...");
+  print_firmware_version();
   Serial.print(digitalRead(JOYSTICK_LEFT_BUTTON));      //读取并串口打印按键状态
   Serial.print(", ");
   Serial.println(digitalRead(JOYSTICK_RIGHT_BUTTON));   //读取并串口打印按键状态
