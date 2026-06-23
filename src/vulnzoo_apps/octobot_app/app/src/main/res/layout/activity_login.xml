@@ -48,9 +48,9 @@
                 android:id="@+id/etServer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="192.168.2.2:5003"
-                android:inputType="textNoSuggestions"
-                android:autofillHints="" />
+                android:autofillHints=""
+                android:hint="Wi-Fi-Docker-IP:5003"
+                android:inputType="textNoSuggestions" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -64,9 +64,8 @@
                 android:id="@+id/etUsername"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="operator"
-                android:inputType="textNoSuggestions"
-                android:autofillHints="username" />
+                android:autofillHints="username"
+                android:inputType="textNoSuggestions" />
 
             <TextView
                 android:layout_width="wrap_content"

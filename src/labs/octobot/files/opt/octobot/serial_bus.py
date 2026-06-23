@@ -13,6 +13,10 @@
 # Additionally reads the Arduino's ANG:base,left,right,claw reports and writes
 # them to /tmp/octobot/angles so the Modbus feedback registers reflect the real
 # servo positions.
+#
+# Movement commands forwarded to the real Arduino are prefixed with
+# PASS:OctoSuperBot2026 so the firmware authenticates them. The password is
+# hardcoded on both sides and is the IoT:I1 vector.
 import os
 import socket
 import threading
@@ -25,6 +29,10 @@ BUS_PORT     = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 USE_HW       = os.environ.get('OCTOBOT_USE_HW', '0') == '1'
 LOG_PATH     = os.environ.get('OCTOBOT_LOG', '/tmp/octobot/operator.log')
 ANGLES_FILE  = '/tmp/octobot/angles'
+
+# Hardcoded actuator password shared with the Arduino firmware. [IoT:I1]
+HARD_CODED_PASSWORD = 'OctoSuperBot2026'
+MOVEMENT_PREFIXES = ('S0:', 'S1:', 'S2:', 'S3:', 'RECORD', 'PLAY', 'STOP', 'DEMO', 'SPD:')
 
 # servo clamps mirror the firmware (base, left, right, claw)
 MIN_ANGLE = [65, 80, 70, 5]
@@ -61,6 +69,11 @@ class SimSerial:
             self._apply(line.decode(errors='replace').strip())
 
     def _apply(self, cmd):
+        stripped = check_password(cmd)
+        if stripped is None and is_movement(cmd):
+            return
+        if stripped is not None:
+            cmd = stripped
         if len(cmd) >= 4 and cmd[0] == 'S' and cmd[2] == ':':
             try:
                 s, a = int(cmd[1]), int(cmd[3:])
@@ -94,13 +107,32 @@ def log(client, cmd):
         f.write(f'{ts} {client} {cmd}\n')
 
 
+def is_movement(cmd):
+    return cmd.strip().startswith(MOVEMENT_PREFIXES)
+
+
+def authenticate(cmd):
+    cmd = cmd.strip()
+    if is_movement(cmd):
+        return f'PASS:{HARD_CODED_PASSWORD} {cmd}'
+    return cmd
+
+
+def check_password(cmd):
+    prefix = f'PASS:{HARD_CODED_PASSWORD} '
+    cmd = cmd.strip()
+    if cmd.startswith(prefix):
+        return cmd[len(prefix):]
+    return None
+
+
 def forward(cmd, client='-'):
     cmd = cmd.strip()
     if not cmd:
         return
     log(client, cmd)
     with ser_lock:
-        ser.write((cmd + '\n').encode())           # [IoT:I7] cleartext serial bus
+        ser.write((authenticate(cmd) + '\n').encode())  # [IoT:I7] cleartext serial bus + [IoT:I1] password
 
 
 def handle(conn, addr):
