@@ -53,6 +53,7 @@ body {
 
 .cmd-row { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
 #status { margin-top: 18px; color: #6a6a6a; font-size: .9em; }
+.firmware-info { margin-top: 8px; color: var(--green-dark); font-size: .9em; font-weight: 600; }
 
 /* --- buttons --- */
 .btn {

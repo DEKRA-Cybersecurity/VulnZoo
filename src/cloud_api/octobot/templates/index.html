@@ -42,6 +42,7 @@
     </div>
 
     <div id="status"></div>
+    <div id="firmware-version" class="firmware-info">Firmware: -</div>
   </main>
 
   <script>
@@ -62,6 +63,17 @@
     async function cmd(name) {
       const r = await fetch(`/api/command/${name}`, {method: 'POST'});
       if (r.status === 401) gotoLogin();
+    }
+
+    async function updateFirmwareVersion() {
+      try {
+        const r = await fetch('/api/v1/firmware/version');
+        if (!r.ok) throw new Error(r.statusText);
+        const data = await r.json();
+        document.getElementById('firmware-version').textContent = 'Firmware: ' + data.version;
+      } catch (e) {
+        document.getElementById('firmware-version').textContent = 'Firmware: unknown';
+      }
     }
 
     async function updateState() {
@@ -89,6 +101,7 @@
       }
     }
 
+    updateFirmwareVersion();
     updateState();
     setInterval(updateState, 1000);
   </script>
