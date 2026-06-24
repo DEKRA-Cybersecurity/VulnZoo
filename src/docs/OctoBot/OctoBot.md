@@ -69,8 +69,32 @@ uci show octobot
 
 ### 4. Cloud controller (PC)
 
+The recommended way to start the Cloud API is via the **`cloudctl.sh`** helper script. It builds and launches the Docker Compose stack, detects the host's primary IP, and writes **`api.octobot.lab`** to `/etc/hosts` so you can reach the API by name.
+
 ```sh
 cd src/cloud_api/octobot   # docker-compose.yml sets MODBUS_HOST=192.168.2.1
+./cloudctl.sh start              # build + up -d + set api.octobot.lab
+./cloudctl.sh start --no-hosts   # skip the /etc/hosts entry
+./cloudctl.sh stop               # docker compose down (keeps the data volume)
+./cloudctl.sh restart            # stop + start (non-destructive)
+./cloudctl.sh reset              # docker compose down -v (drops the seeded DB)
+./cloudctl.sh status             # docker compose ps
+./cloudctl.sh logs               # follow container logs
+```
+
+Access points:
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:5003` | Local access |
+| `http://api.octobot.lab` | Friendly hostname (managed by `cloudctl.sh`) |
+
+Default login: `operator` / `octobot`.
+
+**Manual start (without `cloudctl.sh`):**
+
+```sh
+cd src/cloud_api/octobot
 docker compose up --build -d
 # log in at http://localhost:5003 (default operator / octobot) to reach the console
 ```
@@ -95,6 +119,39 @@ python3 serial_bus.py &
 python3 octobot_gateway.py &
 curl -s 'http://127.0.0.1:8090/admin?msg={{7*7}}'    # SSTI -> 49
 ```
+
+## Cloud API Reference
+
+Flask application at `src/cloud_api/octobot/`. Runs on port **5003**.
+
+### Authentication
+
+The Cloud API uses a **SQLite-backed username/password session cookie**. The default operator account is created automatically on first startup:
+
+| Username | Password |
+|----------|----------|
+| `operator` | `octobot` |
+
+HTML routes redirect to `/login` when the session is missing; API routes under `/api/` return `401`.
+
+### Endpoints
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/login` | No | Login form |
+| POST | `/login` | No | Submit credentials, set session cookie |
+| GET | `/logout` | No | Clear session |
+| GET | `/` | Session | Operator control panel |
+| POST | `/api/servo/<n>` | Session | Set servo `n` (1-4) angle |
+| POST | `/api/command/<name>` | Session | Send `record`, `play`, `stop`, or `demo` |
+| GET | `/api/state` | Session | Read servo angles and status from the Pi |
+| GET | `/api/v1/firmware` | No | Download the current firmware image (`robot_arm.hex`) |
+| PUT | `/api/v1/firmware` | No | Upload any file as the new firmware and push it to the Pi |
+| GET | `/api/v1/firmware/version` | No | Read the embedded firmware version marker |
+| GET | `/api/v2/firmware` | Session | Same download as v1 |
+| PUT | `/api/v2/firmware` | Session | Upload a `.hex` firmware and push it to the Pi |
+
+> **Vulnerability note:** `/api/v1/firmware` and `/api/v1/firmware/version` are intentionally unauthenticated (`API5:2023`). Neither endpoint verifies a firmware signature or origin (`IoT:I4`), and the version endpoint exposes the same firmware image from which the hardcoded actuator password can be extracted (`IoT:I1`).
 
 ## Status
 
