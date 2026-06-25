@@ -102,7 +102,7 @@ def firmware_v1():
 @app.route('/api/v1/firmware/version', methods=['GET'])
 def firmware_v1_version():
     # [API5:2023] Same unauthenticated authorization model as /api/v1/firmware.
-    version = FirmwareService.extract_version(FirmwareService.FIRMWARE_PATH)
+    version = FirmwareService.get_version()
     if version is None:
         return jsonify(error='version not found'), 404
     return jsonify(version=version)
