@@ -5,6 +5,7 @@ Handles the canonical firmware image stored in the cloud API container and
 copies uploaded images to the Raspberry Pi over SSH.
 """
 
+import json
 import os
 import subprocess
 from flask import jsonify
@@ -15,6 +16,7 @@ class FirmwareService:
     """Manages the firmware image and its distribution to the Pi."""
 
     FIRMWARE_PATH = os.path.join(Config.FIRMWARE_DIR, Config.FIRMWARE_FILENAME)
+    VERSION_PATH = os.path.join(Config.FIRMWARE_DIR, f'{Config.FIRMWARE_FILENAME}.meta')
 
     @classmethod
     def ensure_firmware_dir(cls):
@@ -46,20 +48,32 @@ class FirmwareService:
             return False, str(exc)
 
     @classmethod
-    def save_and_push(cls, uploaded_file, version: str):
-        """Save an uploaded file as the canonical firmware and push it to the Pi."""
-        cls.ensure_firmware_dir()
-        uploaded_file.save(cls.FIRMWARE_PATH)
-        pushed, note = cls.push_to_pi(cls.FIRMWARE_PATH)
-        result = {
-            'version': version,
-            'filename': Config.FIRMWARE_FILENAME,
-            'path': cls.FIRMWARE_PATH,
-            'pushed': pushed,
-        }
-        if not pushed:
-            result['note'] = note
-        return jsonify(result)
+    def _write_version_meta(cls, version: str):
+        """Persist the extracted version in a sidecar JSON file."""
+        try:
+            with open(cls.VERSION_PATH, 'w', encoding='utf-8') as fh:
+                json.dump({'version': version}, fh)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @classmethod
+    def _read_version_meta(cls) -> str | None:
+        """Read the cached version if the sidecar file is up to date."""
+        try:
+            if not os.path.isfile(cls.VERSION_PATH):
+                return None
+            if not os.path.isfile(cls.FIRMWARE_PATH):
+                return None
+            meta_mtime = os.path.getmtime(cls.VERSION_PATH)
+            hex_mtime = os.path.getmtime(cls.FIRMWARE_PATH)
+            if meta_mtime < hex_mtime:
+                # Firmware file was replaced after the meta file was written.
+                return None
+            with open(cls.VERSION_PATH, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            return data.get('version')
+        except Exception:  # noqa: BLE001
+            return None
 
     @classmethod
     def extract_version(cls, hex_path: str) -> str | None:
@@ -107,3 +121,39 @@ class FirmwareService:
         if end == -1:
             end = len(binary)
         return binary[idx + len(marker):end].decode('ascii', errors='ignore')
+
+    @classmethod
+    def get_version(cls) -> str | None:
+        """Return the firmware version, extracting and caching it only when needed."""
+        cached = cls._read_version_meta()
+        if cached is not None:
+            return cached
+
+        version = cls.extract_version(cls.FIRMWARE_PATH)
+        if version is not None:
+            cls._write_version_meta(version)
+        return version
+
+    @classmethod
+    def save_and_push(cls, uploaded_file, version: str):
+        """Save an uploaded file as the canonical firmware and push it to the Pi."""
+        cls.ensure_firmware_dir()
+        uploaded_file.save(cls.FIRMWARE_PATH)
+
+        # Extract and cache the version once, then serve it cheaply to many users.
+        extracted_version = cls.extract_version(cls.FIRMWARE_PATH)
+        if extracted_version is not None:
+            cls._write_version_meta(extracted_version)
+
+        pushed, note = cls.push_to_pi(cls.FIRMWARE_PATH)
+        result = {
+            'version': version,
+            'filename': Config.FIRMWARE_FILENAME,
+            'path': cls.FIRMWARE_PATH,
+            'pushed': pushed,
+        }
+        if extracted_version is not None:
+            result['firmware_version'] = extracted_version
+        if not pushed:
+            result['note'] = note
+        return jsonify(result)
