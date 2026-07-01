@@ -6,24 +6,24 @@
 # a port when no arm is attached, but this lab must load on a bare Pi, so the
 # broker falls back to a SimSerial stand-in.
 #
-# It binds a raw, UNAUTHENTICATED line protocol on 0.0.0.0:2000. Any LAN host can
-# drive the arm by sending "Sx:angle\n"; the gateway / Modbus / MQTT services
-# forward to it over loopback. This IS the IoT:I2 serial-over-IP vector.
+# It binds a raw line protocol on 0.0.0.0:2000. Any LAN host can reach it, but
+# movement commands must now carry the hardcoded prefix PASS:OctoSuperBot2026;
+# the broker no longer auto-injects it. The gateway / Modbus / MQTT services
+# forward to it over loopback with the prefix already added. This IS the
+# IoT:I2 serial-over-IP vector.
 #
 # Additionally reads the Arduino's ANG:base,left,right,claw reports and writes
 # them to /tmp/octobot/angles so the Modbus feedback registers reflect the real
 # servo positions.
 #
-# Movement commands forwarded to the real Arduino are prefixed with
-# PASS:OctoSuperBot2026 so the firmware authenticates them. The password is
-# hardcoded on both sides and is the IoT:I1 vector.
+# The actuator password is hardcoded on both sides and is the IoT:I1 vector.
 import os
 import socket
 import threading
 import datetime
 import time
 
-SERIAL_DEV   = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyACM0')
+SERIAL_DEV   = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyUSB0')
 BAUD         = int(os.environ.get('OCTOBOT_BAUD', '115200'))
 BUS_PORT     = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 USE_HW       = os.environ.get('OCTOBOT_USE_HW', '0') == '1'
@@ -111,13 +111,6 @@ def is_movement(cmd):
     return cmd.strip().startswith(MOVEMENT_PREFIXES)
 
 
-def authenticate(cmd):
-    cmd = cmd.strip()
-    if is_movement(cmd):
-        return f'PASS:{HARD_CODED_PASSWORD} {cmd}'
-    return cmd
-
-
 def check_password(cmd):
     prefix = f'PASS:{HARD_CODED_PASSWORD} '
     cmd = cmd.strip()
@@ -126,20 +119,37 @@ def check_password(cmd):
     return None
 
 
+def require_password(cmd):
+    """Return (stripped_command, ok). Movement frames without PASS: are rejected."""
+    cmd = cmd.strip()
+    stripped = check_password(cmd)
+    if stripped is not None:
+        return stripped, True
+    if is_movement(cmd):
+        return cmd, False
+    # Non-movement frames are passed through unchanged.
+    return cmd, True
+
+
 def forward(cmd, client='-'):
     cmd = cmd.strip()
     if not cmd:
         return
     log(client, cmd)
+    payload, ok = require_password(cmd)
+    if not ok:
+        # [IoT:I1] password required on the raw serial bus
+        return
     with ser_lock:
-        ser.write((authenticate(cmd) + '\n').encode())  # [IoT:I7] cleartext serial bus + [IoT:I1] password
+        # The Arduino still expects PASS:... on the wire, so re-add the prefix.
+        ser.write((f'PASS:{HARD_CODED_PASSWORD} {payload}\n').encode())  # [IoT:I7] cleartext serial bus + [IoT:I1] password
 
 
 def handle(conn, addr):
     client = addr[0]
     try:
         conn.sendall(b'OctoBot serial bus\r\n')
-        for line in conn.makefile('r'):            # [IoT:I2] no auth, raw forward
+        for line in conn.makefile('r'):            # [IoT:I2] reachable without auth, but movement needs PASS:
             forward(line, client)
     except OSError:
         pass
@@ -149,6 +159,8 @@ def handle(conn, addr):
 
 def serial_reader():
     """Read ANG:base,left,right,claw reports from the real Arduino and persist them."""
+    # Seed the feedback file immediately so Modbus feedback registers start valid.
+    update_angles(current_angles)
     buf = b''
     while True:
         try:
@@ -166,8 +178,12 @@ def serial_reader():
                         parts = text[4:].split(',')
                         if len(parts) == 4:
                             update_angles([int(p) for p in parts])
+            # Swallow transient read errors instead of killing the reader thread;
+            # a permanent device failure will simply leave the file at the last
+            # known angles and the operator log will show forwarded commands still
+            # reaching the arm.
         except OSError:
-            break
+            pass
         except Exception:
             pass
         time.sleep(0.02)

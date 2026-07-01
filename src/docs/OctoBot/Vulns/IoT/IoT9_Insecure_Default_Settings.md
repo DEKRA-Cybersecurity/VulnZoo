@@ -45,6 +45,8 @@ Services bind `0.0.0.0`, and the shipped config defaults to the vulnerable mode 
 
 The base image also retains default LuCI/AP settings, which compound the exposure.
 
+Firmware static analysis of the dumped SD card reveals additional insecure defaults baked into the base Squashfs rootfs: the root account has a blank password (`root:::0:99999:7:::` in `/etc/shadow`), Dropbear is configured with `RootPasswordAuth 'on'`, and the `rpcd` and `uhttpd` services ship with the default password `openwrt`. These defaults are present before the OctoBot overlay is even loaded. See [IoT:I10-FW — Firmware Static Analysis](IoT_Firmware_Static_Analysis.md).
+
 ## Steps to Reproduce
 
 ```bash
@@ -55,6 +57,24 @@ ss -tlnp | grep -E '8090|2000|502'        # -> bound on 0.0.0.0
 
 # Default credentials work out of the box
 curl -s -X POST http://192.168.2.1:8090/login -d 'user=admin&pass=admin'   # -> {"ok": true}
+
+# Firmware static analysis: insecure defaults in the base image
+ssh root@192.168.2.1 'dd if=/dev/mmcblk0p2 bs=4M count=32 2>/dev/null' > p2_sample.img
+binwalk -e -M p2_sample.img
+
+# Blank root password
+cat _p2_sample.img.extracted/squashfs-root/etc/shadow
+# -> root:::0:99999:7:::
+
+# Dropbear allows root password authentication
+cat _p2_sample.img.extracted/squashfs-root/etc/config/dropbear
+# -> option RootPasswordAuth 'on'
+
+# Default rpcd / uhttpd password
+grep "option password" _p2_sample.img.extracted/squashfs-root/etc/config/rpcd
+# -> option password '$p$root'
+grep "option password" _p2_sample.img.extracted/squashfs-root/etc/config/uhttpd
+# -> option password 'openwrt'
 ```
 
 ## Expected Result
@@ -79,3 +99,6 @@ Ship secure-by-default: deny-by-default firewall, services bound to the manageme
 - [ ] Firewall accepts all OT ports from the LAN by default
 - [ ] Services bind `0.0.0.0`
 - [ ] `admin/admin` works with no prior configuration
+- [ ] Binwalk-extracted `/etc/shadow` shows a blank root password
+- [ ] Binwalk-extracted `/etc/config/dropbear` has `RootPasswordAuth 'on'`
+- [ ] Binwalk-extracted `/etc/config/rpcd` or `/etc/config/uhttpd` contains the default password `openwrt`

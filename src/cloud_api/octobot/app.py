@@ -4,7 +4,8 @@ app.py — OctoBot Cloud API
 
 Intermediary Flask controller between the operator web UI and the Raspberry Pi
 Modbus/TCP gateway. Intentional IoT vulnerabilities live on the Pi and the
-Arduino firmware, not in this console.
+Arduino firmware. The cloud console now also contains an intentional
+filter-bypass SQL injection vulnerability in /login for lab purposes.
 """
 
 import os
@@ -81,8 +82,8 @@ def state():
 # [IoT:I4] Lack of Secure Update Mechanism
 # [API5:2023] Broken Function Level Authorization
 
-@app.route('/api/v1/firmware', methods=['GET', 'PUT'])
-def firmware_v1():
+@app.route('/api/v0/firmware', methods=['GET', 'PUT'])
+def firmware_v0():
     # [IoT:I4] [API5:2023] Intentionally downgraded endpoint: no session check.
     if request.method == 'GET':
         if not os.path.isfile(FirmwareService.FIRMWARE_PATH):
@@ -99,9 +100,8 @@ def firmware_v1():
     return FirmwareService.save_and_push(request.files['file'], 'v1'), 200
 
 
-@app.route('/api/v1/firmware/version', methods=['GET'])
-def firmware_v1_version():
-    # [API5:2023] Same unauthenticated authorization model as /api/v1/firmware.
+@app.route('/api/v2/firmware/version', methods=['GET'])
+def firmware_v2_version():
     version = FirmwareService.get_version()
     if version is None:
         return jsonify(error='version not found'), 404

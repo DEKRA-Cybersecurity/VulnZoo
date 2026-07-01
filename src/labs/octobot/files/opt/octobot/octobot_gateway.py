@@ -12,7 +12,7 @@ BUS_HOST = '127.0.0.1'
 BUS_PORT = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 LOG_PATH = os.environ.get('OCTOBOT_LOG', '/tmp/octobot/operator.log')
 HTTP_PORT = int(os.environ.get('OCTOBOT_HTTP_PORT', '8090'))
-SERIAL_DEV = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyACM0')
+SERIAL_DEV = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyUSB0')
 
 USERS = {'admin': 'admin'}                  # [IoT:I1] default credentials
 API_KEY = 'octobot-industrial-2020'         # [IoT:I1] hardcoded key, never rotated
