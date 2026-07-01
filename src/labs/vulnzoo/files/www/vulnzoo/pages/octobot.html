@@ -88,18 +88,6 @@
         </ul>
       </div>
 
-      <div class="content-section">
-        <h2>Security training focus</h2>
-        <p>OctoBot implements the <strong>OWASP IoT Top 10</strong> (<code>IoT:I1</code>..<code>IoT:I10</code>), each behind a <code>VULNERABLE</code>/<code>SECURE</code> config toggle so you can enable one flaw at a time and compare before/after remediation.</p>
-        <ul>
-          <li><strong>I1 / I9</strong> — default credentials (<code>admin/admin</code>), hardcoded API key, insecure defaults, permissive firewall.</li>
-          <li><strong>I2 / I7</strong> — unauthenticated serial bus, Modbus, and MQTT, all cleartext, with secrets stored in cleartext config.</li>
-          <li><strong>I3</strong> — no-auth REST, servo IDOR, and Server-Side Template Injection in the <code>/admin</code> panel.</li>
-          <li><strong>I4</strong> — unsigned OTA firmware flash over plain HTTP that can defeat the servo safety clamps.</li>
-          <li><strong>I6 / I8 / I10</strong> — cleartext operator log, no rate-limiting or monitoring, and physical exposure (USB reflash, SD secrets).</li>
-        </ul>
-      </div>
-
     </div>
   </div>
 

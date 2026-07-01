@@ -9,7 +9,7 @@
 
 ## How to Use This Index
 
-This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by category under `IoT/` and `API/`. Implementation details and how-to-test steps are also summarized in [`../OPENWRT_INTEGRATION.md`](../OPENWRT_INTEGRATION.md) Section 7.
+This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by category under `IoT/`, `API/`, and `Mobile/`. Implementation details and how-to-test steps are also summarized in [`../OPENWRT_INTEGRATION.md`](../OPENWRT_INTEGRATION.md) Section 7.
 
 > **Agent instruction:** When a task mentions a vulnerability ID (e.g., "verify IoT:I4"), read the corresponding file directly.
 
@@ -29,12 +29,20 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 | [IoT:I8](IoT/IoT8_Lack_of_Device_Management.md) | Lack of device management (no rate-limit, audit, monitoring) | IoT | IN PROGRESS | Medium | CWE-778 / CWE-770 |
 | [IoT:I9](IoT/IoT9_Insecure_Default_Settings.md) | Insecure default settings (default creds, permissive firewall) | IoT | IN PROGRESS | High | CWE-1188 / CWE-16 |
 | [IoT:I10](IoT/IoT10_Lack_of_Physical_Hardening.md) | Lack of physical hardening (USB reflash, exposed UART, SD secrets) | IoT | IN PROGRESS | Medium | CWE-1263 / CWE-1191 |
+| [IoT:I10-FW](IoT/IoT_Firmware_Static_Analysis.md) | Firmware static analysis: SD-card binwalk extraction | IoT | IN PROGRESS | Medium | CWE-1263 / CWE-798 |
 
 ## API Vulnerabilities
 
 | ID | Title | Category | Status | Severity | CWE |
 |----|-------|----------|--------|----------|-----|
-| [API5:2023](API/API5_Broken_Function_Level_Authorization.md) | Broken Function Level Authorization (downgrade to unauthenticated v1 firmware endpoint) | API | IN PROGRESS | High | CWE-285 |
+| [API5:2023](API/API5_Broken_Function_Level_Authorization.md) | Broken Function Level Authorization (downgrade to unauthenticated v0 firmware endpoint) | API | IN PROGRESS | High | CWE-285 |
+| [API10:2023](API/API10_Unsafe_Consumption_of_APIs.md) | Unsafe Consumption of APIs — login input SQL injection | API | IN PROGRESS | High | CWE-89 |
+
+## Mobile Vulnerabilities
+
+| ID | Title | Category | Status | Severity | CWE |
+|----|-------|----------|--------|----------|-----|
+| [M8](Mobile/M8_Security_Misconfiguration.md) | Security Misconfiguration (pre-login disclosure of `/api/v0/` firmware route) | Mobile | IN PROGRESS | Medium | CWE-200 / CWE-212 |
 
 ---
 

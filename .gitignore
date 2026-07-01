@@ -15,8 +15,7 @@ src/vulnzoo_interface/
 /*.pdf
 # Keep these root docs in the repo (referenced across the project / MWP workspace)
 !/MWP.md
-!/README.md
-!/CLAUDE.md
+!/README.md !/CLAUDE.md
 #labs/**/*.md
 #cloud_api/*.md
 #cloud_api/**/*.md
@@ -35,3 +34,5 @@ src/labs/octobot/files/opt/octobot/firmware/robot_arm.hex
 # Slideshows
 Slideshows_001.pptx
 VulnZoo_CareOtter.pptx
+
+src/labs/octobot/firmware_analysis

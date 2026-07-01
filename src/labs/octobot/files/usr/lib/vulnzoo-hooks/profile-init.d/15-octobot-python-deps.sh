@@ -3,8 +3,10 @@
 # Packages are baked into the base image at build time (make menuconfig); the lab
 # runs offline, so this hook only VERIFIES presence and never installs at runtime.
 LOG=/root/vulnzoo.log
-log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$$] [octobot] $1" >> "$LOG"; }
 
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG_FILE"
+}
 command -v python3 >/dev/null 2>&1 || { log "ERROR: python3 not found in image"; exit 0; }
 
 # import-name : module the corresponding service needs

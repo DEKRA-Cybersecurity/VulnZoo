@@ -33,9 +33,15 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 ## Process
 
 1. **Build firmware (PC) -> ship `.hex`.** Compile the patched sketch and drop the `.hex` into `opt/octobot/firmware/`. See `OPENWRT_INTEGRATION.md` Section 4. With no Arduino attached this step is unnecessary (the bus simulates the arm).
-2. **Deploy services (start order below).** Hooks run in numeric order on lab load.
-3. **Config toggle.** `uci get octobot.main.mode` selects `vulnerable` (default) or `secure`.
-4. **Hardware presence.** With `use_real_hardware=0` or no `/dev/ttyACM*`/`/dev/ttyUSB*` present, the serial bus binds a simulated sink so the lab loads and all network paths respond on a bare Pi (platform requirement). The flash hook is skipped in that case. Plugging the arm in after the lab is up is auto-detected by `etc/hotplug.d/tty/20-octobot`, which re-runs preflight and restarts the serial bus.
+2. **Package the overlay.** Create `octobot.tar.gz` from the `files/` directory. Exclude markdown files so Layer 3 documentation does not leak into the deployed overlay.
+   ```sh
+   cd src/labs/octobot/files
+   tar -czf octobot.tar.gz --exclude="*.md" opt etc usr
+   mv octobot.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz
+   ```
+3. **Deploy services (start order below).** Hooks run in numeric order on lab load.
+4. **Config toggle.** `uci get octobot.main.mode` selects `vulnerable` (default) or `secure`.
+5. **Hardware presence.** With `use_real_hardware=0` or no `/dev/ttyACM*`/`/dev/ttyUSB*` present, the serial bus binds a simulated sink so the lab loads and all network paths respond on a bare Pi (platform requirement). The flash hook is skipped in that case. Plugging the arm in after the lab is up is auto-detected by `etc/hotplug.d/tty/20-octobot`, which re-runs preflight and restarts the serial bus.
 
 ## Service start order
 
@@ -55,7 +61,7 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 | Serial bus | `:2000` | Raw serial gateway + tty owner |
 | Modbus/TCP | `:502` | Register map (integration doc Section 5) |
 | MQTT | `:1883` | `cell01/cmd` |
-| Serial line | `/dev/ttyACM0` | `Sx:angle` to the Arduino (or simulated) |
+| Serial line | `/dev/ttyUSB0` | `Sx:angle` to the Arduino (or simulated) |
 | Package | `labs/vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz` | Lab overlay |
 
 ## Verification checklist

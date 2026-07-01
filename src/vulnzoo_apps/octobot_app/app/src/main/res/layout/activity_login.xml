@@ -40,17 +40,59 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Server (ip:port)"
+                android:text="API Server"
                 android:textColor="@color/dekra_navy"
                 android:textStyle="bold" />
 
-            <EditText
-                android:id="@+id/etServer"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:autofillHints=""
-                android:hint="Wi-Fi-Docker-IP:5003"
-                android:inputType="textNoSuggestions" />
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp">
+
+                <EditText
+                    android:id="@+id/etApiIp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:autofillHints=""
+                    android:hint="192.168.2.2"
+                    android:inputType="textNoSuggestions"
+                    android:fontFamily="monospace" />
+
+                <EditText
+                    android:id="@+id/etApiPort"
+                    android:layout_width="90dp"
+                    android:layout_height="wrap_content"
+                    android:autofillHints=""
+                    android:hint="5003"
+                    android:inputType="number"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/btnDetectWifi"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="Detect WiFi"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnTestConnection"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Test Connection"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -97,6 +139,16 @@
                 android:gravity="center"
                 android:textColor="#607D8B"
                 android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvFirmware"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center"
+                android:text="Firmware: checking…"
+                android:textColor="#607D8B"
+                android:textSize="12sp" />
 
         </LinearLayout>
     </LinearLayout>

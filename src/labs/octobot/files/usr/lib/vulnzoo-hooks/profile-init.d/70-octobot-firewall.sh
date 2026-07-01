@@ -2,7 +2,12 @@
 # 70-octobot-firewall.sh - expose the gateway on the LAN (deliberately permissive).
 # [IoT:I9] all OT ports reachable from the flat LAN, no segmentation.
 LOG=/root/vulnzoo.log
-echo "[octobot] firewall $(date)" >> "$LOG"
+
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG_FILE"
+}
+
+log_message "firewall $(date)" >> "$LOG"
 
 add_rule() {
 	local name="$1" port="$2"

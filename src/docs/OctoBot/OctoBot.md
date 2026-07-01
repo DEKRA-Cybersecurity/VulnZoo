@@ -17,6 +17,17 @@ OctoBot is the VulnZoo industrial/ICS lab. A 4-DOF robot arm (HU-M16 shield on a
 | Mobile               | Android control app (Java, cloud REST) under `../../vulnzoo_apps/octobot_app/` |
 | Network              | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet                   |
 
+## Help / inspection account
+
+The lab ships a low-privilege **help user** named `easyuser` so students can still log in and inspect the system even when the `root` account has been hardened. This account is created by the `11-add-users.sh` profile hook and is **out of scope as an attack target** — it exists only for exploration and to support the firmware-analysis walkthrough.
+
+| Account | Password | Purpose |
+| ------- | -------- | ------- |
+| `root` | `dococtopus` | Administrative account (intended to be secured by the attacker/defender exercise). |
+| `easyuser` | *(none set; login not possible with password)* | Inspection-only account for students who want to follow the system/firmware steps without breaking the `root` challenge. |
+
+A README at `/home/easyuser/README.txt` reminds the student that this account is not part of the lab objectives and points to [`Vulns/IoT/IoT_Firmware_Static_Analysis.md`](Vulns/IoT/IoT_Firmware_Static_Analysis.md) for the static-analysis procedure.
+
 ## Documents
 
 - [`OPENWRT_INTEGRATION.md`](OPENWRT_INTEGRATION.md) - build plan and MWP stages roadmap (single source of truth for architecture, protocol, register map, OWASP catalog).
@@ -109,17 +120,6 @@ mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S3:5'                     # MQTT
 curl -s -X POST http://localhost:5003/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}'   # cloud
 curl -s http://192.168.2.1:8090/logs                                     # operator log (IoT:I6)
 ```
-
-### Local simulation (no Pi, no hardware)
-
-```sh
-cd src/labs/octobot/files/opt/octobot
-export OCTOBOT_USE_HW=0 OCTOBOT_BUS_PORT=2000 OCTOBOT_HTTP_PORT=8090 OCTOBOT_LOG=/tmp/octobot/operator.log
-python3 serial_bus.py &
-python3 octobot_gateway.py &
-curl -s 'http://127.0.0.1:8090/admin?msg={{7*7}}'    # SSTI -> 49
-```
-
 ## Cloud API Reference
 
 Flask application at `src/cloud_api/octobot/`. Runs on port **5003**.
@@ -134,6 +134,8 @@ The Cloud API uses a **SQLite-backed username/password session cookie**. The def
 
 HTML routes redirect to `/login` when the session is missing; API routes under `/api/` return `401`.
 
+> **Lab note:** The `/login` endpoint intentionally contains a weak blacklist SQL injection vulnerability. Common payloads are rejected, but SQLite-specific bypasses such as `||` combined with `<>` still allow authentication without knowing the username or password. See [`Vulns/API/API10_Unsafe_Consumption_of_APIs.md`](Vulns/API/API10_Unsafe_Consumption_of_APIs.md).
+
 ### Endpoints
 
 | Method | Route | Auth | Description |
@@ -145,13 +147,11 @@ HTML routes redirect to `/login` when the session is missing; API routes under `
 | POST | `/api/servo/<n>` | Session | Set servo `n` (1-4) angle |
 | POST | `/api/command/<name>` | Session | Send `record`, `play`, `stop`, or `demo` |
 | GET | `/api/state` | Session | Read servo angles and status from the Pi |
-| GET | `/api/v1/firmware` | No | Download the current firmware image (`robot_arm.hex`) |
-| PUT | `/api/v1/firmware` | No | Upload any file as the new firmware and push it to the Pi |
-| GET | `/api/v1/firmware/version` | No | Read the embedded firmware version marker |
-| GET | `/api/v2/firmware` | Session | Same download as v1 |
+| GET | `/api/v0/firmware` | No | Download the current firmware image (`robot_arm.hex`) |
+| PUT | `/api/v0/firmware` | No | Upload any file as the new firmware and push it to the Pi |
+| GET | `/api/v0/firmware/version` | No | Read the embedded firmware version marker |
+| GET | `/api/v2/firmware` | Session | Same download as v0 |
 | PUT | `/api/v2/firmware` | Session | Upload a `.hex` firmware and push it to the Pi |
-
-> **Vulnerability note:** `/api/v1/firmware` and `/api/v1/firmware/version` are intentionally unauthenticated (`API5:2023`). Neither endpoint verifies a firmware signature or origin (`IoT:I4`), and the version endpoint exposes the same firmware image from which the hardcoded actuator password can be extracted (`IoT:I1`).
 
 ## Status
 

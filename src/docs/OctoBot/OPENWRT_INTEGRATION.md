@@ -91,17 +91,36 @@ printf 'S0:90\n' > /dev/ttyACM0             # base servo to 90 degrees
 
 The shipped Youfang v1.71 sketch only reads joysticks. Its `loop()` calls `move_by_joystick_contrl()` and `learning_actions()`, and the serial port is print-only at 115200. To drive the arm from the Pi, add a newline-terminated command parser and keep the joystick loop intact as a local fallback. Servo names, pins, and per-servo angle clamps are defined in the sketch (`servo_min_angle[]` / `servo_max_angle[]`: base 65-135, left 80-140, right 70-120, claw 5-30).
 
+Movement commands must carry the hardcoded prefix `PASS:OctoSuperBot2026 `; the firmware rejects any movement frame without it with `ERR AUTH` ([IoT:I1](Vulns/IoT/IoT1_Weak_Guessable_Hardcoded_Passwords.md)). The Pi-side serial broker injects this prefix automatically for network clients, which is why the raw `:2000` bus appears unauthenticated from the LAN ([IoT:I2](Vulns/IoT/IoT2_Insecure_Network_Services.md)).
+
 | Frame | Effect |
 |---|---|
-| `S0:90` | Set servo 0 (base) to 90 degrees, clamped to that servo's range |
-| `S1:45` / `S2:120` / `S3:5` | Set servo 1 (left) / 2 (right) / 3 (claw) |
-| `DEMO` | Run the built-in `demo_actions` sequence |
-| `LEARN` / `RECORD` / `PLAY` / `STOP` | Teach-and-repeat: enter learning, save pose, replay, halt |
-| `SPD:n` | Set playback speed 1..`MAXSPEED` |
+| `PASS:OctoSuperBot2026 S0:90` | Set servo 0 (base) to 90 degrees, clamped to that servo's range |
+| `PASS:OctoSuperBot2026 S1:45` / `S2:120` / `S3:5` | Set servo 1 (left) / 2 (right) / 3 (claw) |
+| `PASS:OctoSuperBot2026 DEMO` | Run the built-in `demo_actions` sequence |
+| `PASS:OctoSuperBot2026 LEARN` / `RECORD` / `PLAY` / `STOP` | Teach-and-repeat: enter learning, save pose, replay, halt |
+| `PASS:OctoSuperBot2026 SPD:n` | Set playback speed 1..`MAXSPEED` |
 
 Minimal parser to add (uses the sketch's real symbols):
 
 ```cpp
+const char* HARD_CODED_PASSWORD = "OctoSuperBot2026";  // [IoT:I1] hardcoded actuator password
+
+bool is_movement_command(const String& cmd) {
+  return (cmd.startsWith("S") && cmd.indexOf(':') == 2) ||
+         cmd == "RECORD" || cmd == "PLAY" || cmd == "STOP" ||
+         cmd == "DEMO" || cmd.startsWith("SPD:");
+}
+
+bool check_password(String& cmd) {
+  String prefix = "PASS:" + String(HARD_CODED_PASSWORD) + " ";
+  if (cmd.startsWith(prefix)) {
+    cmd = cmd.substring(prefix.length());
+    return true;
+  }
+  return false;
+}
+
 void handle_serial() {
   static String line;
   while (Serial.available()) {
@@ -111,8 +130,26 @@ void handle_serial() {
   }
 }
 
-void process_command(String &cmd) {
+void process_command(String cmd) {
   cmd.trim();
+  if (cmd.length() == 0) return;
+
+  if (cmd.startsWith("PASS:")) {
+    // Authenticated command: validate password, then strip the prefix.
+    if (!check_password(cmd)) {
+      Serial.println("ERR AUTH");
+      return;
+    }
+    if (!is_movement_command(cmd)) {
+      Serial.println("ERR UNKNOWN");
+      return;
+    }
+  } else if (is_movement_command(cmd)) {
+    // Movement commands must carry the password prefix.
+    Serial.println("ERR AUTH");
+    return;
+  }
+
   if (cmd.startsWith("S") && cmd.indexOf(':') == 2) {
     int servo = cmd.charAt(1) - '0';
     int angle = cmd.substring(3).toInt();
@@ -241,8 +278,8 @@ This table is the catalog that drives the lab. Stage 03 writes one doc per row u
 
 | ID | OWASP IoT risk | CWE | Implementation in this lab | How to test on your own lab |
 |---|---|---|---|---|
-| `IoT:I1` | Weak / guessable / hardcoded passwords | CWE-798 / CWE-1392 | `admin/admin` HMI login, hardcoded `API_KEY` in the gateway, weak `root` on SSH/LuCI | Trivial login; grep the script/binary; key reuse |
-| `IoT:I2` | Insecure network services | CWE-306 / CWE-319 | Telnet/SSH open, raw TCP `:2000`, MQTT no-auth, Modbus/TCP no-auth | `nmap -sV` the Pi; connect to each port with no credentials |
+| `IoT:I1` | Weak / guessable / hardcoded passwords | CWE-798 / CWE-1392 | `admin/admin` HMI login, hardcoded `API_KEY` in the gateway, hardcoded actuator password `PASS:OctoSuperBot2026`, weak `root` on SSH/LuCI | Trivial login; grep the script/binary; `strings robot_arm.hex \| grep OctoSuperBot2026`; key reuse |
+| `IoT:I2` | Insecure network services | CWE-306 / CWE-319 | Telnet/SSH open, raw TCP `:2000`, MQTT no-auth, Modbus/TCP no-auth | `nmap -sV` the Pi; connect to each port with no credentials (the serial bus injects `PASS:OctoSuperBot2026` transparently) |
 | `IoT:I3` | Insecure ecosystem interfaces | CWE-639 / CWE-1336 / CWE-79 / CWE-306 | `/api/move` with no auth, IDOR by `servo`, SSTI/XSS in `/admin` | `curl` with no token; `{{7*7}}` in `msg`; move the arm from a browser |
 | `IoT:I4` | Lack of secure update mechanism | CWE-494 / CWE-345 | `/update` accepts an unsigned `.hex` over HTTP and flashes with `avrdude` | Upload a modified firmware and watch it run on the arm |
 | `IoT:I5` | Use of insecure / outdated components | CWE-1104 / CWE-1035 | Pinned old Dropbear / uHTTPd / Flask / jQuery, stale OpenWRT | `nmap` / CVE lookup by detected version |

@@ -38,6 +38,8 @@ The MQTT bridge connects without TLS, and the serial bus forwards in cleartext. 
 	option admin_pass 'admin'
 ```
 
+Firmware static analysis proves the problem is baked in. Binwalk extraction of `/dev/mmcblk0p2` shows `Package: mosquitto-nossl` in the base image, and the extracted broker config (`/etc/mosquitto/mosquitto.conf`) ships with TLS disabled by default. The same extraction also recovers `/etc/config/vulnzoo`, which stores the device control-plane IP and API port in cleartext. See [IoT:I10-FW — Firmware Static Analysis](IoT_Firmware_Static_Analysis.md).
+
 ## Steps to Reproduce
 
 ```bash
@@ -47,6 +49,19 @@ sudo tcpdump -i any -A 'tcp port 8090 or tcp port 2000 or tcp port 502 or tcp po
 
 # Cleartext storage
 uci show octobot | grep -E 'api_key|admin_pass'
+
+# Firmware static analysis: confirm no-TLS broker is baked into the base image
+ssh root@192.168.2.1 'dd if=/dev/mmcblk0p2 bs=4M count=32 2>/dev/null' > p2_sample.img
+binwalk -e -M p2_sample.img
+grep -E "^Package: mosquitto-nossl" _p2_sample.img.extracted/squashfs-root/usr/lib/opkg/status
+# -> Package: mosquitto-nossl
+grep -E "^#.*tls|listener.*8883|^port" _p2_sample.img.extracted/squashfs-root/etc/mosquitto/mosquitto.conf | head
+# No TLS listener configured; default plaintext port 1883 is used.
+# Cleartext device/network metadata in base UCI config:
+cat _p2_sample.img.extracted/squashfs-root/etc/config/vulnzoo
+# -> option control_plane_ip '192.168.2.1'
+# -> option device_ip '192.168.2.100'
+# -> option api_port '8080'
 ```
 
 ## Expected Result
@@ -69,3 +84,6 @@ Encrypt every channel (TLS for HTTP/MQTT, stunnel for Modbus, an authenticated e
 
 - [ ] `tcpdump` reveals cleartext commands on `:8090` / `:2000` / `:502` / `:1883`
 - [ ] `uci show octobot` exposes `api_key` and `admin_pass` in cleartext
+- [ ] Binwalk extraction of `mmcblk0p2` shows `Package: mosquitto-nossl` in the base image
+- [ ] Extracted `/etc/mosquitto/mosquitto.conf` has no TLS listener on `:8883`
+- [ ] Extracted `/etc/config/vulnzoo` exposes control-plane and device IP in cleartext
