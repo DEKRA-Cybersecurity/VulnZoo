@@ -16,6 +16,13 @@ SERVICES="octobot-serialbus octobot-gateway octobot-modbus"
 # MQTT is optional: only start the bridge if the mosquitto broker is installed,
 # otherwise the bridge's connect() crash-loops under procd respawn.
 if [ -x /etc/init.d/mosquitto ]; then
+	# Mosquitto 2.x defaults to loopback-only when no listener is configured.
+	# Force the broker to listen on the LAN and allow anonymous connections so
+	# the MQTT path remains reachable for the lab scenario. [IoT:I2]
+	if ! grep -qE "^listener\s+1883" /etc/mosquitto/mosquitto.conf 2>/dev/null; then
+		echo "listener 1883 0.0.0.0" >> /etc/mosquitto/mosquitto.conf
+		echo "allow_anonymous true" >> /etc/mosquitto/mosquitto.conf
+	fi
 	/etc/init.d/mosquitto enable
 	/etc/init.d/mosquitto restart
 	SERVICES="$SERVICES octobot-mqtt"
