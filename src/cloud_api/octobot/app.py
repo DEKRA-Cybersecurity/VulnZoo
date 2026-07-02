@@ -15,7 +15,7 @@ from flask import (Flask, jsonify, request, render_template, redirect,
 from config import Config
 from core.decorators import login_required
 from services.auth_service import AuthService
-from services.modbus_service import ModbusService
+from services.modbus_service import ModbusService, ModbusAuthError
 from services.firmware_service import FirmwareService
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -59,7 +59,11 @@ def index():
 @login_required
 def set_servo(n):
     angle = request.json.get('angle', 90)
-    modbus.write_register(n - 1, angle)        # 40001 -> offset 0
+    try:
+        modbus.write_register(n - 1, angle)        # 40001 -> offset 0
+    except ModbusAuthError as e:
+        # [IoT:I1] intentional information disclosure: the Pi leaks the password as a hint.
+        return jsonify(error='actuator authentication failed', hint=e.hint), 403
     return jsonify(servo=n, angle=angle)
 
 
@@ -68,7 +72,10 @@ def set_servo(n):
 def command(name):
     cmds = {'record': 1, 'play': 2, 'stop': 3, 'demo': 4}
     if name in cmds:
-        modbus.write_register(4, cmds[name])   # 40005
+        try:
+            modbus.write_register(4, cmds[name])   # 40005
+        except ModbusAuthError as e:
+            return jsonify(error='actuator authentication failed', hint=e.hint), 403
     return jsonify(command=name)
 
 

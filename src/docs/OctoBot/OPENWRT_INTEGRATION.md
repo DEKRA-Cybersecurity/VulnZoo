@@ -80,7 +80,7 @@ Verify the device node and the serial link:
 dmesg | tail -n 30                          # look for cdc_acm / ch341 + the ttyXXX
 ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
 stty -F /dev/ttyACM0 115200 raw
-printf 'S0:90\n' > /dev/ttyACM0             # base servo to 90 degrees
+printf 'PASS:OctoSuperBot2026 S0:90\n' > /dev/ttyACM0   # base servo to 90 degrees
 ```
 
 **Lab network.** The Pi is the gateway on the platform-standard direct-Ethernet LAN: Pi at `192.168.2.1` (fixed), the operator PC / attacker laptop on `192.168.2.0/24`, matching `PROJECT_OVERVIEW.md` and the other labs. The segment is deliberately **flat and unsegmented** (no VLANs), so the attacker host and the OT serial-to-Ethernet gateway share one broadcast domain, which is what makes the segmentation-bypass exercise (Section 9) meaningful. The OpenWRT firewall is left permissive on the LAN side for the offensive exercises and tightened only in the hardening pass. A Wi-Fi AP on a separate subnet (for example `192.168.50.0/24`) is an optional variant for a wireless cell.
@@ -91,7 +91,7 @@ printf 'S0:90\n' > /dev/ttyACM0             # base servo to 90 degrees
 
 The shipped Youfang v1.71 sketch only reads joysticks. Its `loop()` calls `move_by_joystick_contrl()` and `learning_actions()`, and the serial port is print-only at 115200. To drive the arm from the Pi, add a newline-terminated command parser and keep the joystick loop intact as a local fallback. Servo names, pins, and per-servo angle clamps are defined in the sketch (`servo_min_angle[]` / `servo_max_angle[]`: base 65-135, left 80-140, right 70-120, claw 5-30).
 
-Movement commands must carry the hardcoded prefix `PASS:OctoSuperBot2026 `; the firmware rejects any movement frame without it with `ERR AUTH` ([IoT:I1](Vulns/IoT/IoT1_Weak_Guessable_Hardcoded_Passwords.md)). The Pi-side serial broker injects this prefix automatically for network clients, which is why the raw `:2000` bus appears unauthenticated from the LAN ([IoT:I2](Vulns/IoT/IoT2_Insecure_Network_Services.md)).
+Movement commands must carry the hardcoded prefix `PASS:OctoSuperBot2026 `; the firmware rejects any movement frame without it with `ERR AUTH` ([IoT:I1](Vulns/IoT/IoT1_Weak_Guessable_Hardcoded_Passwords.md)). The Pi-side serial broker now enforces the same rule: a raw `S0:90` sent to `:2000` is dropped, while `PASS:OctoSuperBot2026 S0:90` is forwarded to the Arduino. MQTT and the HMI gateway auto-inject the password, but Modbus/TCP requires the cloud client to send the password XOR-encrypted in holding registers ([IoT:I2](Vulns/IoT/IoT2_Insecure_Network_Services.md)).
 
 | Frame | Effect |
 |---|---|
@@ -217,11 +217,11 @@ The control paths and their tags (implemented under `labs/octobot/files/opt/octo
 
 | Path | Listener | OWASP item | Flaw when VULNERABLE |
 |---|---|---|---|
-| Direct shell serial | `stty` + `printf > /dev/ttyACM0` | - | Operator convenience / quick check |
-| Serial bus (`serial_bus.py`) | `:2000` | `IoT:I2` | Unauthenticated, cleartext serial-over-IP gateway, single tty owner |
-| HMI / REST (Flask) | `:8090` | `IoT:I3` | `/api/move`, `/api/claw` no auth; IDOR by servo index; SSTI/XSS in `/admin` |
-| MQTT (mosquitto-nossl) | `:1883` topic `cell01/cmd` | `IoT:I2` `IoT:I7` | No username/password, no TLS |
-| Modbus/TCP | `:502` | `IoT:I2` | No authentication by protocol design |
+| Direct shell serial | `stty` + `printf > /dev/ttyACM0` | - | Operator convenience / quick check; must include `PASS:` |
+| Serial bus (`serial_bus.py`) | `:2000` | `IoT:I2` | Reachable without credentials, but movement now needs `PASS:` prefix |
+| HMI / REST (Flask) | `:8090` | `IoT:I3` | `/api/move`, `/api/claw` no auth; auto-injects `PASS:`; IDOR by servo index; SSTI/XSS in `/admin` |
+| MQTT (mosquitto-nossl) | `:1883` topic `cell01/cmd` | `IoT:I2` `IoT:I7` | No username/password, no TLS; bridge auto-injects `PASS:` so any publisher moves the arm |
+| Modbus/TCP | `:502` | `IoT:I2` `IoT:I1` | No session auth; actuator password must be XOR-encrypted into registers 40021-40036, but the server leaks the password as a hint on failure |
 | OTA update | `POST /update` | `IoT:I4` | Unsigned `.hex` flashed via `avrdude` over plain HTTP |
 | Operator log | `GET /logs` | `IoT:I6` | Cleartext operator history, no auth |
 
@@ -247,6 +247,11 @@ Modbus/TCP holding-register map, the protocol contract the cloud master writes (
 | Speed | 40006 | R/W | Playback speed 1-10 |
 | Status | 40007 | R | 0=idle, 1=moving, 2=learning, 3=playing |
 | Base/Left/Right/Claw current | 40011-40014 | R | Live servo angle feedback |
+| Encrypted password chars | 40021-40036 | W | `OctoSuperBot2026` XORed with `0x55`, one byte per register |
+| Auth status | 40037 | R | 0=not checked, 1=ok, 2=bad/missing |
+| Password hint | 40038-40053 | R | Cleartext `OctoSuperBot2026` written by the server on auth failure |
+
+**Modbus/TCP authentication flow.** Before writing any command register (40001-40006), the master writes the encrypted password to 40021-40036. The server decrypts (XOR `0x55`) and compares it to `OctoSuperBot2026`. On success the command executes and the server forwards `PASS:OctoSuperBot2026 <cmd>` to the serial bus. On failure the command is ignored, register 40037 becomes `2`, and the cleartext password is written to 40038-40053. The cloud API surfaces that hint in its JSON error response.
 
 The gateway runs as a procd service under `/etc/init.d/octobot-gateway`. The Modbus server clamps each register write to the servo range and forwards `Sx:angle` to the serial bus.
 
@@ -279,7 +284,7 @@ This table is the catalog that drives the lab. Stage 03 writes one doc per row u
 | ID | OWASP IoT risk | CWE | Implementation in this lab | How to test on your own lab |
 |---|---|---|---|---|
 | `IoT:I1` | Weak / guessable / hardcoded passwords | CWE-798 / CWE-1392 | `admin/admin` HMI login, hardcoded `API_KEY` in the gateway, hardcoded actuator password `PASS:OctoSuperBot2026`, weak `root` on SSH/LuCI | Trivial login; grep the script/binary; `strings robot_arm.hex \| grep OctoSuperBot2026`; key reuse |
-| `IoT:I2` | Insecure network services | CWE-306 / CWE-319 | Telnet/SSH open, raw TCP `:2000`, MQTT no-auth, Modbus/TCP no-auth | `nmap -sV` the Pi; connect to each port with no credentials (the serial bus injects `PASS:OctoSuperBot2026` transparently) |
+| `IoT:I2` | Insecure network services | CWE-306 / CWE-319 | Raw TCP `:2000` reachable without auth but now requires `PASS:`; MQTT no-auth and auto-injects `PASS:`; Modbus/TCP no session auth but leaks password hint on failure | `nmap -sV` the Pi; `printf 'S0:90\n' | nc :2000` does not move; `mosquitto_pub -t cell01/cmd -m 'S0:90'` moves; Modbus write without auth registers returns hint registers |
 | `IoT:I3` | Insecure ecosystem interfaces | CWE-639 / CWE-1336 / CWE-79 / CWE-306 | `/api/move` with no auth, IDOR by `servo`, SSTI/XSS in `/admin` | `curl` with no token; `{{7*7}}` in `msg`; move the arm from a browser |
 | `IoT:I4` | Lack of secure update mechanism | CWE-494 / CWE-345 | `/update` accepts an unsigned `.hex` over HTTP and flashes with `avrdude` | Upload a modified firmware and watch it run on the arm |
 | `IoT:I5` | Use of insecure / outdated components | CWE-1104 / CWE-1035 | Pinned old Dropbear / uHTTPd / Flask / jQuery, stale OpenWRT | `nmap` / CVE lookup by detected version |
@@ -318,10 +323,11 @@ mv octobot.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz
 
 Each scenario uses the arm as a safe, visible victim process and maps to one OWASP IoT item.
 
-- **Unauthenticated remote access (`IoT:I2`).** `telnet 192.168.2.1 2000` then type `S3:5` to close the claw, or `curl` the no-auth `/api/move`.
+- **Unauthenticated remote access (`IoT:I2`).** `printf 'S0:90\n' | nc 192.168.2.1 2000` is now rejected with `ERR AUTH: movement commands require PASS:OctoSuperBot2026 <cmd>` (raw serial requires `PASS:`). The response itself leaks the password. Use MQTT instead: `mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S3:5'` closes the claw with no credentials because the bridge auto-injects the password.
+- **Encrypted-password bypass / information leak (`IoT:I1` / `IoT:I2`).** Write a Modbus command without first writing the encrypted password to registers 40021-40036; the server writes `OctoSuperBot2026` to the hint registers 40038-40053 and the cloud API returns it in the JSON error. XOR the known password with `0x55` and replay the Modbus write to move the arm.
 - **Command/template injection (`IoT:I3`).** SSTI `{{7*7}}` in `/admin?msg=`, or shell metacharacters if a CGI shells out to the serial device unsanitized.
-- **Replay (`IoT:I7`).** Capture a legitimate `Sx:angle` sequence with `tcpdump`, replay it later with no knowledge of the protocol.
-- **Actuator denial of service (`IoT:I8`).** Rapid-fire `while true; do printf "S0:$((RANDOM%180))\n" > /dev/ttyACM0; done`, or out-of-range values, to make the servos jitter or stall.
+- **Replay (`IoT:I7`).** Capture a legitimate `PASS:OctoSuperBot2026 Sx:angle` sequence with `tcpdump`, replay it to the serial bus, or capture the cleartext Modbus traffic and replay the weakly encrypted password registers.
+- **Actuator denial of service (`IoT:I8`).** Rapid-fire `while true; do printf "PASS:OctoSuperBot2026 S0:$((RANDOM%180))\n" > /dev/ttyACM0; done`, or out-of-range values, to make the servos jitter or stall.
 - **Firmware / OTA tampering (`IoT:I4` / `IoT:I10`).** Upload a malicious `.hex` via `/update`, or reflash the USB-exposed UNO directly, to defeat the firmware angle clamps.
 - **Segmentation bypass (`IoT:I9`).** From the flat LAN, reach the OT serial-to-Ethernet gateway with no jump host, the consequence of the deliberately unsegmented network in Section 3.
 - **Protocol fuzzing (`IoT:I10`).** Feed `S9:999`, very long lines, or binary garbage at 115200 into the serial parser and watch for crashes or unexpected motion.

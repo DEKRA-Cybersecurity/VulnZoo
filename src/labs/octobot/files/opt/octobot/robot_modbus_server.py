@@ -4,12 +4,20 @@
 # pymodbus is not in the OpenWRT feed, so the Pi-side server is hand-rolled on the
 # standard library. It implements the function codes the cloud master uses:
 #   0x03 read holding registers, 0x06 write single, 0x10 write multiple.
-# Modbus has no authentication by design, which is the point. [IoT:I2]
 #
 # Register map (see docs/OctoBot/OPENWRT_INTEGRATION.md Section 5):
-#   40001-40004  base/left/right/claw angle (R/W)   -> offsets 0-3
-#   40005        command: 1=RECORD 2=PLAY 3=STOP 4=DEMO (W) -> offset 4
-#   40006        speed 1-10 (R/W)                   -> offset 5
+#   40001-40004  base/left/right/claw angle (R/W)              -> offsets 0-3
+#   40005        command: 1=RECORD 2=PLAY 3=STOP 4=DEMO (W)    -> offset 4
+#   40006        speed 1-10 (R/W)                              -> offset 5
+#   40021-40036  encrypted actuator password chars (W)        -> offsets 20-35
+#   40037        auth status (R): 0=none 1=ok 2=bad            -> offset 36
+#   40038-40053  cleartext password hint on auth failure (R)  -> offsets 37-52
+#
+# Command registers (0-5) are now gated: the cloud must write the XOR-encrypted
+# password to 40021-40036 first. A missing/invalid password causes the server to
+# write the cleartext password into 40038-40053 and return an exception response.
+# This is intentional: the "encryption" is a fixed XOR key and the hint leak is
+# the vulnerability surface for the exercise. [IoT:I1] [IoT:I2] [IoT:I7]
 import os
 import socket
 import struct
@@ -22,9 +30,20 @@ ANGLES_FILE = '/tmp/octobot/angles'
 MIN_ANGLE = [65, 80, 70, 5]
 MAX_ANGLE = [135, 140, 120, 30]
 
+# Hardcoded actuator password shared with the Arduino firmware and serial bus. [IoT:I1]
+HARD_CODED_PASSWORD = 'OctoSuperBot2026'
+PWD_LEN = len(HARD_CODED_PASSWORD)
+AUTH_KEY = 0x55          # fixed XOR "encryption" key
+PWD_OFFSET = 20          # 40021
+PWD_STATUS = 36          # 40037
+PWD_HINT = 37            # 40038
+
 # holding registers: 40001-40004 command angles, 40005 command, 40006 speed,
-# 40011-40014 actual feedback angles (initialised to the arm's power-on pose).
-regs = [90, 90, 90, 30, 0, 1, 0, 0, 0, 0] + [90, 90, 90, 30] + [0] * 6   # pose at 40011-40014 (offsets 10-13)
+# 40011-40014 actual feedback angles, 40021-40036 encrypted password chars,
+# 40037 auth status, 40038-40053 cleartext hint buffer.
+regs = ([90, 90, 90, 30, 0, 1, 0, 0, 0, 0] +
+        [90, 90, 90, 30] + [0] * 6 +
+        [0] * PWD_LEN + [0] + [0] * PWD_LEN)
 lock = threading.Lock()
 
 
@@ -41,6 +60,30 @@ def refresh_feedback():
         pass
 
 
+def encrypt_password(pwd):
+    return [ord(c) ^ AUTH_KEY for c in pwd]
+
+
+def decrypt_password(chars):
+    return ''.join(chr(c ^ AUTH_KEY) for c in chars)
+
+
+def check_auth():
+    """Validate the encrypted password in registers 40021-40036. On failure, write
+    the cleartext password into 40038-40053 as a hint."""
+    with lock:
+        chars = [regs[PWD_OFFSET + i] & 0xFF for i in range(PWD_LEN)]
+        if decrypt_password(chars) == HARD_CODED_PASSWORD:
+            regs[PWD_STATUS] = 1
+            for i in range(PWD_LEN):
+                regs[PWD_HINT + i] = 0
+            return True
+        regs[PWD_STATUS] = 2
+        for i, c in enumerate(HARD_CODED_PASSWORD):
+            regs[PWD_HINT + i] = ord(c)
+        return False
+
+
 def bus_send(cmd):
     if not cmd:
         return
@@ -51,20 +94,46 @@ def bus_send(cmd):
         pass
 
 
+def _clear_password_regs():
+    """Zero the encrypted-password register block so each command must re-auth."""
+    with lock:
+        for i in range(PWD_LEN):
+            regs[PWD_OFFSET + i] = 0
+
+
 def write_reg(addr, val):
+    """Write a holding register. Returns True if the write succeeded, False if a
+    command register was written without valid auth (hint is written to regs).
+    The encrypted-password registers are cleared after every command-register
+    access so the password must be supplied for each individual command."""
     val &= 0xFFFF
     with lock:
         if 0 <= addr < len(regs):
             regs[addr] = val
-    if 0 <= addr <= 3:
-        clamped = max(MIN_ANGLE[addr], min(val, MAX_ANGLE[addr]))
-        bus_send(f'S{addr}:{clamped}')
-        with lock:
-            regs[addr + 10] = clamped   # mirror current angle feedback register
-    elif addr == 4:
-        bus_send({1: 'RECORD', 2: 'PLAY', 3: 'STOP', 4: 'DEMO'}.get(val, ''))
-    elif addr == 5:
-        bus_send(f'SPD:{max(1, min(val, 10))}')
+
+    # Password and hint registers are passive storage; auth status is managed by check_auth().
+    if PWD_OFFSET <= addr < PWD_OFFSET + PWD_LEN or addr == PWD_STATUS or PWD_HINT <= addr < PWD_HINT + PWD_LEN:
+        return True
+
+    # Command registers require validated actuator password.
+    if 0 <= addr <= 3 or addr == 4 or addr == 5:
+        try:
+            if not check_auth():
+                return False
+            if 0 <= addr <= 3:
+                clamped = max(MIN_ANGLE[addr], min(val, MAX_ANGLE[addr]))
+                bus_send(f'PASS:{HARD_CODED_PASSWORD} S{addr}:{clamped}')
+                with lock:
+                    regs[addr + 10] = clamped   # mirror current angle feedback register
+            elif addr == 4:
+                bus_send(f'PASS:{HARD_CODED_PASSWORD} ' + {1: 'RECORD', 2: 'PLAY', 3: 'STOP', 4: 'DEMO'}.get(val, ''))
+            elif addr == 5:
+                bus_send(f'PASS:{HARD_CODED_PASSWORD} SPD:{max(1, min(val, 10))}')
+            return True
+        finally:
+            # Force the next command to re-supply the encrypted password.
+            _clear_password_regs()
+    return True
 
 
 def build_pdu(req):
@@ -80,12 +149,14 @@ def build_pdu(req):
         return struct.pack('>BB', 0x03, len(body)) + body
     if fc == 0x06:                                   # write single register
         addr, val = struct.unpack('>HH', req[1:5])
-        write_reg(addr, val)
+        if not write_reg(addr, val):
+            return struct.pack('>BB', fc | 0x80, 0x06)  # auth failure (repurposed slave device busy)
         return req                                   # echo
     if fc == 0x10:                                   # write multiple registers
         start, qty = struct.unpack('>HH', req[1:5])
         for i in range(qty):
-            write_reg(start + i, struct.unpack('>H', req[6 + i * 2:8 + i * 2])[0])
+            if not write_reg(start + i, struct.unpack('>H', req[6 + i * 2:8 + i * 2])[0]):
+                return struct.pack('>BB', fc | 0x80, 0x06)  # auth failure
         return struct.pack('>BHH', 0x10, start, qty)
     return struct.pack('>BB', fc | 0x80, 0x01)       # illegal function
 

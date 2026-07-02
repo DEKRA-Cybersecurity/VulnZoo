@@ -17,12 +17,15 @@ SERIAL_DEV = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyUSB0')
 USERS = {'admin': 'admin'}                  # [IoT:I1] default credentials
 API_KEY = 'octobot-industrial-2020'         # [IoT:I1] hardcoded key, never rotated
 
+# Hardcoded actuator password shared with the serial bus and Arduino firmware. [IoT:I1]
+HARD_CODED_PASSWORD = 'OctoSuperBot2026'
+
 app = Flask(__name__)
 
 
 def bus_send(cmd):
     with socket.create_connection((BUS_HOST, BUS_PORT), timeout=2) as s:
-        s.sendall((cmd.strip() + '\n').encode())
+        s.sendall((f'PASS:{HARD_CODED_PASSWORD} {cmd.strip()}\n').encode())
 
 
 @app.route('/api/move')                     # [IoT:I3] no auth, [IoT:I8] no rate limit

@@ -2,7 +2,9 @@
 # robot_mqtt_bridge.py - MQTT -> serial bus.
 #
 # Subscribes to the no-auth mosquitto broker and forwards payloads to the serial
-# bus (127.0.0.1:2000). No credentials, no TLS. [IoT:I2] [IoT:I7]
+# bus (127.0.0.1:2000). No credentials, no TLS. The bridge auto-injects the
+# hardcoded actuator password, so anyone who can publish to the topic can move
+# the arm. [IoT:I2] [IoT:I7]
 #   mosquitto_pub -h <pi> -t cell01/cmd -m "S0:0"
 import os
 import socket
@@ -14,11 +16,22 @@ BUS_PORT = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 MQTT_HOST = os.environ.get('OCTOBOT_MQTT', '127.0.0.1')
 TOPIC = os.environ.get('OCTOBOT_MQTT_TOPIC', 'cell01/cmd')
 
+# Hardcoded actuator password shared with the serial bus and Arduino firmware. [IoT:I1]
+HARD_CODED_PASSWORD = 'OctoSuperBot2026'
+MOVEMENT_PREFIXES = ('S0:', 'S1:', 'S2:', 'S3:', 'RECORD', 'PLAY', 'STOP', 'DEMO', 'SPD:')
+
+
+def is_movement(cmd):
+    return cmd.strip().startswith(MOVEMENT_PREFIXES)
+
 
 def bus_send(cmd):
+    cmd = cmd.strip()
+    if is_movement(cmd):
+        cmd = f'PASS:{HARD_CODED_PASSWORD} {cmd}'
     try:
         with socket.create_connection((BUS_HOST, BUS_PORT), timeout=2) as s:
-            s.sendall((cmd.strip() + '\n').encode())
+            s.sendall((cmd + '\n').encode())
     except OSError:
         pass
 

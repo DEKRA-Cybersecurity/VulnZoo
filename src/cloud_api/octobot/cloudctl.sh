@@ -114,6 +114,7 @@ action_reset() {
     fi
     log "docker compose down -v"
     docker compose down -v
+    action_restart
 }
 
 action_status() {
