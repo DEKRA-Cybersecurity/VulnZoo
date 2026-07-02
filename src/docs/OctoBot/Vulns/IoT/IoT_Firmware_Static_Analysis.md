@@ -18,7 +18,7 @@ affected_components:
   - "labs/octobot/files/opt/octobot/firmware/robot_arm.hex"
 verified_date: "2026-06-19"
 
-> **Scope note:** The source overlay tarball at `labs/vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz` is the VulnZoo packaging artifact used to populate the live Pi. It is intentionally **out of scope** for this firmware-analysis procedure; the analysis targets the firmware image(s) obtained from the running device.
+
 ---
 
 # IoT:I10-FW — Firmware Static Analysis: SD-Card Binwalk Extraction
@@ -30,7 +30,7 @@ verified_date: "2026-06-19"
 > **Severity:** Medium
 
 ---
-
+> **Scope note:** The source overlay tarball at `labs/vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz` is the VulnZoo packaging artifact used to populate the live Pi. It is intentionally **out of scope** for this firmware-analysis procedure; the analysis targets the firmware image(s) obtained from the running device.
 ## Why It Matters
 
 The OctoBot Pi is an OpenWRT gateway. Its SD card contains the base firmware, the runtime overlay, and the Arduino `.hex` image. Because the overlay is dropped onto the base image at lab-load time, an attacker who gains physical access (or any shell on the Pi) can dump the card, run `binwalk`, and recover the entire vulnerable surface offline: default passwords, hardcoded API keys, the actuator password, the MQTT broker configuration, and the firewall rules. This turns a network compromise or a brief physical encounter into a complete static teardown of the device.
@@ -47,7 +47,7 @@ The OctoBot Pi is an OpenWRT gateway. Its SD card contains the base firmware, th
 | Arduino firmware | `/opt/octobot/firmware/robot_arm.hex` | Compiled ATmega328P image flashed by `avrdude` |
 
 > The VulnZoo source tarball (`octobot.tar.gz`) is a build/packaging artifact and is **out of scope** for this analysis. The procedure uses only images and files extracted from the running device.
-> In spite of this, in case you can't get access to the Pi you can use `easyuser` (user without credentials), so you can use the commands bellow to get all data needed for firmware analysis.
+> In spite of this, in case you can't get access to the Pi you can use `easyuser` (password: `easyuser`), so you can use the commands bellow to get all data needed for firmware analysis.
 
 ---
 

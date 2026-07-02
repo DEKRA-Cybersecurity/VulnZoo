@@ -131,14 +131,21 @@ def require_password(cmd):
     return cmd, True
 
 
-def forward(cmd, client='-'):
+def forward(cmd, client='-', conn=None):
     cmd = cmd.strip()
     if not cmd:
         return
     log(client, cmd)
     payload, ok = require_password(cmd)
     if not ok:
-        # [IoT:I1] password required on the raw serial bus
+        # [IoT:I1] password required on the raw serial bus; leak the hint to the client.
+        if conn is not None:
+            try:
+                conn.sendall(
+                    f'ERR AUTH: movement commands require PASS:<key> <cmd>\r\n'.encode()
+                )
+            except OSError:
+                pass
         return
     with ser_lock:
         # The Arduino still expects PASS:... on the wire, so re-add the prefix.
@@ -150,7 +157,7 @@ def handle(conn, addr):
     try:
         conn.sendall(b'OctoBot serial bus\r\n')
         for line in conn.makefile('r'):            # [IoT:I2] reachable without auth, but movement needs PASS:
-            forward(line, client)
+            forward(line, client, conn)
     except OSError:
         pass
     finally:

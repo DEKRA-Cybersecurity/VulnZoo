@@ -61,7 +61,7 @@
       <div class="content-section">
         <h2>Where to start?</h2>
         <p><strong>Click "Load OctoBot" to deploy the lab on the Raspberry Pi.</strong> The init hooks install dependencies, detect the arm (or fall back to simulation), and start the services on the Pi.</p>
-        <p><strong>Then launch the cloud controller</strong> from the VulnZoo repository: <code>cd cloud_api/octobot &amp;&amp; docker compose up --build -d</code>, then open <code>http://localhost:5003</code> and log in with the single operator account (default <code>operator</code> / <code>octobot</code>) to reach the control panel.</p>
+        <p><strong>Then launch the cloud controller</strong> from the VulnZoo repository: <code>cd cloud_api/octobot &amp;&amp; docker compose up --build -d</code>, then open <code>http://localhost:5003</code> and log in with the single operator account (default <code>operator</code> / <code>octobot</code>) to reach the control panel.</p> You can also use the cloudctl.sh script to launch the cloud controller: <code>./cloudctl.sh start</code>.
         <p>Detailed launch, service checks, and per-vulnerability reproduction live in the repo docs: <code>docs/OctoBot/OctoBot.md</code> (launch &amp; verify) and <code>docs/OctoBot/Vulns/</code> (OWASP IoT catalog).</p>
       </div>
 
