@@ -11,13 +11,14 @@
 #   40006        speed 1-10 (R/W)                              -> offset 5
 #   40021-40036  encrypted actuator password chars (W)        -> offsets 20-35
 #   40037        auth status (R): 0=none 1=ok 2=bad            -> offset 36
-#   40038-40053  cleartext password hint on auth failure (R)  -> offsets 37-52
+#   40038-40053  cleartext password leak on auth failure (R)  -> offsets 37-52
 #
 # Command registers (0-5) are now gated: the cloud must write the XOR-encrypted
 # password to 40021-40036 first. A missing/invalid password causes the server to
 # write the cleartext password into 40038-40053 and return an exception response.
-# This is intentional: the "encryption" is a fixed XOR key and the hint leak is
-# the vulnerability surface for the exercise. [IoT:I1] [IoT:I2] [IoT:I7]
+# The failure path was never properly reviewed or tested: instead of returning a
+# generic error, the debug code copies the expected password into readable
+# registers, producing an information-disclosure leak. [IoT:I1] [IoT:I2] [IoT:I7]
 import os
 import socket
 import struct
@@ -40,7 +41,7 @@ PWD_HINT = 37            # 40038
 
 # holding registers: 40001-40004 command angles, 40005 command, 40006 speed,
 # 40011-40014 actual feedback angles, 40021-40036 encrypted password chars,
-# 40037 auth status, 40038-40053 cleartext hint buffer.
+# 40037 auth status, 40038-40053 cleartext password leak buffer.
 regs = ([90, 90, 90, 30, 0, 1, 0, 0, 0, 0] +
         [90, 90, 90, 30] + [0] * 6 +
         [0] * PWD_LEN + [0] + [0] * PWD_LEN)
@@ -70,7 +71,7 @@ def decrypt_password(chars):
 
 def check_auth():
     """Validate the encrypted password in registers 40021-40036. On failure, write
-    the cleartext password into 40038-40053 as a hint."""
+    the cleartext password into 40038-40053, leaking it to any reader."""
     with lock:
         chars = [regs[PWD_OFFSET + i] & 0xFF for i in range(PWD_LEN)]
         if decrypt_password(chars) == HARD_CODED_PASSWORD:
@@ -103,7 +104,7 @@ def _clear_password_regs():
 
 def write_reg(addr, val):
     """Write a holding register. Returns True if the write succeeded, False if a
-    command register was written without valid auth (hint is written to regs).
+    command register was written without valid auth (password is leaked to regs).
     The encrypted-password registers are cleared after every command-register
     access so the password must be supplied for each individual command."""
     val &= 0xFFFF
@@ -111,7 +112,7 @@ def write_reg(addr, val):
         if 0 <= addr < len(regs):
             regs[addr] = val
 
-    # Password and hint registers are passive storage; auth status is managed by check_auth().
+    # Password and leak-buffer registers are passive storage; auth status is managed by check_auth().
     if PWD_OFFSET <= addr < PWD_OFFSET + PWD_LEN or addr == PWD_STATUS or PWD_HINT <= addr < PWD_HINT + PWD_LEN:
         return True
 

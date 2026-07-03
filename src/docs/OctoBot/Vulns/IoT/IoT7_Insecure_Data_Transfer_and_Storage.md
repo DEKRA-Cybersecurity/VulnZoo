@@ -21,7 +21,7 @@ verified_date: ""
 
 ## Why It Matters
 
-Nothing in OctoBot is meaningfully encrypted. Commands cross the network in cleartext over HTTP, MQTT, Modbus, and the raw serial bus, and credentials sit in cleartext in the UCI config. The Modbus/TCP channel now carries an XOR-encrypted password, but the key (`0x55`) is hardcoded and identical on every unit, so a passive sniffer can decrypt it instantly. Worse, the Pi Modbus server writes the cleartext password into holding registers 40038-40053 whenever authentication fails, turning a protocol error into a password-disclosure event. An attacker on the LAN captures commands, the API key, and the actuator password with a passive sniff or a single failed Modbus write. Confidentiality and integrity of the control channel are absent end to end.
+Nothing in OctoBot is meaningfully encrypted. Commands cross the network in cleartext over HTTP, MQTT, Modbus, and the raw serial bus, and credentials sit in cleartext in the UCI config. The Modbus/TCP channel now carries an XOR-encrypted password, but the key (`0x55`) is hardcoded and identical on every unit, so a passive sniffer can decrypt it instantly. Worse, the Pi Modbus server's untested auth-failure path leaks the cleartext password into holding registers 40038-40053, turning a protocol error into a password-disclosure event. An attacker on the LAN captures commands, the API key, and the actuator password with a passive sniff or a single failed Modbus write. Confidentiality and integrity of the control channel are absent end to end.
 
 ## Root Cause
 
@@ -51,7 +51,7 @@ sudo tcpdump -i any -A 'tcp port 8090 or tcp port 2000 or tcp port 502 or tcp po
 # On Modbus/TCP you will see the encrypted password bytes in registers 40021-40036;
 # XOR each byte with 0x55 to recover OctoSuperBot2026.
 
-# Modbus hint leak: read the password from the diagnostic registers after a failed auth
+# Modbus password leak: read the password from the diagnostic registers after a failed auth
 python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",port=502); c.connect(); c.write_registers(20,[0]*16); c.write_register(0,90); rr=c.read_holding_registers(37,count=16); print("".join(chr(r) for r in rr.registers)); c.close()'
 # -> OctoSuperBot2026
 
@@ -74,7 +74,7 @@ cat _p2_sample.img.extracted/squashfs-root/etc/config/vulnzoo
 
 ## Expected Result
 
-Captured traffic shows command payloads in cleartext on HTTP, MQTT, and the raw serial bus, and the Modbus/TCP password is trivially decrypted with the fixed XOR key `0x55`. A failed Modbus command writes `OctoSuperBot2026` to registers 40038-40053. `uci show octobot` reveals the API key and admin password unencrypted.
+Captured traffic shows command payloads in cleartext on HTTP, MQTT, and the raw serial bus, and the Modbus/TCP password is trivially decrypted with the fixed XOR key `0x55`. A failed Modbus command leaks `OctoSuperBot2026` into registers 40038-40053. `uci show octobot` reveals the API key and admin password unencrypted.
 
 ## How It Should Be
 
@@ -92,7 +92,7 @@ Encrypt every channel (TLS for HTTP/MQTT, stunnel for Modbus, an authenticated e
 
 - [ ] `tcpdump` reveals cleartext commands on `:8090` / `:2000` / `:502` / `:1883`
 - [ ] Modbus password bytes in `:502` traffic decrypt to `OctoSuperBot2026` with XOR key `0x55`
-- [ ] A failed Modbus write leaves `OctoSuperBot2026` in registers 40038-40053
+- [ ] A failed Modbus write leaks `OctoSuperBot2026` into registers 40038-40053
 - [ ] `uci show octobot` exposes `api_key` and `admin_pass` in cleartext
 - [ ] Binwalk extraction of `mmcblk0p2` shows `Package: mosquitto-nossl` in the base image
 - [ ] Extracted `/etc/mosquitto/mosquitto.conf` has no TLS listener on `:8883`

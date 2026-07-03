@@ -27,7 +27,7 @@ verified_date: ""
 
 The OctoBot HMI gateway is the operator entry point to a physical robot arm. It ships with the credential `admin/admin` and a hardcoded API key baked into the gateway source. Anyone who reaches the gateway, or who reads the lab overlay, owns the operator interface with no guessing. The key is identical on every deployment, cannot be rotated from the interface, and is duplicated in the UCI config in cleartext, so a single disclosure compromises the whole fleet and grants the ability to move real hardware.
 
-The vulnerability continues below the gateway. The Arduino firmware that drives the servos enforces a hardcoded password on every movement command. The Pi-side serial broker now also requires that prefix on the raw `:2000` bus, while MQTT and the HMI gateway auto-inject it. Modbus/TCP requires the cloud master to send the password XOR-encrypted in holding registers, but the Pi leaks the cleartext password as a hint when the encrypted value is missing or wrong. The password is identical on every unit, appears in cleartext in the firmware source, the Python broker, the gateway, and the MQTT bridge, and is baked into the shipped `.hex` image. An attacker who extracts the overlay, sniffs the bus, or triggers the Modbus hint leak learns the single secret that unlocks physical actuator control.
+The vulnerability continues below the gateway. The Arduino firmware that drives the servos enforces a hardcoded password on every movement command. The Pi-side serial broker now also requires that prefix on the raw `:2000` bus, while MQTT and the HMI gateway auto-inject it. Modbus/TCP requires the cloud master to send the password XOR-encrypted in holding registers, but the Pi's untested auth-failure path leaks the cleartext password into readable registers when the encrypted value is missing or wrong. The password is identical on every unit, appears in cleartext in the firmware source, the Python broker, the gateway, and the MQTT bridge, and is baked into the shipped `.hex` image. An attacker who extracts the overlay, sniffs the bus, or triggers the Modbus password leak learns the single secret that unlocks physical actuator control.
 
 ## Root Cause
 
@@ -92,7 +92,7 @@ def require_password(cmd):
     return cmd, True
 ```
 
-MQTT and the HMI gateway auto-inject the prefix, so they remain easy northbound paths. Modbus/TCP is different: the cloud master must write the password XOR-encrypted into holding registers 40021-40036 before each command; if it does not, the Pi writes `OctoSuperBot2026` into registers 40038-40053 and returns an exception. The cloud API turns that leak into a JSON error containing the password.
+MQTT and the HMI gateway auto-inject the prefix, so they remain easy northbound paths. Modbus/TCP is different: the cloud master must write the password XOR-encrypted into holding registers 40021-40036 before each command; if it does not, the Pi's failure handler writes `OctoSuperBot2026` into registers 40038-40053 and returns an exception. The cloud API surfaces that leaked value in the JSON error.
 
 ```python
 # labs/octobot/files/opt/octobot/robot_modbus_server.py
@@ -116,7 +116,7 @@ def check_auth():
     return False
 ```
 
-Because the password is a compile-time constant on both sides, it is recoverable from the overlay, the firmware source, the flashed `.hex` image, or simply by reading the Modbus hint registers.
+Because the password is a compile-time constant on both sides, it is recoverable from the overlay, the firmware source, the flashed `.hex` image, or simply by reading the Modbus password-leak registers.
 
 The cloud API makes the image even easier to obtain. The unauthenticated endpoint `GET /api/v0/firmware` returns the compiled firmware to anyone who can reach the cloud container, so an external attacker does not need filesystem access to the Pi or the overlay to extract the password.
 
@@ -146,7 +146,7 @@ S0:90
 PASS:OctoSuperBot2026 S0:90
 # -> OK S0:90
 
-# 6. Raw serial bus without password is rejected and leaks the hint
+# 6. Raw serial bus without password is rejected and leaks the password in the error
 printf 'S0:90\n' | nc 192.168.2.1 2000
 # The arm does NOT move; serial_bus.py replies:
 # ERR AUTH: movement commands require PASS:OctoSuperBot2026 <cmd>
@@ -159,7 +159,7 @@ printf 'PASS:OctoSuperBot2026 S0:90\n' | nc 192.168.2.1 2000
 mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S0:90'
 # -> arm moves
 
-# 9. Modbus/TCP leaks the password as a hint when auth is missing
+# 9. Modbus/TCP leaks the password when auth is missing
 # Write register 40001 without first writing encrypted password to 40021-40036.
 # The server clears the password registers after each command, so a fresh write
 # without password triggers the leak:
@@ -168,7 +168,7 @@ python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",
 
 # 10. Cloud API surfaces the leaked password in its JSON error
 # Log in via SQLi or default creds, then POST /api/servo/1 without the backend sending password:
-# (The cloud backend normally sends it; simulate a broken/missing password to see the hint response.)
+# (The cloud backend normally sends it; simulate a broken/missing password to see the leak.)
 curl -s -X POST http://localhost:5003/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}' -b session=<valid_cookie>
 # If the Pi rejects the Modbus auth, response contains:
 # {"error":"actuator authentication failed","hint":"OctoSuperBot2026"}
@@ -219,7 +219,7 @@ strings robot_arm.bin | grep -iE "OctoSuperBot|OCTOBOT_FW_VERSION"
 
 ## Expected Result
 
-`/login` returns `{"ok": true}` for `admin/admin`, and the API key plus admin password appear in plaintext in both the gateway script and `uci show octobot`. The firmware-serial password `OctoSuperBot2026` appears in plaintext in `serial_bus.py`, `octobot_gateway.py`, `robot_mqtt_bridge.py`, `robot_modbus_server.py`, the Arduino source, and can be recovered from the compiled firmware image or by downloading it from `GET /api/v0/firmware`. Direct serial movement commands without the `PASS:` prefix are rejected with `ERR AUTH`, while commands prefixed with `PASS:OctoSuperBot2026 ` are executed. The raw `:2000` serial bus now also rejects movement commands without the prefix and returns `ERR AUTH: movement commands require PASS:OctoSuperBot2026 <cmd>`. MQTT and the HMI gateway auto-inject the prefix. Modbus/TCP requires the encrypted password, but a missing/invalid password causes the server to write `OctoSuperBot2026` to the hint registers and the cloud API to return it in the JSON error.
+`/login` returns `{"ok": true}` for `admin/admin`, and the API key plus admin password appear in plaintext in both the gateway script and `uci show octobot`. The firmware-serial password `OctoSuperBot2026` appears in plaintext in `serial_bus.py`, `octobot_gateway.py`, `robot_mqtt_bridge.py`, `robot_modbus_server.py`, the Arduino source, and can be recovered from the compiled firmware image or by downloading it from `GET /api/v0/firmware`. Direct serial movement commands without the `PASS:` prefix are rejected with `ERR AUTH`, while commands prefixed with `PASS:OctoSuperBot2026 ` are executed. The raw `:2000` serial bus now also rejects movement commands without the prefix and returns `ERR AUTH: movement commands require PASS:OctoSuperBot2026 <cmd>`. MQTT and the HMI gateway auto-inject the prefix. Modbus/TCP requires the encrypted password, but a missing/invalid password causes the server to leak `OctoSuperBot2026` into readable registers and the cloud API to return it in the JSON error.
 
 ## How It Should Be
 
@@ -249,8 +249,8 @@ For the actuator boundary, do not rely on a static password inside the firmware.
 - [ ] `printf 'S0:90\n' | nc 192.168.2.1 2000` does **not** move the arm and returns `ERR AUTH: movement commands require PASS:OctoSuperBot2026 <cmd>`
 - [ ] `printf 'PASS:OctoSuperBot2026 S0:90\n' | nc 192.168.2.1 2000` moves the arm
 - [ ] `mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S0:90'` moves the arm via auto-injected password
-- [ ] Modbus write without prior encrypted password returns exception and writes `OctoSuperBot2026` to hint registers 40038-40053
-- [ ] Cloud API returns `{"error":"actuator authentication failed","hint":"OctoSuperBot2026"}` when Modbus auth fails
+- [ ] Modbus write without prior encrypted password returns exception and leaks `OctoSuperBot2026` into registers 40038-40053
+- [ ] Cloud API returns `{"error":"actuator authentication failed","hint":"OctoSuperBot2026"}` when Modbus auth fails (the `hint` field surfaces the leaked password)
 - [ ] The compiled `robot_arm.hex` flashes successfully and enforces the password on the real Arduino
 - [ ] `GET /api/v0/firmware` returns the firmware image and `strings` recovers `OctoSuperBot2026`
 - [ ] SD-card dump + binwalk extracts the Squashfs rootfs

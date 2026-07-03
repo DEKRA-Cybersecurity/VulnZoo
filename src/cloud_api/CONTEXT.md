@@ -9,6 +9,11 @@ The cloud_api directory contains subdirectories organized by laboratory:
 ```
 cloud_api/
 ├── CONTEXT.md              # This file - Global cloud API documentation
+├── octobot/                # OctoBot Industrial Arm Lab (Layer 2 Sub-stage)
+│   ├── docker-compose.yml # Service orchestration
+│   ├── app.py             # Flask operator console + Modbus/TCP master
+│   ├── services/          # Auth, Modbus master, firmware push
+│   └── static/templates/  # Operator web UI
 ├── owlcam/                 # OwlCam IP Camera Lab (Layer 2 Sub-stage)
 │   ├── CONTEXT.md         # Lab-specific documentation
 │   ├── docker-compose.yml # Service orchestration
@@ -25,6 +30,7 @@ cloud_api/
 
 | Lab | Path | Description | Primary Interface |
 |-----|------|-------------|-------------------|
+| **octobot** | `cloud_api/octobot/` | Industrial robot-arm operator console; Modbus/TCP master to the Pi gateway | HTTP :5003 |
 | **owlcam** | `cloud_api/owlcam/` | IP Camera cloud backend with JWT, C2, and SSRF vulnerabilities | HTTP :5000, :4999 |
 | **careotter** | `cloud_api/careotter/` | Medical device cloud gateway with IGP protocol bridge | HTTP :5002 |
 
@@ -101,6 +107,7 @@ docker-compose up -d --build
 
 | Resource | Location |
 |----------|----------|
+| OctoBot Lab Details | `src/docs/OctoBot/OPENWRT_INTEGRATION.md` |
 | OwlCam Lab Details | `cloud_api/owlcam/CONTEXT.md` |
 | API Vulnerabilities | `docs/IP Camera/API/Vulnerabilities.md` |
 | C2 Architecture | `docs/IP Camera/Mobile/ARCHITECTURE_SSE_C2.md` |
@@ -111,6 +118,7 @@ docker-compose up -d --build
 
 | User Intent | Go To | Read First |
 |-------------|-------|------------|
+| Deploy OctoBot cloud API | `cloud_api/octobot/` | `src/docs/OctoBot/OPENWRT_INTEGRATION.md` |
 | Deploy OwlCam cloud API | `cloud_api/owlcam/` | `cloud_api/owlcam/CONTEXT.md` |
 | Deploy CareOtter cloud API | `cloud_api/careotter/` | `cloud_api/careotter/CONTEXT.md` |
 | Understand cloud vulnerabilities | `docs/IP Camera/` | `docs/IP Camera/API/Vulnerabilities.md` |
