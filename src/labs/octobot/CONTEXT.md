@@ -12,10 +12,10 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 
 | Component | Location (`files/`) | Port | Role |
 |---|---|---|---|
-| Gateway HMI / REST | `opt/octobot/octobot_gateway.py` | 8090 | `/api/move`, `/api/claw`, `/admin`, `/logs`, `/update`; forwards to the bus |
-| Serial bus | `opt/octobot/serial_bus.py` | 2000 | Raw serial-over-TCP, single tty owner, simulation fallback; parses `ANG:` reports to `/tmp/octobot/angles` |
-| Modbus/TCP server | `opt/octobot/robot_modbus_server.py` | 502 | Holding registers -> `Sx:angle` (stdlib socket, no pymodbus); feedback 40011-40014 from `/tmp/octobot/angles` |
-| MQTT bridge | `opt/octobot/robot_mqtt_bridge.py` | 1883 | `cell01/cmd` -> bus |
+| Gateway HMI / REST | `opt/octobot/octobot_gateway.py` | 8090 | `/api/move`, `/api/claw`, `/admin`, `/logs`, `/update`; forwards to the bus and echoes accepted commands to MQTT `cell01/cmd/telemetry` |
+| Serial bus | `opt/octobot/serial_bus.py` | 2000 | Raw serial-over-TCP, single tty owner, simulation fallback; parses `ANG:` reports to `/tmp/octobot/angles`; echoes accepted commands to MQTT `cell01/cmd/telemetry` |
+| Modbus/TCP server | `opt/octobot/robot_modbus_server.py` | 502 | Holding registers -> `Sx:angle` (stdlib socket, no pymodbus); feedback 40011-40014 from `/tmp/octobot/angles`; auth-failure path leaks password into 40038-40053 |
+| MQTT bridge | `opt/octobot/robot_mqtt_bridge.py` | 1883 | Subscribes to `cell01/cmd` and forwards to the bus; auto-injects actuator password |
 | Firmware image | `opt/octobot/firmware/robot_arm.hex` | - | Build artifact (see `firmware/README.md`), flashed by hook |
 | UCI config | `etc/config/octobot` | - | Per-item `VULNERABLE`/`SECURE` toggle + `use_real_hardware` (default `0`) |
 | Cloud API (PC, not in overlay) | `src/cloud_api/octobot/` | 5003 | REST + web UI + Modbus master, single-operator login (SQLite) |
@@ -60,7 +60,7 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 | HMI / REST | `:8090` | Web HMI + `/api/*` |
 | Serial bus | `:2000` | Raw serial gateway + tty owner |
 | Modbus/TCP | `:502` | Register map (integration doc Section 5) |
-| MQTT | `:1883` | `cell01/cmd` |
+| MQTT | `:1883` | `cell01/cmd` (control), `cell01/cmd/telemetry` (command echo leak) |
 | Serial line | `/dev/ttyUSB0` | `Sx:angle` to the Arduino (or simulated) |
 | Package | `labs/vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz` | Lab overlay |
 

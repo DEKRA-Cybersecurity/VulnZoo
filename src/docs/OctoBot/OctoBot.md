@@ -114,7 +114,7 @@ docker compose up --build -d
 
 ```sh
 printf 'PASS:OctoSuperBot2026 S0:90\n' | nc 192.168.2.1 2000             # raw serial bus (needs PASS:)
-printf 'S0:90\n' | nc 192.168.2.1 2000                                     # raw serial bus without PASS: is rejected with ERR AUTH hint
+printf 'S0:90\n' | nc 192.168.2.1 2000                                     # raw serial bus without PASS: is rejected with ERR AUTH (leaks password in error)
 curl -s 'http://192.168.2.1:8090/api/move?servo=0&angle=45'              # HMI / REST (auto-injects PASS:)
 python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",port=502); c.connect(); c.write_register(0,120); c.close()'   # Modbus
 mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S3:5'                     # MQTT

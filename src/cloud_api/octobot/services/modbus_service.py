@@ -6,7 +6,8 @@ and real-time angle feedback from the Arduino firmware.
 
 The Pi now requires the actuator password to be written (XOR-encrypted) to
 registers 40021-40036 before any command register write. If authentication
-fails, the Pi leaks the password in registers 40038-40053 as a hint.
+fails, the untested error path leaks the cleartext password into registers
+40038-40053 instead of returning a generic error.
 """
 
 from pymodbus.client import ModbusTcpClient
@@ -23,9 +24,9 @@ HINT_OFFSET = 37  # 40038
 class ModbusAuthError(Exception):
     """Raised when the Pi rejects a Modbus command due to bad/missing password."""
 
-    def __init__(self, hint: str):
-        self.hint = hint
-        super().__init__(f'Actuator auth failed; hint: {hint}')
+    def __init__(self, leaked_password: str):
+        self.hint = leaked_password
+        super().__init__(f'Actuator auth failed; leaked password: {leaked_password}')
 
 
 def _encrypt_password():
@@ -47,7 +48,7 @@ class ModbusService:
             raise ModbusAuthError('unknown')
 
     def _read_hint(self) -> str:
-        """Read the cleartext password hint the Pi writes on auth failure."""
+        """Read the cleartext password the Pi leaks into registers on auth failure."""
         rr = self._client.read_holding_registers(HINT_OFFSET, count=PWD_LEN)
         if rr.isError():
             return 'unknown'

@@ -8,11 +8,18 @@ import socket
 import subprocess
 from flask import Flask, request, jsonify, render_template_string
 
+try:
+    import paho.mqtt.publish as mqtt_publish
+except ImportError:
+    mqtt_publish = None
+
 BUS_HOST = '127.0.0.1'
 BUS_PORT = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 LOG_PATH = os.environ.get('OCTOBOT_LOG', '/tmp/octobot/operator.log')
 HTTP_PORT = int(os.environ.get('OCTOBOT_HTTP_PORT', '8090'))
 SERIAL_DEV = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyUSB0')
+MQTT_HOST = os.environ.get('OCTOBOT_MQTT', '127.0.0.1')
+TELEMETRY_TOPIC = os.environ.get('OCTOBOT_TELEMETRY_TOPIC', 'cell01/cmd/telemetry')
 
 USERS = {'admin': 'admin'}                  # [IoT:I1] default credentials
 API_KEY = 'octobot-industrial-2020'         # [IoT:I1] hardcoded key, never rotated
@@ -23,7 +30,20 @@ HARD_CODED_PASSWORD = 'OctoSuperBot2026'
 app = Flask(__name__)
 
 
+def _mqtt_telemetry(cmd):
+    # [IoT:I2] [IoT:I7] The gateway echoes every command to an unauthenticated
+    # MQTT telemetry topic. This is presented as a debug/audit feature but leaks
+    # the cell naming convention and payload format to any anonymous subscriber.
+    if mqtt_publish is None:
+        return
+    try:
+        mqtt_publish.single(TELEMETRY_TOPIC, payload=cmd.strip(), hostname=MQTT_HOST, port=1883)
+    except Exception:
+        pass
+
+
 def bus_send(cmd):
+    _mqtt_telemetry(cmd)
     with socket.create_connection((BUS_HOST, BUS_PORT), timeout=2) as s:
         s.sendall((f'PASS:{HARD_CODED_PASSWORD} {cmd.strip()}\n').encode())
 

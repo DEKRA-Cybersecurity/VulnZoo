@@ -23,12 +23,19 @@ import threading
 import datetime
 import time
 
+try:
+    import paho.mqtt.publish as mqtt_publish
+except ImportError:
+    mqtt_publish = None
+
 SERIAL_DEV   = os.environ.get('OCTOBOT_SERIAL', '/dev/ttyUSB0')
 BAUD         = int(os.environ.get('OCTOBOT_BAUD', '115200'))
 BUS_PORT     = int(os.environ.get('OCTOBOT_BUS_PORT', '2000'))
 USE_HW       = os.environ.get('OCTOBOT_USE_HW', '0') == '1'
 LOG_PATH     = os.environ.get('OCTOBOT_LOG', '/tmp/octobot/operator.log')
 ANGLES_FILE  = '/tmp/octobot/angles'
+MQTT_HOST    = os.environ.get('OCTOBOT_MQTT', '127.0.0.1')
+TELEMETRY_TOPIC = os.environ.get('OCTOBOT_TELEMETRY_TOPIC', 'cell01/cmd/telemetry')
 
 # Hardcoded actuator password shared with the Arduino firmware. [IoT:I1]
 HARD_CODED_PASSWORD = 'OctoSuperBot2026'
@@ -131,6 +138,18 @@ def require_password(cmd):
     return cmd, True
 
 
+def _mqtt_telemetry(cmd):
+    # [IoT:I2] [IoT:I7] Every command that reaches the serial bus is echoed to an
+    # unauthenticated MQTT telemetry topic. The intention is operational logging,
+    # but it leaks the command format and timing to any anonymous subscriber.
+    if mqtt_publish is None:
+        return
+    try:
+        mqtt_publish.single(TELEMETRY_TOPIC, payload=cmd.strip(), hostname=MQTT_HOST, port=1883)
+    except Exception:
+        pass
+
+
 def forward(cmd, client='-', conn=None):
     cmd = cmd.strip()
     if not cmd:
@@ -147,6 +166,8 @@ def forward(cmd, client='-', conn=None):
             except OSError:
                 pass
         return
+    # [IoT:I2] [IoT:I7] Echo the accepted command to the MQTT telemetry topic.
+    _mqtt_telemetry(payload)
     with ser_lock:
         # The Arduino still expects PASS:... on the wire, so re-add the prefix.
         ser.write((f'PASS:{HARD_CODED_PASSWORD} {payload}\n').encode())  # [IoT:I7] cleartext serial bus + [IoT:I1] password

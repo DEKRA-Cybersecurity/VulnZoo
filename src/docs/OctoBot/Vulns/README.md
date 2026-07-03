@@ -20,7 +20,7 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 | ID | Title | Category | Status | Severity | CWE |
 |----|-------|----------|--------|----------|-----|
 | [IoT:I1](IoT/IoT1_Weak_Guessable_Hardcoded_Passwords.md) | Weak / guessable / hardcoded passwords | IoT | IN PROGRESS | High | CWE-798 / CWE-1392 |
-| [IoT:I2](IoT/IoT2_Insecure_Network_Services.md) | Insecure network services (serial bus needs PASS:, MQTT auto-injects PASS:, Modbus/TCP leaks password hint) | IoT | IN PROGRESS | Critical | CWE-306 / CWE-319 |
+| [IoT:I2](IoT/IoT2_Insecure_Network_Services.md) | Insecure network services (serial bus needs PASS:, MQTT auto-injects PASS: and leaks commands on `cell01/cmd/telemetry`, revealing `cell01/cmd`; Modbus/TCP leaks password on auth failure) | IoT | IN PROGRESS | Critical | CWE-306 / CWE-319 |
 | [IoT:I3](IoT/IoT3_Insecure_Ecosystem_Interfaces.md) | Insecure ecosystem interfaces (no-auth REST, IDOR, SSTI/XSS) | IoT | IN PROGRESS | High | CWE-639 / CWE-1336 / CWE-79 / CWE-306 |
 | [IoT:I4](IoT/IoT4_Lack_of_Secure_Update_Mechanism.md) | Lack of secure update mechanism (unsigned OTA `.hex` via avrdude) | IoT | IN PROGRESS | Critical | CWE-494 / CWE-345 |
 | [IoT:I5](IoT/IoT5_Use_of_Insecure_or_Outdated_Components.md) | Use of insecure / outdated components | IoT | PENDING | Medium | CWE-1104 / CWE-1035 |

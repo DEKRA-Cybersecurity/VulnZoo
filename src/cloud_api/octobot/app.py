@@ -62,7 +62,8 @@ def set_servo(n):
     try:
         modbus.write_register(n - 1, angle)        # 40001 -> offset 0
     except ModbusAuthError as e:
-        # [IoT:I1] intentional information disclosure: the Pi leaks the password as a hint.
+        # [IoT:I1] the Pi's untested failure path leaks the password into readable
+        # Modbus registers; the cloud API surfaces that leak in the JSON response.
         return jsonify(error='actuator authentication failed', hint=e.hint), 403
     return jsonify(servo=n, angle=angle)
 

@@ -83,7 +83,7 @@ src/
 2. **Keep Layer 3 ↔ Layer 4 in sync.** When you change vulnerable code (Layer 4), update the matching vuln doc (Layer 3), and vice-versa.
 3. **Preserve intentional vulnerabilities** (see Identity). Harden only on explicit request.
 4. **One stage, one job.** Stay within the component's Layer 2 contract; don't reach across stages unless routed there.
-5. **Do not commit changes unless explicitly asked.** Stage and prepare files when needed, but run `git commit` only after the user requests it.
+5. **Do not mutate git history unless explicitly asked.** Stage and prepare files when needed, but do not run `git commit`, `git push`, `git reset`, `git rebase`, or any other git mutation unless the user explicitly requests it.
 
 ---
 
