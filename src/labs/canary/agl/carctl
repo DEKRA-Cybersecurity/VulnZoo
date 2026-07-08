@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+# carctl - the vehicle's central-locking control, runs ON the AGL head unit.
+#
+# This is the legitimate control the occupant operates from the IVI (Level 1, CLI).
+# It holds the head unit's SetLock token and sends the authenticated SOME/IP request
+# to the Central Gateway. Operating it (or the lock-ui buttons) is what produces the
+# legitimate traffic a gray-box attacker sniffs. It is a control, not a traffic
+# generator: one action per invocation.
+#
+# Usage: carctl lock|unlock|state
+#   CANARY_GW     gateway ip        (default 192.168.2.1)
+#   CANARY_TOKEN  head-unit token   (default AGL-HEADUNIT-7c2f)
+import os
+import socket
+import struct
+import sys
+
+SERVICE_ID = 0x1401
+M_SETLOCK = 0x0001
+M_GETSTATE = 0x0002
+MT_REQUEST = 0x00
+
+
+def someip(method, payload=b''):
+    mid = (SERVICE_ID << 16) | method
+    return struct.pack('>IIIBBBB', mid, 8 + len(payload), 0x00010001, 1, 1, MT_REQUEST, 0) + payload
+
+
+def call(host, req):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(2)
+    s.sendto(req, (host, 30509))
+    try:
+        return s.recvfrom(1024)[0]
+    except socket.timeout:
+        return None
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in ('lock', 'unlock', 'state'):
+        print('usage: carctl lock|unlock|state')
+        return
+    action = sys.argv[1]
+    host = os.environ.get('CANARY_GW', '192.168.2.1')
+    token = os.environ.get('CANARY_TOKEN', 'AGL-HEADUNIT-7c2f').encode()
+    if action == 'state':
+        r = call(host, someip(M_GETSTATE))
+    else:
+        r = call(host, someip(M_SETLOCK, token + bytes([1 if action == 'lock' else 0])))
+    if r is None:
+        print('no response')
+    elif r[14] == 0x81:
+        print('rejected')
+    else:
+        val = r[16:]
+        print('locked' if val and val[0] else 'unlocked')
+
+
+if __name__ == '__main__':
+    main()

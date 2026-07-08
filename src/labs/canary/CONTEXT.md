@@ -12,12 +12,14 @@ The Pi hosts two ECUs on two MCP2515 + TJA1050 CAN nodes sharing one bus: a Cent
 
 | Component | Location (`files/`) | Port / IF | Role |
 |---|---|---|---|
-| CGW (gateway) | `opt/canary/someip_gateway.py` | 30509/udp, can0 | SOME/IP CentralLockingService, SetLock -> LOCK_CMD (0x120), LOCK_STAT (0x121) -> LockStatus event |
+| CGW (gateway) | `opt/canary/someip_gateway.py` | 30509/udp + 30510/udp + 30490/udp, can0 | SOME/IP CentralLockingService (token-gated SetLock -> LOCK_CMD 0x120, GetLockState, LOCK_STAT 0x121 -> LockStatus event), the exposed management endpoint (`UpdateFirmware`) and post-reflash `RelayFrame` of the Jeep chain (AUTO-01/05/02), plus an SD FindService responder and standard SOME/IP error codes for dynamic discovery |
 | BCM (actuator) | `opt/canary/bcm_ecu.py` | can1 | listens LOCK_CMD, drives the lock indicator, transmits LOCK_STAT on change and a 500 ms heartbeat |
-| UCI config | `etc/config/canary` | - | mode, use_real_hardware, bitrate, ifaces, someip_port, event target, indicator GPIO |
+| UCI config | `etc/config/canary` | - | mode, use_real_hardware, bitrate, ifaces, someip_port, mgmt_port, setlock_token, fw_key, event target, indicator GPIO |
 | CAN bring-up | `etc/init.d/canary-can` | can0/can1 or vcan0 | enabled service, runs on every boot before the ECUs: detects both MCP2515 (hardware) or falls back to vcan (sim), brings the bus up, sets `use_real_hardware`. Makes canary self-heal after a reboot |
 | ECU services | `etc/init.d/canary-gateway`, `etc/init.d/canary-bcm` | - | procd services, pick the CAN iface from UCI (hardware vs sim) |
 | Reference client | `tools/someip_client.py` (not packaged) | - | PC-side legitimate driver: `someip_client.py <host> lock|unlock|state` |
+| Head unit control | `agl/carctl`, `agl/lock-ui/` (on AGL) | - | the car's central-locking control on the AGL head unit (CLI + IVI web UI): holds the token, its use produces the legitimate SOME/IP traffic a gray-box attacker sniffs |
+| Attacker tool | `tools/reflash_gw.py` (not packaged) | - | PC-side: unsigned reflash + arbitrary CAN inject (Jeep chain) |
 | Self-check | `tools/test_canary.py` (not packaged) | - | asserts the SOME/IP header and CAN frame round-trip |
 | AGL head unit | `agl/` (PC-side, not packaged) | SOME/IP client | AGL in QEMU as the connected head-unit ECU, drives SetLock over SOME/IP. See `../../docs/Canary/LAB_SETUP.md` |
 
@@ -62,7 +64,9 @@ The Pi hosts two ECUs on two MCP2515 + TJA1050 CAN nodes sharing one bus: a Cent
 
 | Artifact | Path / Port | Description |
 |---|---|---|
-| SOME/IP service | `:30509/udp` | CentralLockingService (SetLock, GetLockState, LockStatus) |
+| SOME/IP service | `:30509/udp` | CentralLockingService (token-gated SetLock, GetLockState, LockStatus, and RelayFrame after the reflash) |
+| SOME/IP management | `:30510/udp` | Exposed gateway management, `UpdateFirmware` (Jeep chain AUTO-01/05, unauthenticated and unsigned in vulnerable mode) |
+| SOME/IP-SD | `:30490/udp` | FindService responder (`sd_enabled`), answers OfferService for 0x1401 so the service is discoverable dynamically |
 | CAN bus | can0 / can1 (or vcan0) | LOCK_CMD 0x120, LOCK_STAT 0x121 at 500 kbit/s |
 | Lock state | `/tmp/canary/lock_state` | `locked` / `unlocked`, plus optional GPIO LED |
 | Package | `labs/vulnzoo/files/usr/lib/vulnzoo-devices/canary.tar.gz` | Lab overlay |

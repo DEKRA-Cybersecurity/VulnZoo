@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Central Locking</title>
+<style>
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column;
+         align-items: center; justify-content: center; gap: 24px;
+         background: #10141c; color: #e6ebf2; font: 500 18px system-ui, sans-serif; }
+  h1 { font-weight: 600; letter-spacing: .04em; margin: 0 0 8px; }
+  .row { display: flex; gap: 20px; }
+  button { min-width: 180px; padding: 28px 0; border: 0; border-radius: 16px;
+           font-size: 22px; font-weight: 600; color: #10141c; cursor: pointer; }
+  .lock { background: #f4b740; } .unlock { background: #4ea1ff; } .status { background: #2a3140; color: #e6ebf2; }
+  #s { font-size: 26px; letter-spacing: .05em; min-height: 32px; }
+</style>
+</head>
+<body>
+  <h1>CENTRAL LOCKING</h1>
+  <div class="row">
+    <button class="lock" onclick="act('lock')">Lock</button>
+    <button class="unlock" onclick="act('unlock')">Unlock</button>
+    <button class="status" onclick="state()">Status</button>
+  </div>
+  <p id="s">-</p>
+<script>
+  async function act(a) {
+    document.getElementById('s').textContent = '...';
+    const r = await fetch('/api/' + a, { method: 'POST' });
+    document.getElementById('s').textContent = (await r.text()).toUpperCase();
+  }
+  async function state() {
+    const r = await fetch('/api/state');
+    document.getElementById('s').textContent = (await r.text()).toUpperCase();
+  }
+  state();
+</script>
+</body>
+</html>

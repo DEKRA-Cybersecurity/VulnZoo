@@ -1,6 +1,6 @@
 # Canary - Automotive CAN / SOME-IP Lab
 
-> **Layer 3 device landing page.** Status: phase 0 (functional bring-up), promoted to `src/` and verified on the Pi in simulation. Hardware mode (the two physical CAN modules) and the AGL head-unit node are brought up per [`LAB_SETUP.md`](LAB_SETUP.md). No intentional vulnerabilities are implemented yet, they are a documented roadmap (see [`Vulns/README.md`](Vulns/README.md)). The vulnerabilities added in later phases are intentional.
+> **Layer 3 device landing page.** Phase 0 (functional bring-up) is verified on the Pi in simulation. The first vulnerability chain, a 2015 Jeep Cherokee reconstruction (`AUTO-01/05/02`, remote-to-CAN), is implemented, documented, and verified on the Pi in simulation (see [`Vulns/Automotive/AUTO-Jeep-Kill-Chain.md`](Vulns/Automotive/AUTO-Jeep-Kill-Chain.md)). Hardware mode (the two physical CAN modules) and the AGL head-unit node are brought up per [`LAB_SETUP.md`](LAB_SETUP.md). Further findings are a documented roadmap (see [`Vulns/README.md`](Vulns/README.md)). The vulnerabilities are intentional.
 
 Canary is the VulnZoo automotive lab. It reproduces a small in-vehicle ECU subsystem on a Raspberry Pi running OpenWRT, driven by two real MCP2515 + TJA1050 CAN nodes, with a modern service-oriented control interface (SOME/IP over Automotive Ethernet) in front of a classic CAN bus. The lab is framed as the sample that a tester at a certification body (a TIC company such as DEKRA) receives for a UNECE R155 and ISO/SAE 21434 assessment, a representative subsystem with an external service interface and an internal CAN bus. The student plays the assessor.
 
@@ -66,7 +66,7 @@ Transport is UDP over eth0 at `192.168.2.1:30509`. Phase 0 uses a static endpoin
 | Method | GetLockState | 0x0002 | empty | 1 byte current state |
 | Event | LockStatus | 0x8001 | - | 1 byte state (NOTIFICATION 0x02), static target, full pub/sub in the SD phase |
 
-Exact SetLock (lock) request on the wire, 17 bytes: `14 01 00 01  00 00 00 09  00 01 00 01  01 01 00 00  01`. The response echoes the request's Request ID so SOME/IP tooling can correlate it.
+SetLock is authenticated in the current phase: the request payload is the head-unit token followed by the lock byte (`token || 0x01`), and a tokenless or wrong-token SetLock is rejected with a SOME/IP error. The response echoes the request's Request ID so SOME/IP tooling can correlate it. The exposed management service (`0x1402 UpdateFirmware`) and the post-reflash `RelayFrame` (`0x0003`) are the Jeep-chain attack surface, documented in [`Vulns/Automotive/AUTO-Jeep-Kill-Chain.md`](Vulns/Automotive/AUTO-Jeep-Kill-Chain.md).
 
 ### CAN frame map (classic CAN, 11-bit IDs, 500 kbit/s)
 
@@ -96,9 +96,9 @@ With both modules attached the lab brings up can0 and can1 at 500 kbit/s. On a b
 ### 3. Drive it from the PC
 
 ```sh
-python3 tools/someip_client.py 192.168.2.1 lock      # -> locked
-python3 tools/someip_client.py 192.168.2.1 state     # -> locked
-python3 tools/someip_client.py 192.168.2.1 unlock    # -> unlocked
+python3 tools/someip_client.py 192.168.2.1 lock AGL-HEADUNIT-7c2f    # -> locked
+python3 tools/someip_client.py 192.168.2.1 state                     # -> locked
+python3 tools/someip_client.py 192.168.2.1 unlock AGL-HEADUNIT-7c2f  # -> unlocked
 candump can0                                          # LOCK_CMD 0x120 and LOCK_STAT 0x121 on the PC USB-CAN
 ```
 
@@ -106,7 +106,7 @@ candump can0                                          # LOCK_CMD 0x120 and LOCK_
 
 ## Certification framing and roadmap
 
-Findings will carry a dual mapping, the way a TIC assessment report is structured, UNECE R155 Annex 5 threat categories and ISO/SAE 21434 process work products for the in-vehicle and update surfaces, and OWASP API, Mobile and IoT for the cloud, app and telematics surfaces added later. The vulnerability roadmap and the mapping live in [`Vulns/README.md`](Vulns/README.md). Nothing in that catalog is implemented yet.
+Findings carry a dual mapping, the way a TIC assessment report is structured, UNECE R155 Annex 5 threat categories and ISO/SAE 21434 process work products for the in-vehicle and update surfaces, and OWASP API, Mobile and IoT for the cloud, app and telematics surfaces added later. The vulnerability roadmap and the mapping live in [`Vulns/README.md`](Vulns/README.md). The first chain (`AUTO-01/05/02`, the Jeep reconstruction) is implemented, the rest of the catalog is a roadmap.
 
 ## Documents
 
@@ -117,4 +117,4 @@ Findings will carry a dual mapping, the way a TIC assessment report is structure
 
 ## Status
 
-Phase 0. Promoted to `src/labs/canary/` and verified on the Pi in simulation (the SOME/IP to CAN to BCM chain, SetLock and GetLockState). The SOME/IP header and CAN frame packers are unit-checked (`tools/test_canary.py`). Hardware mode with the two MCP2515 modules and the AGL head-unit node are brought up per [`LAB_SETUP.md`](LAB_SETUP.md). No intentional vulnerabilities exist yet.
+Phase 0 promoted to `src/labs/canary/` and verified on the Pi in simulation (the SOME/IP to CAN to BCM chain, SetLock and GetLockState). The first vulnerability chain (`AUTO-01/05/02`, the Jeep reconstruction) is implemented, documented, and verified on the Pi in simulation (DONE). The SOME/IP header, CAN frame packers, and the chain gateway logic are unit-checked (`tools/test_canary.py`). Hardware mode with the two MCP2515 modules and the AGL head-unit node are brought up per [`LAB_SETUP.md`](LAB_SETUP.md). The remaining roadmap is PENDING.

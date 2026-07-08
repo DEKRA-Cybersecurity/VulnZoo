@@ -1,7 +1,7 @@
 #!/bin/sh
-# 70-canary-firewall.sh - expose the SOME/IP service on the LAN (deliberately permissive).
-# The CAN bus is reached with the tester's own USB-CAN adapter, so only the
-# SOME/IP UDP endpoint needs a LAN rule here.
+# 70-canary-firewall.sh - expose the SOME/IP endpoints on the LAN (deliberately permissive).
+# The CAN bus is reached with the tester's own USB-CAN adapter, so only the SOME/IP
+# UDP endpoints (service :30509 and the exposed management :30510) need a LAN rule.
 LOG=/root/vulnzoo.log
 
 log_message() {
@@ -23,6 +23,8 @@ add_rule() {
 }
 
 add_rule someip "$(uci -q get canary.main.someip_port)" udp
+add_rule mgmt "$(uci -q get canary.main.mgmt_port)" udp
+add_rule sd "$(uci -q get canary.main.sd_port)" udp
 uci commit firewall
 /etc/init.d/firewall reload >> "$LOG" 2>&1
 exit 0

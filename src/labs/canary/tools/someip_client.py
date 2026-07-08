@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # someip_client.py - PC-side reference control client for canary CentralLockingService.
 #
-# Usage: someip_client.py <host> lock|unlock|state [port]
-#   someip_client.py 192.168.2.1 lock
+# Usage: someip_client.py <host> lock|unlock|state [token]
+#   someip_client.py 192.168.2.1 lock AGL-HEADUNIT-7c2f
 #   someip_client.py 192.168.2.1 state
 #
-# This is the legitimate driver used to exercise phase 0 from the tester PC. It is
-# NOT part of the deployed vehicle image (lives under tools/, outside files/). It
-# is also the client whose SOME/IP calls a later phase's attacker replays or forges.
+# The legitimate head unit holds the SetLock token; lock/unlock require it (the
+# gateway rejects a tokenless SetLock). state is read-only and needs no token. NOT
+# part of the deployed vehicle image (lives under tools/, outside files/). Port
+# override via CANARY_SOMEIP_PORT.
+import os
 import socket
 import struct
 import sys
@@ -16,6 +18,7 @@ SERVICE_ID = 0x1401
 M_SETLOCK = 0x0001
 M_GETSTATE = 0x0002
 MT_REQUEST = 0x00
+MT_ERROR = 0x81
 
 
 def pack(method, payload=b''):
@@ -31,14 +34,15 @@ def state_byte(pkt):
 
 def main():
     if len(sys.argv) < 3:
-        print('usage: someip_client.py <host> lock|unlock|state [port]')
+        print('usage: someip_client.py <host> lock|unlock|state [token]')
         return
     host, action = sys.argv[1], sys.argv[2]
-    port = int(sys.argv[3]) if len(sys.argv) > 3 else 30509
+    token = sys.argv[3].encode() if len(sys.argv) > 3 else b''
+    port = int(os.environ.get('CANARY_SOMEIP_PORT', '30509'))
     if action == 'lock':
-        req = pack(M_SETLOCK, b'\x01')
+        req = pack(M_SETLOCK, token + b'\x01')
     elif action == 'unlock':
-        req = pack(M_SETLOCK, b'\x00')
+        req = pack(M_SETLOCK, token + b'\x00')
     elif action == 'state':
         req = pack(M_GETSTATE)
     else:
@@ -52,8 +56,11 @@ def main():
     except socket.timeout:
         print('no response')
         return
-    b = state_byte(resp)
-    print('locked' if b and b[0] else 'unlocked')
+    if resp[14] == MT_ERROR:
+        print('rejected (bad or missing token)')
+        return
+    val = state_byte(resp)
+    print('locked' if val and val[0] else 'unlocked')
 
 
 if __name__ == '__main__':
