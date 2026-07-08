@@ -52,10 +52,10 @@
       <div class="content-section">
         <h2>What is this environment?</h2>
         <p><strong>CareOtter</strong> is a vulnerable cardiac device ecosystem simulator for security testing and learning. It reproduces a realistic modern cardiac remote-monitoring deployment composed of two layers:</p>
-        <p><strong>1. ICD Implant</strong> — a simulated cardiac implant (Implantable Cardioverter-Defibrillator) represented by a <strong>MAX30102 pulse-oximeter sensor</strong> connected via I2C to the bedside monitor. It generates continuous cardiac telemetry (BPM / SpO₂) and accepts therapeutic commands such as defibrillation simulation and threshold configuration.</p>
-        <p><strong>2. Bedside Monitor / Home Monitor</strong> — a <strong>Raspberry Pi 3B+ running OpenWRT</strong> that acts as the clinical gateway. It reads vitals from the implant over I2C, exposes them via BLE for bedside/mobile review, streams them over HTTP to the hospital cloud, and provides device administration through a legacy binary protocol (IGP v4).</p>
-        <p><strong>VulnZoo WWW interface</strong> — device management, loading/resetting the CareOtter simulator, and project administration.</p>
-        <p><strong>CareOtter device interface</strong> — the bedside monitor and its vulnerable services (BLE, HTTP, IGP v4). This is where you perform penetration testing against a realistic medical IoT gateway.</p>
+        <p><strong>1. ICD Implant</strong>: a simulated cardiac implant (Implantable Cardioverter-Defibrillator) represented by a <strong>MAX30102 pulse-oximeter sensor</strong> connected via I2C to the bedside monitor. It generates continuous cardiac telemetry (BPM / SpO₂) and accepts therapeutic commands such as defibrillation simulation and threshold configuration.</p>
+        <p><strong>2. Bedside Monitor / Home Monitor</strong>: a <strong>Raspberry Pi 3B+ running OpenWRT</strong> that acts as the clinical gateway. It reads vitals from the implant over I2C, exposes them via BLE for bedside/mobile review, streams them over HTTP to the hospital cloud, and provides device administration through a legacy binary protocol (IGP v4).</p>
+        <p><strong>VulnZoo WWW interface</strong>: device management, loading/resetting the CareOtter simulator, and project administration.</p>
+        <p><strong>CareOtter device interface</strong>: the bedside monitor and its vulnerable services (BLE, HTTP, IGP v4). This is where you perform penetration testing against a realistic medical IoT gateway.</p>
       </div>
 
       <div class="content-section">
@@ -69,21 +69,21 @@
       <div class="content-section">
         <h2>Lab prerequisites</h2>
         <ul>
-          <li><strong>WiFi</strong> — the attacker PC (running Docker) and the Android phone must be on the <strong>same WiFi network</strong> so the mobile app can reach the Cloud API.</li>
-          <li><strong>Bluetooth</strong> — the phone must have <strong>Bluetooth enabled</strong> to pair with the BLE GATT server running on the Raspberry Pi.</li>
-          <li><strong>Ethernet</strong> — a <strong>direct cable</strong> between Raspberry Pi and PC is required (PC static IP <code>192.168.2.2/24</code>) for Pi-to-Cloud-API communication and all network attacks.</li>
+          <li><strong>WiFi</strong>: the attacker PC (running Docker) and the Android phone must be on the <strong>same WiFi network</strong> so the mobile app can reach the Cloud API.</li>
+          <li><strong>Bluetooth</strong>: the phone must have <strong>Bluetooth enabled</strong> to pair with the BLE GATT server running on the Raspberry Pi.</li>
+          <li><strong>Ethernet</strong>: a <strong>direct cable</strong> between Raspberry Pi and PC is required (PC static IP <code>192.168.2.2/24</code>) for Pi-to-Cloud-API communication and all network attacks.</li>
         </ul>
       </div>
 
       <div class="content-section">
         <h2>Device architecture</h2>
         <ul>
-          <li><strong>ICD Implant (MAX30102)</strong> — I2C-connected pulse-oximeter sensor simulating the cardiac implant. Provides BPM / SpO₂ telemetry and receives therapeutic commands.</li>
-          <li><strong>Bedside Monitor (Raspberry Pi)</strong> — OpenWRT gateway that reads I2C data from the implant, runs BLE, HTTP, and IGP v4 services.</li>
-          <li><strong>BLE</strong> — GATT services exposed by the bedside monitor for continuous heart rate and SpO₂ monitoring, interacting with mobile apps and wearables.</li>
-          <li><strong>Cloud API</strong> — backend gateway (Flask) bridging the bedside monitor's IGP v4 admin protocol to REST, enabling remote monitoring and clinician dashboards.</li>
-          <li><strong>Web interface</strong> — embedded dashboard with real-time cardiac telemetry, device status, and admin controls.</li>
-          <li><strong>Mobile app</strong> — Android companion connecting via BLE to the bedside monitor or via WiFi to the cloud API.</li>
+          <li><strong>ICD Implant (MAX30102)</strong>: I2C-connected pulse-oximeter sensor simulating the cardiac implant. Provides BPM / SpO₂ telemetry and receives therapeutic commands.</li>
+          <li><strong>Bedside Monitor (Raspberry Pi)</strong>: OpenWRT gateway that reads I2C data from the implant, runs BLE, HTTP, and IGP v4 services.</li>
+          <li><strong>BLE</strong>: GATT services exposed by the bedside monitor for continuous heart rate and SpO₂ monitoring, interacting with mobile apps and wearables.</li>
+          <li><strong>Cloud API</strong>: backend gateway (Flask) bridging the bedside monitor's IGP v4 admin protocol to REST, enabling remote monitoring and clinician dashboards.</li>
+          <li><strong>Web interface</strong>: embedded dashboard with real-time cardiac telemetry, device status, and admin controls.</li>
+          <li><strong>Mobile app</strong>: Android companion connecting via BLE to the bedside monitor or via WiFi to the cloud API.</li>
         </ul>
       </div>
 
@@ -91,10 +91,10 @@
         <h2>Security training focus</h2>
         <p>CareOtter supports multiple security profiles via idempotent hooks that reconfigure the device without code changes.</p>
         <ul>
-          <li><strong>Phase 1 — Secure</strong>. Baseline secure configuration with all protections enabled.</li>
-          <li><strong>Phase 2 — Wireless</strong>. Relaxed BLE controls for wireless attack surface practice.</li>
-          <li><strong>Phase 3 — Network</strong>. Weakened cloud and API protections for network attacks.</li>
-          <li><strong>Phase 4 — Data</strong>. Reduced storage and logging protections for data extraction.</li>
+          <li><strong>Phase 1: Secure</strong>. Baseline secure configuration with all protections enabled.</li>
+          <li><strong>Phase 2: Wireless</strong>. Relaxed BLE controls for wireless attack surface practice.</li>
+          <li><strong>Phase 3: Network</strong>. Weakened cloud and API protections for network attacks.</li>
+          <li><strong>Phase 4: Data</strong>. Reduced storage and logging protections for data extraction.</li>
         </ul>
       </div>
 
