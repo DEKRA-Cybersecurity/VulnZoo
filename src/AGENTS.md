@@ -43,7 +43,7 @@ src/
 ├── AGENTS.md          ← Layer 0 (this file)
 ├── CLAUDE.md / KIMI.md ← Layer 1 entry points
 ├── MWP_README.md      ← MWP methodology guide
-├── labs/              ← OpenWRT image + lab overlays (.tar.gz): vulnzoo, careotter, routcoon, owlcam, octobot
+├── labs/              ← OpenWRT image + lab overlays (.tar.gz): vulnzoo, careotter, routcoon, owlcam, octobot, canary
 ├── cloud_api/         ← Dockerized Flask backends: careotter (SQLite+IGP), owlcam (MongoDB+C2/SSE)
 ├── vulnzoo_apps/      ← Android apps: careotter_app (Java/BLE), owlcam_app (Kotlin/Compose), octobot_app (Java, cloud REST control)
 └── docs/              ← Layer 3 reference: per-device vulnerability docs (OWASP-mapped)
@@ -67,10 +67,11 @@ src/
 | `routcoon` (router) | [`docs/Router/`](docs/Router/) |
 | `owlcam` (IP camera) | [`docs/IP Camera/`](docs/IP%20Camera/) |
 | `octobot` (industrial) | [`docs/OctoBot/`](docs/OctoBot/) |
+| `canary` (automotive) | [`docs/Canary/`](docs/Canary/) |
 
 ## Global conventions
 
-- **OWASP IDs**: API `API1:2023`…`API10:2023`. IoT `IoT:I1`…`IoT:I5` (router) / `IoT1`…`IoT4`. Mobile `M6`, `M9`. Custom: `IGP-01`, `BLE-07`.
+- **OWASP IDs**: API `API1:2023`…`API10:2023`. IoT `IoT:I1`…`IoT:I5` (router) / `IoT1`…`IoT4`. Mobile `M6`, `M9`. Custom: `IGP-01`, `BLE-07`, `AUTO-##` (automotive CAN/SOME-IP).
 - **Status badges** (in vuln docs): `DONE` · `PENDING` · `IN PROGRESS` — plain text, no emoji.
 - **Naming**: lab/device folders lowercase (`careotter/`), lab package `<device>.tar.gz`, hooks `##-descriptive-name.sh`.
 - **Vuln docs** carry YAML frontmatter (`id`, `title`, `category`, `status`, `severity`, `owasp`, `cwe`, `affected_components`).

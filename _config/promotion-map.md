@@ -37,6 +37,7 @@ mv <device>.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/<device>.tar.gz
 | `routcoon` | `src/labs/routcoon/` | — | `src/docs/Router/` |
 | `owlcam` | `src/labs/owlcam/` | `src/cloud_api/owlcam/` | `src/docs/IP Camera/` |
 | `octobot` | `src/labs/octobot/` | `src/cloud_api/octobot/` | `src/docs/OctoBot/` |
+| `canary` | `src/labs/canary/` | - (phase 0: none) | `src/docs/Canary/` |
 
 ## Post-promotion checks
 1. Lab still loads — see `src/labs/<device>/CONTEXT.md`.

@@ -9,7 +9,7 @@
 ## Identifiers
 - **API**: `API1:2023` … `API10:2023` (OWASP API Security Top 10 2023).
 - **IoT**: `IoT:I1` … `IoT:I5` (router style) or `IoT1` … `IoT4` (OWASP IoT Top 10).
-- **Mobile**: `M6`, `M9` (OWASP Mobile Top 10). Custom: `IGP-01`, `BLE-07`.
+- **Mobile**: `M6`, `M9` (OWASP Mobile Top 10). Custom: `IGP-01`, `BLE-07`, `AUTO-##` (automotive CAN/SOME-IP).
 - Always pair with a **CWE**: `CWE-XXX (Name)`.
 
 ## Status badges

@@ -1,0 +1,66 @@
+#!/bin/sh /etc/rc.common
+# canary-can - detect the CAN modules and bring the bus up.
+#
+# Self-healing: this service is enabled, so it runs on EVERY boot before the
+# gateway/bcm services (START 90 < 95). It picks the mode on its own (hardware if
+# both MCP2515 are present, else vcan simulation) and writes the resolved
+# interface names to /tmp/canary/, which the gateway/bcm read. /tmp is the source
+# of truth: the base tarball re-extraction later in boot can revert
+# /etc/config/canary's use_real_hardware back to 0, so do not trust that file.
+START=90
+STOP=11
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [canary-can] $1" >> /root/vulnzoo.log; }
+
+start() {
+	mkdir -p /tmp/canary
+
+	BITRATE="$(uci -q get canary.main.bitrate)"; BITRATE="${BITRATE:-500000}"
+	CGW="$(uci -q get canary.main.cgw_iface)"; CGW="${CGW:-can0}"
+	BCM="$(uci -q get canary.main.bcm_iface)"; BCM="${BCM:-can1}"
+	SIM="$(uci -q get canary.main.sim_iface)"; SIM="${SIM:-vcan0}"
+
+	# Wait up to ~6s for both MCP2515 controllers to probe. On boot the SPI probe
+	# can land after this service starts. Integer sleep only (busybox sleep
+	# rejects fractions like 0.2).
+	n=0
+	while [ "$n" -lt 6 ]; do
+		[ -d "/sys/class/net/$CGW" ] && [ -d "/sys/class/net/$BCM" ] && break
+		n=$((n + 1))
+		sleep 1
+	done
+
+	if [ -d "/sys/class/net/$CGW" ] && [ -d "/sys/class/net/$BCM" ]; then
+		uci -q set canary.main.use_real_hardware='1'; uci -q commit canary
+		echo "$CGW" > /tmp/canary/cgw_iface
+		echo "$BCM" > /tmp/canary/bcm_iface
+		echo hardware > /tmp/canary/mode
+		for dev in "$CGW" "$BCM"; do
+			ip link set "$dev" down 2>/dev/null
+			if ip link set "$dev" type can bitrate "$BITRATE" 2>/dev/null && ip link set "$dev" up 2>/dev/null; then
+				log "CAN up: $dev @ ${BITRATE}"
+			else
+				log "ERROR: could not bring up $dev (need ip-full with CAN support)"
+			fi
+		done
+	else
+		# 0 or 1 modules: a lone real node has no peer to ACK and would bus-off,
+		# so fall back to a single virtual bus.
+		uci -q set canary.main.use_real_hardware='0'; uci -q commit canary
+		echo "$SIM" > /tmp/canary/cgw_iface
+		echo "$SIM" > /tmp/canary/bcm_iface
+		echo simulation > /tmp/canary/mode
+		ip link add dev "$SIM" type vcan 2>/dev/null
+		if ip link set "$SIM" up 2>/dev/null; then
+			log "vcan up: $SIM (simulation)"
+		else
+			log "ERROR: could not bring up $SIM (need ip-full and kmod-can-vcan)"
+		fi
+	fi
+
+	log "mode=$(cat /tmp/canary/mode 2>/dev/null) cgw=$(cat /tmp/canary/cgw_iface 2>/dev/null) bcm=$(cat /tmp/canary/bcm_iface 2>/dev/null)"
+}
+
+stop() {
+	return 0
+}

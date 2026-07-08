@@ -10,6 +10,7 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 | `routcoon` | `Router/` | Home/enterprise router |
 | `owlcam` | `IP Camera/` | IP camera surveillance |
 | `octobot` | `OctoBot/` | Industrial (robotic arm, ICS) |
+| `canary` | `Canary/` | Automotive (CAN gateway + SOME/IP) |
 
 ## Service ports
 
@@ -29,6 +30,8 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 | octobot | MQTT broker | 1883 | MQTT |
 | octobot | Modbus/TCP | 502 | TCP |
 | octobot | Cloud API (PC) | 5003 | HTTP |
+| canary | SOME/IP CentralLockingService | 30509 | UDP |
+| canary | CAN bus (can0/can1) | - | CAN |
 
 ## Key terms
 

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VulnZoo - CANary Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="../assets/images/vulnzoo.ico">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+  <div id="navbar">
+    <div id="logo">
+      <a href="../index.html" style="text-decoration:none; display:flex; align-items:center; gap:14px;">
+        <img src="../assets/images/vulnzoo.jpeg" alt="VulnZoo Logo">
+        <h1>VulnZoo</h1>
+      </a>
+    </div>
+    <div id="nav-menus">
+      <a href="../index.html" class="nav-link">Overview</a>
+      <a href="devices.html" class="nav-link">Devices</a>
+      <a href="admin.html" class="nav-link">Admin</a>
+      <a href="https://github.com/DEKRA-Cybersecurity/VulnZoo" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="page-wrap">
+
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">vulnzoo / device / automotive</div>
+          <h2>CANary</h2>
+        </div>
+        <span id="device-status" class="status stopped">Stop</span>
+      </div>
+
+      <div class="content-section">
+        <h2>Device status</h2>
+        <p>Active device: <span id="active-device">None</span></p>
+      </div>
+
+      <div class="content-section">
+        <h2>Canary control</h2>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="loadDevice('canary')">Load Canary</button>
+          <button class="btn btn-danger" onclick="resetCurrentDevice()">RESET DEVICE</button>
+          <a href="admin.html" class="btn">VulnZoo admin</a>
+        </div>
+      </div>
+
+      <div class="content-section">
+        <h2>What is this environment?</h2>
+        <p><strong>Canary</strong> is a vulnerable automotive (in-vehicle) lab built around a small ECU subsystem on a real CAN bus. It models a certification-bench scenario: the sample that an assessor at a TIC company (such as DEKRA) receives for a UNECE R155 and ISO/SAE 21434 evaluation, a representative subsystem with an external service interface and an internal vehicle network. The student plays the assessor.</p>
+        <p><strong>1. In-vehicle ECUs</strong>: two ECUs simulated on the Raspberry Pi over two <strong>MCP2515 + TJA1050</strong> CAN nodes sharing one bus: a <strong>Central Gateway (CGW)</strong> on <code>can0</code> and a <strong>Body Control Module (BCM)</strong> on <code>can1</code>.</p>
+        <p><strong>2. Service interface</strong>: a <strong>SOME/IP</strong> service over Automotive Ethernet (<code>:30509/udp</code>) that fronts the bus. A remote call is translated by the gateway into a CAN frame that drives the actuator.</p>
+        <p><strong>3. Controlled function</strong>: phase 0 wires a single vehicle function end to end, <strong>central locking</strong>. A SOME/IP <code>SetLock</code> becomes CAN <code>LOCK_CMD</code> (<code>0x120</code>), the BCM actuates and reports <code>LOCK_STAT</code> (<code>0x121</code>).</p>
+        <p>This is the <strong>functional bring-up</strong>. There are no intentional vulnerabilities yet, the attack surface (SOME/IP without authentication, CAN injection and replay, UDS diagnostics, unsigned OTA) arrives in later phases. The lab runs <strong>with or without the physical modules</strong>: when none are attached, a virtual CAN interface simulates the bus so the whole SOME/IP to CAN chain still works.</p>
+      </div>
+
+      <div class="content-section">
+        <h2>Where to start?</h2>
+        <p><strong>Click "Load Canary" to deploy the lab on the Raspberry Pi.</strong> The init hooks detect the CAN modules (or fall back to simulation), bring the interfaces up, and start the two ECU services.</p>
+        <p><strong>Then drive it from the PC.</strong> The reference SOME/IP client sends lock, unlock, and state over UDP: <code>python3 tools/someip_client.py 192.168.2.1 lock</code>. With a USB-CAN adapter on the bus, <code>candump</code> shows <code>LOCK_CMD 0x120</code> and <code>LOCK_STAT 0x121</code>.</p>
+        <p>Detailed launch, protocol maps, and the vulnerability roadmap live in the repo docs: <code>docs/Canary/Canary.md</code> and <code>docs/Canary/Vulns/README.md</code> (OWASP plus R155 / ISO 21434 mapping).</p>
+      </div>
+
+      <div class="content-section">
+        <h2>Lab prerequisites</h2>
+        <ul>
+          <li><strong>Ethernet</strong>: a <strong>direct cable</strong> between Raspberry Pi and PC (Pi <code>192.168.2.1</code>, PC static <code>192.168.2.2/24</code>) for the SOME/IP service.</li>
+          <li><strong>CAN modules (optional)</strong>: 2x MCP2515 + TJA1050 on the Pi's SPI0 (CE0 -> <code>can0</code>, CE1 -> <code>can1</code>) with separate INT GPIOs and a <strong>120 ohm</strong> terminator at each of the two bus ends. Without them the lab runs in <code>vcan</code> simulation.</li>
+          <li><strong>USB-CAN adapter (tester)</strong>: the attacks and tests come from the PC, so the tester clips a USB-CAN adapter onto the bus, the way a bench tester plugs into the OBD-II port.</li>
+          <li><strong>Isolation</strong>: run on a <strong>dedicated, air-gapped LAN</strong>. This is deliberately vulnerable and, with real modules, moves a physical actuator.</li>
+        </ul>
+      </div>
+
+      <div class="content-section">
+        <h2>Device architecture</h2>
+        <ul>
+          <li><strong>Central Gateway - CGW</strong> (<code>can0</code>): hosts the SOME/IP <code>CentralLockingService</code> (<code>SetLock</code>, <code>GetLockState</code>, <code>LockStatus</code>) on <code>:30509/udp</code> and translates it to the CAN bus.</li>
+          <li><strong>Body Control Module - BCM</strong> (<code>can1</code>): listens for <code>LOCK_CMD</code>, actuates the central lock (state file plus an optional GPIO indicator), and transmits <code>LOCK_STAT</code> on change and as a 500 ms heartbeat.</li>
+          <li><strong>CAN bus</strong> (<code>can0</code> / <code>can1</code>, or <code>vcan0</code>): classic CAN at 500 kbit/s, <code>LOCK_CMD 0x120</code> and <code>LOCK_STAT 0x121</code>.</li>
+          <li><strong>Test model (Model A)</strong>: the tester works from the PC: Ethernet for the SOME/IP layer, a USB-CAN adapter for the bus. The Pi stays a clean vehicle image with no attacker tooling on board.</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <p><a href="https://github.com/VulnZoo/VulnZoo" target="_blank" rel="noopener">VulnZoo Project © 2025 · github.com/VulnZoo</a></p>
+  </footer>
+
+  <script src="../assets/js/vulnzoo.js"></script>
+</body>
+</html>
