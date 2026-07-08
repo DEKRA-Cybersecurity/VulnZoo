@@ -1,0 +1,18 @@
+{
+  "_comment": "vsomeip config for the AGL head-unit to reach the canary Central Gateway. This is the realistic SOME/IP path (advanced). The MVP uses the lightweight python client instead, see agl/README.md. Point vsomeip apps at this file with VSOMEIP_CONFIGURATION.",
+  "unicast": "10.0.2.15",
+  "logging": { "level": "info", "console": "true" },
+  "applications": [
+    { "name": "headunit", "id": "0x1400" }
+  ],
+  "routing": "headunit",
+  "service-discovery": { "enable": "false" },
+  "services": [
+    {
+      "service": "0x1401",
+      "instance": "0x0001",
+      "unicast": "192.168.2.1",
+      "unreliable": "30509"
+    }
+  ]
+}

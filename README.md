@@ -38,7 +38,7 @@ The ecosystem models a real product with all its interconnected layers:
 
 - **CareOtter** (in development): Connected medical device with insecure storage of sensitive data and unencrypted communications.
 
-- **AutoPwned** (in development): Automotive ECU simulation with vulnerabilities in SOME IP or CAN-like protocols.
+- **CANary** (in development): Automotive ECU simulation with vulnerabilities in SOME IP or CAN-like protocols.
 
 - **OctoBot** (in development): Robotic arm simulation that uses industrial communication protocols like Modbus TCP/IP.
 

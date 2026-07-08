@@ -36,6 +36,8 @@
 | octobot | ser2net serial bridge | 2000 | TCP |
 | octobot | Modbus/TCP | 502 | TCP |
 | octobot | Cloud API (PC) | 5003 | HTTP |
+| canary | SOME/IP CentralLockingService | 30509 | UDP |
+| canary | CAN bus (can0/can1) | - | CAN |
 | cloud_api | C2 Server | 5000 | HTTP |
 | cloud_api | MQTT Broker | 1883 | MQTT |
 
