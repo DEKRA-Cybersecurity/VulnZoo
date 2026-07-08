@@ -1,5 +1,6 @@
 #!/bin/sh /etc/rc.common
-# canary CGW - SOME/IP CentralLockingService + CAN gateway (SetLock -> LOCK_CMD).
+# canary CGW - SOME/IP CentralLockingService + CAN gateway (SetLock -> LOCK_CMD),
+# plus the exposed management endpoint used by the Jeep kill chain (AUTO-01/05/02).
 START=95
 STOP=10
 USE_PROCD=1
@@ -17,7 +18,12 @@ start_service() {
 		CANARY_IFACE="$(canary_iface)" \
 		CANARY_SOMEIP_PORT="$(uci -q get canary.main.someip_port)" \
 		CANARY_EVENT_TARGET="$(uci -q get canary.main.someip_event_target)" \
-		CANARY_STATE_PATH="$(uci -q get canary.main.state_path)"
+		CANARY_MODE="$(uci -q get canary.main.mode)" \
+		CANARY_MGMT_PORT="$(uci -q get canary.main.mgmt_port)" \
+		CANARY_SETLOCK_TOKEN="$(uci -q get canary.main.setlock_token)" \
+		CANARY_FW_KEY="$(uci -q get canary.main.fw_key)" \
+		CANARY_SD_ENABLED="$(uci -q get canary.main.sd_enabled)" \
+		CANARY_SD_PORT="$(uci -q get canary.main.sd_port)"
 	procd_set_param respawn
 	procd_set_param stdout 1
 	procd_set_param stderr 1

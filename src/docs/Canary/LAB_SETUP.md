@@ -128,14 +128,20 @@ Log in per the AGL QuickStart (linked in `agl/README.md`). The VM uses QEMU user
 
 ## Part 5 - Lock the car from the head unit
 
-From AGL, send a SOME/IP `SetLock` to the gateway. The reproducible path reuses the lab's reference client.
+The head unit's central-locking control lives on AGL under `agl/`. Copy it into the guest and operate it, this is the legitimate control an occupant uses and its traffic is what the attack later sniffs. `SetLock` is authenticated, the control holds the token (`AGL-HEADUNIT-7c2f` by default, `canary.main.setlock_token`).
 
 ```sh
-# on the PC, push the client into the AGL guest, then drive it
-scp -P 2222 src/labs/canary/tools/someip_client.py root@localhost:/tmp/
-ssh -p 2222 root@localhost 'python3 /tmp/someip_client.py 192.168.2.1 lock'    # -> locked
-ssh -p 2222 root@localhost 'python3 /tmp/someip_client.py 192.168.2.1 state'   # -> locked
-ssh -p 2222 root@localhost 'python3 /tmp/someip_client.py 192.168.2.1 unlock'  # -> unlocked
+# on the PC, copy the head-unit control into the AGL guest
+scp -P 2222 -r src/labs/canary/agl/carctl src/labs/canary/agl/lock-ui root@localhost:/tmp/
+
+# Level 1 (CLI): operate the lock from the AGL console
+ssh -p 2222 root@localhost 'python3 /tmp/carctl lock'      # -> locked
+ssh -p 2222 root@localhost 'python3 /tmp/carctl state'     # -> locked
+ssh -p 2222 root@localhost 'python3 /tmp/carctl unlock'    # -> unlocked
+
+# Level 2 (IVI screen): serve the web control on AGL, then open it in the IVI browser
+ssh -p 2222 root@localhost 'python3 /tmp/lock-ui/server.py &'
+#   then open http://<agl-ip>:8088/ in the IVI browser and press Lock / Unlock
 ```
 
 Watch it on the wire from the PC with the USB-CAN adapter (assuming it comes up as `can0` on your PC, at 500 kbit/s):
