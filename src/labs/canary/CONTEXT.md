@@ -1,6 +1,6 @@
 # canary - Automotive CAN / SOME-IP Lab (Layer 2)
 
-> **Status: PHASE 0 (functional bring-up).** No intentional vulnerabilities yet. The full architecture, protocol maps, and the certification-mapped vulnerability roadmap live in the spec and, once promoted, in the Layer 3 doc at `../../docs/Canary/`. This contract does not restate them.
+> **Status: Jeep kill chain (AUTO-01 / AUTO-05 / AUTO-02) implemented, documented, and verified end to end on the real CAN bus (hardware mode) and in simulation.** The dynamic-analysis surface (SOME/IP-SD FindService, standard SOME/IP error codes) and the gray-box AGL head-unit control are in place. Pending: AUTO-03 (bus flood) and AUTO-04 (UDS / ISO-TP) from the tester's USB-CAN adapter. The full architecture, protocol maps, and the certification-mapped vulnerability roadmap live in the Layer 3 doc at `../../docs/Canary/`. This contract does not restate them.
 
 **Stage Purpose**: Stand up a small in-vehicle ECU subsystem on the Pi where a SOME/IP service controls one vehicle function (central locking) end to end over a real CAN bus, so that later phases can layer intentional automotive vulnerabilities on a working base.
 
@@ -78,7 +78,7 @@ The Pi hosts two ECUs on two MCP2515 + TJA1050 CAN nodes sharing one bus: a Cent
 - [ ] Two modules: can0/can1 up at 500k, a SetLock produces LOCK_CMD 0x120 on the bus (candump on the PC adapter), the BCM emits LOCK_STAT 0x121, and the client reflects the change.
 - [ ] LOCK_STAT heartbeat visible at about 2 Hz.
 - [ ] Single-module hardware: preflight logs the one-node error and falls back to vcan, no bus-off.
-- [ ] No intentional vulnerabilities exist yet.
+- [x] Jeep kill chain (AUTO-01/05/02) verified end to end on the real CAN bus and in simulation (SD recon, error-code enumeration, tokenless SetLock rejected, unsigned reflash, RelayFrame injection unlocks without the token).
 
 ## Dependencies
 
