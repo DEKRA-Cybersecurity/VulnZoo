@@ -80,6 +80,8 @@ Note the naming: the module pin `SI` is its SPI input and goes to the Pi MOSI, `
 
 Where the USB-CAN adapter connects: its `CAN_H` goes to the `CAN_H` row and its `CAN_L` to the `CAN_L` row, so it sits on the same bus as the two modules. Leave the adapter's own 120 ohm termination OFF, the two modules already provide it.
 
+![[canary_hardware.jpg|700]]
+
 ## Part 2 - Enable CAN on the Pi (automatic, one reboot)
 
 The CAN kernel drivers are already in the image. What is missing is the device-tree overlay that makes the kernel probe the two MCP2515 chips. The lab handles it for you: when you load canary (Part 3), the `99-canary-can-overlay.sh` hook appends `spi=on` and the two `mcp2515` overlays to `/boot/config.txt` (crystal and INT pins from UCI, defaults `oscillator=8000000`, `cgw_int=25`, `bcm_int=24`, which match the wiring in Part 1) and then reboots the Pi.
