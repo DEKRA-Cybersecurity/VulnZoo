@@ -128,17 +128,17 @@ Once VulnZoo's image is flashed and running on the Raspberry Pi, a HTTP service 
 
 ### VulnZoo interface
 
-![VulnZoo interface](docs/Images/readme/vulnzoo_interface.png)
+![VulnZoo interface](src/docs/Images/readme/vulnzoo_interface.png)
 
 ### VulnZoo devices list
 
-![VulnZoo devices](docs/Images/readme/vulnzoo_devices.png)
+![VulnZoo devices](src/docs/Images/readme/vulnzoo_devices.png)
 
 The laboratories can be launched using "LOAD <DEVICE>" buttons. The interfaces that are part of each laboratory are available via "<DEVICE> INTERFACE" buttons.
 
 ### VulnZoo running device / Administration panel
 
-![VulnZoo admin panel](docs/Images/readme/vulnzoo_admin.png)
+![VulnZoo admin panel](src/docs/Images/readme/vulnzoo_admin.png)
 
 All labs can be completed without the use of additional hardware devices, but they can be used to enrich the experience. Devices used in testing and proven to be compatible with the system will be noted in the documentation.
 
@@ -149,27 +149,31 @@ One of the objectives of the platform was to rely on widely available and low-co
 - CAN Bus Module (MCP2515) – approx. $2
 - USB Camera – any standard USB camera can be used
 
-### OctoBot Laboratory hardware used (SG90 MG90S Mechanic robot)
+### OctoBot: hardware used (SG90 MG90S Mechanic robot)
 
-![OctoBot hardware](docs/Images/readme/octobot_hardware.jpg)
+![OctoBot hardware](src/docs/Images/readme/octobot_hardware.jpg)
 
-### CareOtter laboratory hardware used (MAX30102 heart rate sensor)
+### CareOtter: hardware used (MAX30102 heart rate sensor)
 
-<img src="docs/Images/readme/careotter_hardware-1.jpg" width="600" alt="CareOtter hardware">
-<img src="docs/Images/readme/careotter_hardware-2.jpg" width="600" alt="CareOtter hardware">
+<img src="src/docs/Images/readme/careotter_hardware-1.jpg" width="700" alt="CareOtter hardware 2">
+<img src="src/docs/Images/readme/careotter_hardware-2.jpg" width="700" alt="CareOtter hardware 2">
+
+### CANary: hardware used (two MCP2515 CAN modules, a protoboard and a USB-CAN adapter for attacks)
+
+<img src="src/docs/Images/readme/canary_hardware.jpg" width="700" alt="CANary hardware">
 
 ### Android apps included on laboratories environment
 
-![Android apps](docs/Images/readme/android_apps_example.png)
+![Android apps](src/docs/Images/readme/android_apps_example.png)
 
 ### RoutCoon: vulnerable router administration interface
 
-![RoutCoon interface](docs/Images/readme/routcoon_api.png)
+![RoutCoon interface](src/docs/Images/readme/routcoon_api.png)
 
 ### OwlCam: Camera's API
 
-![OwlCam API](docs/Images/readme/owlcam_api.png)
+![OwlCam API](src/docs/Images/readme/owlcam_api.png)
 
 ### CareOtter: ICDs API
 
-![CareOtter API](docs/Images/readme/careotter_api.png)
+![CareOtter API](src/docs/Images/readme/careotter_api.png)
