@@ -125,3 +125,43 @@ To run the VulnZoo API backend using Docker, follow these steps:
 ---
 
 **Note:** This environment is intended for educational and research purposes only. Do not use these techniques on real systems without proper authorization.
+
+```mermaid
+flowchart TB
+    subgraph LAN["Home LAN 192.168.2.0/24"]
+        ATT["Attacker (same subnet)"]
+        MOB["Android app (Kotlin/Compose)<br/>JWT plaintext in SharedPreferences (M9)"]
+        subgraph CAM["IP Camera - RPi/OpenWRT - 192.168.2.1<br/>Aviosys 9060ASL"]
+            WEB["Web/Device Mgmt UI :8080 (uhttpd)"]
+            RTSP["RTSP stream :8554 - plaintext (IoT2)"]
+            SSH["SSH/Dropbear :22 - admin:12345678 (IoT1)"]
+            FW["update-firmware - hardcoded key+sig (IoT4)"]
+        end
+    end
+
+    subgraph HOST["Docker host - 192.168.2.2 (cloud_api/)"]
+        API["Flask API :5000<br/>JWT HS256 'supersecretkey'<br/>API1/2/3/5/7/8/9/10"]
+        subgraph C2NET["c2_net (isolated)"]
+            MONGO["MongoDB :27017<br/>users / cameras / sessions"]
+            C2["c2-server :4999<br/>HTTP + SSE, panel pass 'letstechin'"]
+        end
+        subgraph CAMNET["cam_net (cameras only)"]
+            CADMIN["camera_admin :9090"]
+            CELLIOT["camera_elliot :9090"]
+        end
+    end
+
+    MOB -->|"REST :5000 - login, cameras, snapshot, messages"| API
+    MOB -.->|"hidden SSE :4999 - token sum(hex)%7==0 (M6 backdoor)"| C2
+    API <-->|"proxy /api/v2/diag/validate"| C2
+    API --- MONGO
+    API -->|"snapshot source"| CADMIN
+    API --- CELLIOT
+    RTSP -->|"video feed (IoT3)"| API
+    FW -->|"curl firmware URL"| API
+
+    ATT -.->|"sniff RTSP"| RTSP
+    ATT -.->|"SSH authorized_keys injection"| SSH
+    ATT -.->|"BOLA/BFLA/JWT crack/LFI/PUT firmware"| API
+    ATT -.->|"C2 panel /panel"| C2
+```

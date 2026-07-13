@@ -33,7 +33,7 @@ A video surveillance camera has been installed in a home environment, but the co
 | **Layer 3** | `../../docs/IP Camera/Mobile/ARCHITECTURE_SSE_C2.md` | C2 backdoor architecture |
 | **Layer 4** | `files/` | OpenWRT overlay files for camera |
 | **Layer 4** | `../../cloud_api/` | Docker containers for backend API |
-| **Layer 4** | `../../vulnzoo_apps/` | Mobile application source (Flutter) |
+| **Layer 4** | `../../vulnzoo_apps/` | Mobile application source (Kotlin/Compose) |
 
 ## Process
 
@@ -43,8 +43,8 @@ A video surveillance camera has been installed in a home environment, but the co
 | Component | Type | Technology | Network |
 |-----------|------|------------|---------|
 | Camera Device | Physical/Virtual | OpenWRT on Raspberry Pi | 192.168.2.1 |
-| Backend API | Docker | Python/FastAPI + MongoDB | localhost:5000 |
-| Mobile App | Android | Flutter | 10.0.2.2 (emulator) |
+| Backend API | Docker | Python/Flask + MongoDB | localhost:5000 |
+| Mobile App | Android | Kotlin/Compose | 10.0.2.2 (emulator) |
 
 **Test Credentials:**
 | Username | Password | Role | Notes |
@@ -134,11 +134,11 @@ adb shell am start -n com.example.vulnzooapp/.MainActivity
 |----------|-----------|-------------|
 | Camera Web UI | `192.168.2.1:80` | OpenWRT device management |
 | RTSP Stream | `192.168.2.1:8554` | Unencrypted video stream |
-| API Service | `:5000` | FastAPI backend |
+| API Service | `:5000` | Flask backend |
 | Admin Panel | `:5000/admin` | User/camera management |
 | C2 Panel | `:5000/c2` | Backdoor management (via LFI) |
 | MongoDB | `:27017` | User/camera data |
-| Mobile App | Android | Flutter surveillance app |
+| Mobile App | Android | Kotlin/Compose surveillance app |
 
 ## Vulnerability Chains
 
