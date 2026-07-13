@@ -1,6 +1,6 @@
 import jwt
 from datetime import datetime, timedelta
-from cloud_api.owlcam.api_server.config import Config
+from config import Config
 
 class JWTService:
     """Servicio JWT con múltiples vulnerabilidades"""

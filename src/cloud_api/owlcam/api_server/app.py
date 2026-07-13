@@ -1,6 +1,6 @@
-from cloud_api.owlcam.api_server.core.decorators import session_required_html, admin_required, tech_session_required_html
-from cloud_api.owlcam.api_server.core.auth_utils import validate_jwt_token, contains_mongo_operators
-from cloud_api.owlcam.api_server.core.c2_diag import c2_server
+from core.decorators import session_required_html, admin_required, tech_session_required_html
+from core.auth_utils import validate_jwt_token, contains_mongo_operators
+from core.c2_diag import c2_server
 import requests
 import hmac
 import hashlib
@@ -23,17 +23,17 @@ from bson.objectid import ObjectId
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 from werkzeug.utils import secure_filename
-from cloud_api.owlcam.api_server.services.jwt_service import JWTService
+from services.jwt_service import JWTService
 from functools import wraps
 from bs4 import BeautifulSoup
 
-from cloud_api.owlcam.api_server.config import Config
-from cloud_api.owlcam.api_server.config import mongo_client
-from cloud_api.owlcam.api_server.repositories.user_repository import UserRepository
-from cloud_api.owlcam.api_server.services.user_service import UserService
-from cloud_api.owlcam.api_server.repositories.snapshot_repository import SnapshotRepository
-from cloud_api.owlcam.api_server.services.snapshot_service import SnapshotService
-from cloud_api.owlcam.api_server.services.db_status_service import DbStatusService
+from config import Config
+from config import mongo_client
+from repositories.user_repository import UserRepository
+from services.user_service import UserService
+from repositories.snapshot_repository import SnapshotRepository
+from services.snapshot_service import SnapshotService
+from services.db_status_service import DbStatusService
 
 
 app = Flask(__name__)

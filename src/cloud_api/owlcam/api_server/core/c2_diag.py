@@ -13,7 +13,7 @@ se ha movido al contenedor c2-server que opera en puerto 4999.
 
 import requests
 import logging
-from cloud_api.owlcam.api_server.config import Config
+from config import Config
 
 logger = logging.getLogger('diag_sys_c2')
 

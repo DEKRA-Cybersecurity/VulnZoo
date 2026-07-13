@@ -1,7 +1,7 @@
 from functools import wraps
 import token
-from cloud_api.owlcam.api_server.config import mongo_client
-from cloud_api.owlcam.api_server.core.auth_utils import validate_jwt_token
+from config import mongo_client
+from core.auth_utils import validate_jwt_token
 from flask import request, redirect, url_for, jsonify
 from bson.objectid import ObjectId
 
