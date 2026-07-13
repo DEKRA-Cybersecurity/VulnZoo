@@ -18,7 +18,7 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 | MQTT bridge | `opt/octobot/robot_mqtt_bridge.py` | 1883 | Subscribes to `cell01/cmd` and forwards to the bus; auto-injects actuator password |
 | Firmware image | `opt/octobot/firmware/robot_arm.hex` | - | Build artifact (see `firmware/README.md`), flashed by hook |
 | UCI config | `etc/config/octobot` | - | Per-item `VULNERABLE`/`SECURE` toggle + `use_real_hardware` (default `0`) |
-| Cloud API (PC, not in overlay) | `src/cloud_api/octobot/` | 5003 | REST + web UI + Modbus master, single-operator login (SQLite) |
+| Cloud API (PC, not in overlay) | `src/cloud_api/octobot/` | 5002 | REST + web UI + Modbus master, single-operator login (SQLite) |
 
 ## Inputs
 

@@ -13,7 +13,7 @@ OctoBot is the VulnZoo industrial/ICS lab. A 4-DOF robot arm (HU-M16 shield on a
 | Real-time controller | Arduino UNO + HU-M16 shield, 4 servos (SG90/MG90S)                       |
 | Pi <-> Arduino link  | USB serial 115200, `Sx:angle` frames                                     |
 | Industrial protocol  | Modbus/TCP (`:502`) PC master -> Pi gateway                              |
-| Cloud                | Dockerized Flask REST + web UI (`:5003`), single-operator login (SQLite) |
+| Cloud                | Dockerized Flask REST + web UI (`:5002`), single-operator login (SQLite) |
 | Mobile               | Android control app (Java, cloud REST) under `../../vulnzoo_apps/octobot_app/` |
 | Network              | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet                   |
 
@@ -42,7 +42,7 @@ The lab implements the OWASP IoT Top 10 (`IoT:I1`..`IoT:I10`), each behind a `VU
 
 ## Launch and verify
 
-Defaults: Pi `192.168.2.1` over direct Ethernet, gateway `:8090`, serial bus `:2000`, Modbus `:502`, MQTT `:1883`, cloud `:5003`. Full reference: [`OPENWRT_INTEGRATION.md`](OPENWRT_INTEGRATION.md) Sections 2-6.
+Defaults: Pi `192.168.2.1` over direct Ethernet, gateway `:8090`, serial bus `:2000`, Modbus `:502`, MQTT `:1883`, cloud `:5002`. Full reference: [`OPENWRT_INTEGRATION.md`](OPENWRT_INTEGRATION.md) Sections 2-6.
 
 ### 1. (Hardware only) build and ship the firmware
 
@@ -97,7 +97,7 @@ Access points:
 
 | URL | Description |
 |-----|-------------|
-| `http://localhost:5003` | Local access |
+| `http://localhost:5002` | Local access |
 | `http://api.octobot.lab` | Friendly hostname (managed by `cloudctl.sh`) |
 
 Default login: `operator` / `octobot`.
@@ -107,7 +107,7 @@ Default login: `operator` / `octobot`.
 ```sh
 cd src/cloud_api/octobot
 docker compose up --build -d
-# log in at http://localhost:5003 (default operator / octobot) to reach the console
+# log in at http://localhost:5002 (default operator / octobot) to reach the console
 ```
 
 ### 5. Verify the control paths
@@ -118,12 +118,12 @@ printf 'S0:90\n' | nc 192.168.2.1 2000                                     # raw
 curl -s 'http://192.168.2.1:8090/api/move?servo=0&angle=45'              # HMI / REST (auto-injects PASS:)
 python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",port=502); c.connect(); c.write_register(0,120); c.close()'   # Modbus
 mosquitto_pub -h 192.168.2.1 -t cell01/cmd -m 'S3:5'                     # MQTT
-curl -s -X POST http://localhost:5003/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}'   # cloud
+curl -s -X POST http://localhost:5002/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}'   # cloud
 curl -s http://192.168.2.1:8090/logs                                     # operator log (IoT:I6)
 ```
 ## Cloud API Reference
 
-Flask application at `src/cloud_api/octobot/`. Runs on port **5003**.
+Flask application at `src/cloud_api/octobot/`. Runs on port **5002**.
 
 ### Authentication
 

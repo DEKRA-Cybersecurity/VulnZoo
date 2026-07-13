@@ -14,7 +14,7 @@ class Config:
     MODBUS_PORT = int(os.getenv('MODBUS_PORT', '502'))
 
     # ── HTTP ──────────────────────────────────────────────────────────────────
-    HTTP_PORT = int(os.getenv('HTTP_PORT', '5003'))
+    HTTP_PORT = int(os.getenv('HTTP_PORT', '5002'))
 
     # ── Operator account ──────────────────────────────────────────────────────
     OPERATOR_USER = os.getenv('OPERATOR_USER', 'operator')

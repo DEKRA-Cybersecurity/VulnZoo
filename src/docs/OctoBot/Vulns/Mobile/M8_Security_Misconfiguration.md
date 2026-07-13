@@ -70,7 +70,7 @@ Proxy the OctoBot Android app (e.g., Burp Suite or `mitmproxy`) or capture devic
 
 ```http
 GET /api/v2/firmware/version HTTP/1.1
-Host: 192.168.2.2:5003
+Host: 192.168.2.2:5002
 ```
 
 ![[m8_firmware_version.png]]
@@ -88,7 +88,7 @@ The `/api/v2/` path confirms the API uses URL versioning. Fuzz lower versions to
 
 ```bash
 for v in v0 v1; do
-  curl -s -o /dev/null -w "%{http_code}" http://192.168.2.2:5003/api/$v/firmware
+  curl -s -o /dev/null -w "%{http_code}" http://192.168.2.2:5002/api/$v/firmware
 done
 # v0 -> 200
 # v1 -> 404

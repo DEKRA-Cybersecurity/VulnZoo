@@ -2,11 +2,11 @@ services:
   octobot-api:
     build: .
     ports:
-      - "5003:5003"
+      - "5002:5002"
     environment:
       - MODBUS_HOST=192.168.2.1   # Raspberry Pi gateway
       - MODBUS_PORT=502
-      - HTTP_PORT=5003
+      - HTTP_PORT=5002
       - SECRET_KEY=octobot-cloud-secret-2026
       - OPERATOR_USER=operator
       - OPERATOR_PASSWORD=octobot

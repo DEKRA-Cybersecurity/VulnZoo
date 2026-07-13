@@ -50,15 +50,15 @@ The v0 handler is not decorated with `@login_required`. It reuses the same `Firm
 
 ```bash
 # 1. Confirm that v2 rejects an unauthenticated upload.
-curl -s -w '%{http_code}' -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v2/firmware
+curl -s -w '%{http_code}' -X PUT -F 'file=@evil.hex' http://localhost:5002/api/v2/firmware
 # -> 401 {"error": "authentication required"}
 
 # 2. Call the v0 route with the same payload and no cookie.
-curl -s -X PUT -F 'file=@evil.hex' http://localhost:5003/api/v0/firmware
+curl -s -X PUT -F 'file=@evil.hex' http://localhost:5002/api/v0/firmware
 # -> {"version": "v1", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
 
 # 3. Download the current firmware without credentials.
-curl -s http://localhost:5003/api/v0/firmware -o current.hex
+curl -s http://localhost:5002/api/v0/firmware -o current.hex
 # -> binary firmware image
 ```
 
