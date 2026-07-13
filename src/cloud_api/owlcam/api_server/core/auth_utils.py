@@ -1,4 +1,4 @@
-from cloud_api.owlcam.api_server.services.jwt_service import JWTService
+from services.jwt_service import JWTService
 
 def validate_jwt_token(token):
     """

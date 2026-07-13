@@ -1,5 +1,5 @@
 from flask import Response, request
-from cloud_api.owlcam.api_server.repositories.snapshot_repository import SnapshotRepository
+from repositories.snapshot_repository import SnapshotRepository
 import cv2
 import numpy as np
 
