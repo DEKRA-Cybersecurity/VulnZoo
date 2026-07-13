@@ -239,7 +239,6 @@ function openDeviceInterface(deviceType) {
     // All devices use the same IP and port since only one can be active at a time
     // The device interface is available at port 80 when a device is loaded
     const deviceIP = '192.168.2.1';  // OpenWrt device IP
-    const devicePort = '80';         // Main device interface port
     
     if (!currentDevice) {
         updateStatus('No device is currently running. Please load a device first.');
@@ -250,7 +249,21 @@ function openDeviceInterface(deviceType) {
         updateStatus('Device ' + deviceType + ' is not currently running. Current device: ' + currentDevice);
         return;
     }
-    
+
+    if (deviceType === 'routcoon') {
+        updateStatus('Opening RoutCoon interface...');
+        devicePort = '80';  // RoutCoon interface port
+    } else if (deviceType === 'owlcam') {
+        updateStatus('Opening OwlCam interface...');
+        devicePort = '5000';  // OwlCam interface port
+    } else if (deviceType === 'careotter') {
+        updateStatus('Opening CareOtter interface...');
+        devicePort = '5002';  // CareOtter interface port
+    } else if (deviceType === 'octobot') {
+        updateStatus('Opening OctoBot interface...');
+        devicePort = '5002';  // OctoBot interface port
+    }
+
     // Construct the device interface URL
     const deviceURL = 'http://' + deviceIP + ':' + devicePort + '/';
     

