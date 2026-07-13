@@ -39,6 +39,7 @@ elif session_id:
 else:
   return jsonify({'error': 'Authentication required'}), 401
 ```
+
 The `/snapshot` endpoint allows users with a valid JWT and ‘admin’ or ‘viewer’ role to access snapshots from any camera, without verifying whether they actually have access to that specific resource. This constitutes an object-level authorization bypass, as ownership and permissions on the requested camera are not checked. Furthermore, if a valid session_id is provided, the resource can also be accessed without JWT authentication, which increases the attack surface.
 
 **Impact:**

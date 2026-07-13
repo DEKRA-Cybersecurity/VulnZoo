@@ -22,7 +22,7 @@ log_message() {
 log_message "Setting owlcam root password..."
 
 # Set vulnerable password hash
-sed -i 's|^root:[^:]*|root:$5$/BwXdZAF8Ffbwwp5$UhB0XqwRs71Y6ESLbJm00X9OB8o7wfutwexvMqJZQV3|' "/etc/shadow"
+echo "root:12345678" | chpasswd
 
 log_message "Owlcam root password set"
 
