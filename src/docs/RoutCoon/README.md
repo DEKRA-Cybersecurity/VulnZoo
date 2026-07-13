@@ -34,6 +34,7 @@ To begin working with the Router vulnerable profile, follow these steps:
     - Open the web interface.
     - Log in using test credentials (e.g., `admin` / `admin123` or `user` / `user123`).
     - Explore router management features, logs, and device configuration.
+    - You can use user OpenWRT credentials for a white box approach (`openwrtuser`:`openwrtuserpwned`, `root`:`uncrackable`)
 
 3. **Explore the Functionality**
 
