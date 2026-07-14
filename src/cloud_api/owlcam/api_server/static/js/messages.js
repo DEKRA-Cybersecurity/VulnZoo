@@ -1,4 +1,9 @@
-// Dark mode toggle logic
+// ============================================================
+// VulnZoo — Messages Inbox
+// Misma lógica de API que el original; UI adaptada al layout de dos paneles.
+// ============================================================
+
+// ---------- Dark mode ----------
 function setDarkMode(enabled) {
     if (enabled) {
         document.body.classList.add('dark-mode');
@@ -10,18 +15,17 @@ function setDarkMode(enabled) {
 
 function initThemeToggle() {
     const btn = document.getElementById('theme-toggle');
+    const saved = localStorage.getItem('theme');
+    setDarkMode(saved === 'dark');
     if (!btn) return;
     btn.addEventListener('click', () => {
         const isDark = !document.body.classList.contains('dark-mode');
         setDarkMode(isDark);
     });
-    // Load preference
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark') setDarkMode(true);
-    else setDarkMode(false);
 }
-
 window.addEventListener('DOMContentLoaded', initThemeToggle);
+
+// ---------- Estado ----------
 let messages = [];
 let currentMessageId = null;
 
@@ -30,6 +34,10 @@ const readerPanel = document.getElementById('readerPanel');
 const loadingEl = document.getElementById('loadingIndicator');
 const errorEl = document.getElementById('errorContainer');
 const successEl = document.getElementById('successContainer');
+const emptyStateEl = document.getElementById('emptyState');
+const composeSectionEl = document.getElementById('sendMessageSection');
+const inboxCountEl = document.getElementById('inboxCount');
+const searchInput = document.getElementById('searchInput');
 
 const sendMessageForm = document.getElementById('sendMessageForm');
 const recipientInput = document.getElementById('recipientInput');
@@ -38,13 +46,49 @@ const bodyInput = document.getElementById('bodyInput');
 const sendMessageError = document.getElementById('sendMessageError');
 const sendMessageSuccess = document.getElementById('sendMessageSuccess');
 
+// ---------- Helpers de UI ----------
+const AVATAR_COLORS = ['#4a90e2', '#5b7fb0', '#3f7a9c', '#5a6fa8', '#6a7d9c', '#4778a8'];
+
+function avatarColor(seed) {
+    const s = String(seed || '');
+    let hash = 0;
+    for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+function initialsFor(name) {
+    const parts = String(name || '?').replace(/[._-]/g, ' ').trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+}
+
+// Muestra uno de los tres paneles de la derecha: 'empty' | 'reader' | 'compose'
+function showDetail(which) {
+    emptyStateEl.style.display = which === 'empty' ? 'flex' : 'none';
+    readerPanel.style.display = which === 'reader' ? 'flex' : 'none';
+    composeSectionEl.style.display = which === 'compose' ? 'flex' : 'none';
+}
+
+function markActive(id) {
+    listEl.querySelectorAll('.msg-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.id === String(id));
+    });
+}
+
+// ---------- Cargar mensajes ----------
 async function loadMessages() {
     try {
         loadingEl.style.display = 'block';
         listEl.style.display = 'none';
         errorEl.innerHTML = '';
         successEl.innerHTML = '';
-        
+
         const token = localStorage.getItem('auth');
         if (!token) {
             showError('Authentication required. Redirecting to login...');
@@ -54,16 +98,11 @@ async function loadMessages() {
 
         let url = '/api/messages';
         const params = new URLSearchParams();
-        if (params.toString()) {
-            url += '?' + params.toString();
-        }
+        if (params.toString()) url += '?' + params.toString();
 
         const response = await fetch(url, {
             method: 'GET',
-            headers: {
-                'X-Auth-Token': token,
-                'Content-Type': 'application/json'
-            }
+            headers: { 'X-Auth-Token': token, 'Content-Type': 'application/json' }
         });
 
         if (!response.ok) {
@@ -77,11 +116,11 @@ async function loadMessages() {
 
         const data = await response.json();
         messages = data.messages || [];
-        
+
         loadingEl.style.display = 'none';
         listEl.style.display = 'block';
         renderList();
-        
+
     } catch (error) {
         loadingEl.style.display = 'none';
         showError(`Error loading messages: ${error.message}`);
@@ -89,70 +128,117 @@ async function loadMessages() {
     }
 }
 
+// ---------- Render de la lista ----------
 function renderList() {
     listEl.innerHTML = '';
-    if (!messages || messages.length === 0) {
-        listEl.innerHTML = '<div class="empty">📭 No messages found.</div>';
+
+    const term = (searchInput && searchInput.value || '').trim().toLowerCase();
+    const visible = term
+        ? messages.filter(m =>
+            ((m.subject || '') + ' ' + (m.sender || '') + ' ' + (m.body || ''))
+                .toLowerCase().includes(term))
+        : messages;
+
+    inboxCountEl.textContent =
+        `${messages.length} message${messages.length === 1 ? '' : 's'}`;
+
+    if (!visible.length) {
+        listEl.innerHTML = `<div class="empty">📭 No messages found.</div>`;
         return;
     }
-    
-    messages.forEach(m => {
+
+    visible.forEach(m => {
+        const sender = m.sender || 'Unknown';
+        const subject = m.subject || '(no subject)';
+        const snippet = (m.body || '').replace(/\s+/g, ' ').slice(0, 60);
+
         const item = document.createElement('div');
         item.className = 'msg-item';
-        
+        item.dataset.id = m.id;
+        if (String(m.id) === String(currentMessageId)) item.classList.add('active');
+
+        item.innerHTML = `
+            <div class="msg-avatar" style="background:${avatarColor(sender)}">${escapeHtml(initialsFor(sender))}</div>
+            <div class="msg-main">
+                <div class="msg-topline">
+                    <p class="msg-sender">${escapeHtml(sender)}</p>
+                </div>
+                <p class="msg-title">${escapeHtml(subject)}</p>
+                <p class="msg-snippet">${escapeHtml(snippet)}${m.body && m.body.length > 60 ? '…' : ''}</p>
+            </div>
+        `;
+
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'delete-btn';
-        deleteBtn.textContent = '🗑️ Delete';
-        deleteBtn.onclick = (e) => {
-            e.stopPropagation();
-            deleteMessage(m.id);
-        };
-        
-        item.innerHTML = `
-            <div class="msg-title">${m.subject || '(no subject)'}</div>
-            <div class="msg-sender">From: ${m.sender || 'Unknown'}</div>
-            <div class="msg-snippet">${(m.body || '').slice(0,100)}${m.body && m.body.length > 100 ? '...' : ''}</div>
-        `;
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = (e) => { e.stopPropagation(); deleteMessage(m.id); };
         item.appendChild(deleteBtn);
+
         item.onclick = () => openMessage(m.id);
         listEl.appendChild(item);
     });
 }
 
+function filterMessages() {
+    renderList();
+}
+
+// ---------- Abrir / cerrar mensaje ----------
 async function openMessage(id) {
     const m = messages.find(x => String(x.id) === String(id));
     if (!m) return;
-    
+
     currentMessageId = id;
-    
-    readerPanel.querySelector('#readerTitle').textContent = m.subject || '(no subject)';
-    readerPanel.querySelector('#readerSender').textContent = `From: ${m.sender || 'Unknown'}`;
-    readerPanel.querySelector('#readerBody').innerHTML = m.body || '';
-    
-    listEl.style.display = 'none';
-    readerPanel.style.display = 'block';
-    
-    window.scrollTo({top: 0, behavior: 'smooth'});
+    const sender = m.sender || 'Unknown';
+
+    document.getElementById('readerTitle').textContent = m.subject || '(no subject)';
+    const avatarEl = document.getElementById('readerAvatar');
+    avatarEl.textContent = initialsFor(sender);
+    avatarEl.style.background = avatarColor(sender);
+    document.getElementById('readerSender').innerHTML =
+        `${escapeHtml(sender)}<span class="meta">to me</span>`;
+    // VULNERABILITY: Stored XSS - body rendered as HTML (chains with API10 sender spoofing)
+    document.getElementById('readerBody').innerHTML = m.body || '';
+
+    markActive(id);
+    showDetail('reader');
 }
 
+function closeMessage() {
+    currentMessageId = null;
+    markActive(null);
+    showDetail('empty');
+}
+
+// ---------- Redacción ----------
+function openCompose() {
+    currentMessageId = null;
+    markActive(null);
+    sendMessageError.style.display = 'none';
+    sendMessageSuccess.style.display = 'none';
+    showDetail('compose');
+    recipientInput.focus();
+}
+
+function closeCompose() {
+    showDetail('empty');
+}
+
+// ---------- Borrado ----------
 async function deleteMessage(messageId) {
-    if (!confirm('Are you sure you want to delete this message?')) {
-        return;
-    }
-    
+    if (!confirm('Are you sure you want to delete this message?')) return;
+
     try {
         const token = localStorage.getItem('auth');
         const response = await fetch(`/api/messages/${messageId}`, {
             method: 'DELETE',
-            headers: {
-                'X-Auth-Token': token,
-                'Content-Type': 'application/json'
-            }
+            headers: { 'X-Auth-Token': token, 'Content-Type': 'application/json' }
         });
-        
+
         if (response.ok) {
             showSuccess('Message deleted successfully');
             messages = messages.filter(m => String(m.id) !== String(messageId));
+            if (String(currentMessageId) === String(messageId)) closeMessage();
             renderList();
         } else {
             const data = await response.json();
@@ -165,29 +251,22 @@ async function deleteMessage(messageId) {
 
 async function deleteCurrentMessage() {
     if (!currentMessageId) return;
-    
     await deleteMessage(currentMessageId);
-    closeMessage();
 }
 
-function closeMessage() {
-    readerPanel.style.display = 'none';
-    listEl.style.display = 'block';
-    currentMessageId = null;
-    window.scrollTo({top: 0, behavior: 'smooth'});
-}
-
+// ---------- Avisos ----------
 function showError(message) {
-    errorEl.innerHTML = `<div class="error">${message}</div>`;
+    errorEl.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
     setTimeout(() => errorEl.innerHTML = '', 5000);
 }
 
 function showSuccess(message) {
-    successEl.innerHTML = `<div class="success">${message}</div>`;
+    successEl.innerHTML = `<div class="success">${escapeHtml(message)}</div>`;
     setTimeout(() => successEl.innerHTML = '', 3000);
 }
 
-sendMessageForm.addEventListener('submit', async function(e) {
+// ---------- Envío ----------
+sendMessageForm.addEventListener('submit', async function (e) {
     e.preventDefault();
     sendMessageError.style.display = 'none';
     sendMessageSuccess.style.display = 'none';
@@ -216,10 +295,7 @@ sendMessageForm.addEventListener('submit', async function(e) {
         const token = localStorage.getItem('auth');
         const response = await fetch('/api/messages', {
             method: 'POST',
-            headers: {
-                'X-Auth-Token': token,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'X-Auth-Token': token, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 sender: localStorage.getItem('user_name'),
                 recipient: recipient,
@@ -233,6 +309,7 @@ sendMessageForm.addEventListener('submit', async function(e) {
             sendMessageSuccess.style.display = 'block';
             sendMessageForm.reset();
             loadMessages();
+            setTimeout(closeCompose, 1200);
         } else {
             sendMessageError.textContent = data.error || 'Failed to send message.';
             sendMessageError.style.display = 'block';

