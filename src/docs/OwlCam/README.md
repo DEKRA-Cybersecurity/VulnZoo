@@ -111,6 +111,14 @@ To run the VulnZoo API backend using Docker, follow these steps:
     docker compose down
     ```
 
+You can also use `cloudctl.sh` script to manage the API:
+
+![[owlcam_cloudctl.png]]
+
+`cloudctl.sh` script shows some hints and includes a friendly URL on the PC so you can access the API web.
+
+![[owlcam_cloudctl_init.png]]
+
 **Note:**
 - If you need to reset the database or persistent data, you may need to remove Docker volumes or use `docker-compose down -v`.
 - Ensure that the API is running and accessible before using the web or mobile applications.
