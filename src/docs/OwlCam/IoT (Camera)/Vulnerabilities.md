@@ -2,7 +2,11 @@
 
 The simulated camera is an [Aviosys 9060ASL](https://devices.luxriot.com/device/aviosys/9060asl-i-o). This information is useful, as the default credentials for these IP cameras are _"admin:12345678"_. Testing these credentials confirms that access to the device is possible.
 
-We can get the model of the camera IP model 
+We can get the model of the camera IP model by analysing the ssh connection. Dropbear shows us some information if we use `ssh -v` flag.
+
+![[iot1_ssh_verbose.png]]
+
+And search for default credentials for this kind of 
 
 ![[iot1_default_password.png]]
 
@@ -12,6 +16,10 @@ It is also straightforward to perform a brute-force attack on the password hash:
 ❯ hashcat -m 7400 hash.txt /usr/share/wordlists/rockyou.txt --show
 $5$/BwXdZAF8Ffbwwp5$UhB0XqwRs71Y6ESLbJm00X9OB8o7wfutwexvMqJZQV3:12345678
 ```
+
+Or brute-force the SSH service using Hydra:
+
+![[iot1_hydra.png]]
 
 Although it may seem unusual, **Secure Shell (SSH)** services are quite common in professional-grade video surveillance cameras and IoT devices. While entry-level models often omit this service, manufacturers targeting the enterprise or security markets frequently include SSH or Telnet access as a standard feature for diagnostics and configuration.
 
