@@ -1,105 +1,95 @@
-.dark-mode input,
-.dark-mode textarea,
-.dark-mode select {
-    background: #23272b;
-    color: #e3e3e3;
-    border: 1.5px solid #333;
-    caret-color: #b0d6ff;
-}
-.dark-mode input::placeholder,
-.dark-mode textarea::placeholder {
-    color: #b0b0b0;
-}
-body.dark-mode {
-    background: #181a1b;
-    color: #e3e3e3;
+/* ============================================================
+   VulnZoo — Admin Panel (OwlCam)
+   Rediseño profesional (misma paleta que messages.css)
+   Paleta: navy #232f3e · azul #4a90e2 / #357abd · fondo #f4f6fb
+           texto #182036 · apagado #7b8794/#98a4b3 · borde #e6eaf0
+           rojo #e74c3c/#c0392b · verde #1e7e45
+   Standalone: comparten esta hoja todas las paginas de admin.
+   ============================================================ */
+
+* { box-sizing: border-box; }
+
+body {
+    background: #f4f6fb;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #182036;
+    margin: 0;
+    padding: 40px 24px 56px;
+    font-size: 15px;
 }
 
-.dark-mode .admin-container {
-    background: #23272b;
-    border-color: #222;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    color: #e3e3e3;
-}
-.dark-mode .panel-title, .dark-mode .admin-container h2 {
-    color: #e3e3e3;
-}
-.dark-mode .admin-menu ul {
-    background: #23272b;
-    color: #e3e3e3;
-}
-.dark-mode .admin-menu a {
-    color: #b0d6ff;
-}
-.dark-mode .admin-menu a:hover, .dark-mode .admin-menu a.active {
-    background: #22252a;
-    color: #fff;
-}
-.dark-mode .form-group label {
-    color: #b0d6ff;
-}
-.dark-mode .form-group input,
-.dark-mode .form-group select {
-    background: #23272b;
-    color: #e3e3e3;
-    border-color: #333;
-}
-.dark-mode .btn, .dark-mode button {
-    background: #2d3a4a;
-    color: #e3e3e3 !important;
-}
-.dark-mode .btn:hover:not(:disabled), .dark-mode button:hover:not(:disabled) {
-    background: #1a2533;
-    color: #fff !important;
-}
-/* Contenedor principal */
+/* ---------- Contenedor / tarjeta principal ---------- */
 .admin-container {
-    max-width: 1200px;
-    margin: 50px auto;
-    padding: 48px 40px;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 40px 40px 32px;
     background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.09);
-    font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 19px;
+    border: 1px solid #e6eaf0;
+    border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(20,30,60,0.06);
+    font-family: inherit;
+    font-size: 15px;
 }
 
-/* Títulos */
-.panel-title, .admin-container h2 {
-    font-size: 2.5rem;
-    font-weight: 800;
-    margin-bottom: 32px;
-    color: #2c3e50;
+/* ---------- Titulos ---------- */
+.panel-title,
+.admin-container h2 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    margin: 0 0 24px;
+    color: #142231;
+}
+.admin-container h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1c2838;
+    margin: 0 0 16px;
+}
+.admin-container p {
+    color: #3a4657;
+    line-height: 1.6;
+    margin: 0 0 16px;
 }
 
-/* Menú de administración */
+/* ---------- Menu de administracion ---------- */
 .admin-menu {
-    margin-bottom: 32px;
+    margin-bottom: 28px;
 }
 .admin-menu ul {
     list-style: none;
     padding: 0;
+    margin: 0;
     display: flex;
-    gap: 36px;
-    font-size: 1.2em;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 .admin-menu li {
-    display: inline;
+    display: flex;
 }
 .admin-menu a {
-    color: #2980b9;
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+    padding: 10px 18px;
+    background: #fff;
+    color: #357abd;
+    border: 1px solid #e0e6ef;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
     text-decoration: none;
-    font-weight: 500;
-    padding: 8px 16px;
-    border-radius: 4px;
-    transition: background 0.2s;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
-.admin-menu a:hover, .admin-menu a.active {
-    background: #eaf6fb;
-    color: #1a5276;
+.admin-menu a:hover,
+.admin-menu a.active {
+    background: #4a90e2;
+    color: #fff;
+    border-color: #4a90e2;
 }
 
-/* Formulario */
+/* ---------- Formulario ---------- */
 .form-group {
     margin-bottom: 18px;
     display: flex;
@@ -107,54 +97,92 @@ body.dark-mode {
 }
 .form-group label {
     margin-bottom: 6px;
+    font-size: 12px;
     font-weight: 600;
-    color: #34495e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #7b8794;
 }
 .form-group input,
-.form-group select {
-    padding: 14px 18px;
-    border: 1.5px solid #d5d8dc;
+.form-group select,
+#admin-content select,
+#log-type {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid #e0e6ef;
     border-radius: 8px;
-    font-size: 1.1em;
-    background: #f8f9fa;
-    transition: border 0.2s;
-}
-.form-group input:focus,
-.form-group select:focus {
-    border-color: #2980b9;
+    font-size: 14px;
+    font-family: inherit;
+    color: #182036;
+    background: #f8fafc;
     outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+#admin-content select,
+#log-type { width: auto; min-width: 160px; }
+.form-group input:focus,
+.form-group select:focus,
+#admin-content select:focus,
+#log-type:focus {
+    border-color: #4a90e2;
+    background: #fff;
+}
+#admin-content label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #7b8794;
 }
 
-/* Botones */
-.btn, button {
+/* ---------- Botones ---------- */
+.btn,
+button {
     display: inline-block;
-    padding: 16px 32px;
-    font-size: 1.1em;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
     border-radius: 8px;
     border: none;
     cursor: pointer;
-    background: #3195d8;
-    color: #ffffffd3 !important;
-    font-weight: 700;
-    transition: background 0.2s, box-shadow 0.2s;
+    background: #4a90e2;
+    color: #fff;
+    font-family: inherit;
+    box-shadow: 0 1px 2px rgba(74,144,226,0.4);
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
     margin-top: 8px;
 }
+.btn:hover:not(:disabled),
+button:hover:not(:disabled) {
+    background: #357abd;
+    color: #fff;
+}
 .btn-primary {
-    background: #2980b9;
+    background: #4a90e2;
 }
+.btn-primary:hover:not(:disabled) {
+    background: #357abd;
+}
+/* Destructivo: fondo blanco, texto rojo */
 .btn-danger {
-    background: #c0392b;
+    background: #fff;
+    color: #e74c3c;
+    border: 1px solid #f3cfca;
+    box-shadow: none;
 }
-.btn:disabled, button:disabled {
-    background: #b2bec3;
+.btn-danger:hover:not(:disabled) {
+    background: #fdf2f1;
+    color: #c0392b;
+    border-color: #eab3ad;
+}
+.btn:disabled,
+button:disabled {
+    background: #eef1f6;
+    color: #a5b0bd;
+    border-color: #e6eaf0;
+    box-shadow: none;
     cursor: not-allowed;
 }
-.btn:hover:not(:disabled), button:hover:not(:disabled) {
-    background: #154d72;
-    color: #fff !important;
-}
 
-/* Autocomplete */
+/* ---------- Autocompletado / caja de busqueda ---------- */
 .autocomplete-container {
     position: relative;
     width: 100%;
@@ -163,81 +191,404 @@ body.dark-mode {
     width: 100%;
 }
 #user-suggestions {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
     background: #fff;
-    border: 1px solid #d5d8dc;
+    border: 1px solid #e0e6ef;
     border-top: none;
     z-index: 10;
-    max-height: 180px;
+    max-height: 200px;
     overflow-y: auto;
-    border-radius: 0 0 4px 4px;
-    box-shadow: 0 2px 8px rgba(44,62,80,0.07);
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 8px 24px rgba(20,30,60,0.10);
 }
 #user-suggestions li {
     padding: 10px 14px;
     cursor: pointer;
-    color: #2c3e50;
+    font-size: 14px;
+    color: #2a3646;
+    border-bottom: 1px solid #eef1f6;
     transition: background 0.2s;
 }
+#user-suggestions li:last-child {
+    border-bottom: none;
+}
 #user-suggestions li:hover {
-    background: #eaf6fb;
+    background: #f8fafc;
 }
 
-/* Mensajes de resultado */
-.result-message, #role-result, #user-result {
-    margin-top: 18px;
-    font-size: 1rem;
+/* ---------- Mensajes de resultado ---------- */
+.result-message,
+#role-result,
+#user-result {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #3a4657;
+    line-height: 1.6;
 }
-.error-message, .error, #role-result span[style*="color:red"] {
-    background: #f8d7da;
-    color: #721c24;
-    padding: 12px;
-    border-radius: 4px;
-    margin: 12px 0;
-}
-.success-message, .success, #role-result span[style*="color:green"] {
-    background: #d4edda;
-    color: #155724;
-    padding: 12px;
-    border-radius: 4px;
-    margin: 12px 0;
+.result-message strong,
+#role-result strong,
+#user-result strong {
+    color: #1c2838;
 }
 
-/* Enlaces de navegación */
+/* Errores */
+.error-message,
+.error,
+.success-message .error,
+#role-result span[style*="color:red"] {
+    display: block;
+    background: #fdecea;
+    color: #c0392b;
+    border: 1px solid #f5c6c0;
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin: 12px 0;
+    font-size: 14px;
+}
+/* Exitos */
+.success-message,
+.success,
+#role-result span[style*="color:green"] {
+    display: block;
+    background: #e7f6ec;
+    color: #1e7e45;
+    border: 1px solid #bfe6cd;
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin: 12px 0;
+    font-size: 14px;
+}
+
+/* ---------- Listas inyectadas (logs, camaras) ---------- */
+#admin-content ul {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0 0;
+    border: 1px solid #e6eaf0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+#admin-content li {
+    padding: 14px 18px;
+    font-size: 14px;
+    color: #2a3646;
+    border-bottom: 1px solid #eef1f6;
+    transition: background 0.15s;
+}
+#admin-content li:last-child {
+    border-bottom: none;
+}
+#admin-content li:hover {
+    background: #f8fafc;
+}
+#admin-content li strong {
+    color: #1c2838;
+    font-weight: 600;
+}
+#admin-content li em {
+    color: #98a4b3;
+    font-style: normal;
+    font-size: 13px;
+}
+
+/* ---------- Tablas ---------- */
+.admin-container table,
+#admin-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    font-size: 14px;
+    background: #fff;
+    border: 1px solid #e6eaf0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.admin-container th,
+#admin-content th {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #98a4b3;
+    background: #f8fafc;
+    border-bottom: 1px solid #eef1f6;
+}
+.admin-container td,
+#admin-content td {
+    padding: 12px 16px;
+    color: #2a3646;
+    border-bottom: 1px solid #eef1f6;
+}
+.admin-container tbody tr:last-child td,
+#admin-content tbody tr:last-child td {
+    border-bottom: none;
+}
+.admin-container tbody tr:hover td,
+#admin-content tbody tr:hover td {
+    background: #f8fafc;
+}
+
+/* ---------- Modales ---------- */
+.modal-overlay,
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(20,30,60,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+.modal,
+.modal-content {
+    background: #fff;
+    border: 1px solid #e6eaf0;
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(20,30,60,0.22);
+    padding: 28px 32px;
+    max-width: 480px;
+    width: calc(100% - 48px);
+}
+.modal h3,
+.modal-content h3 {
+    margin: 0 0 12px;
+    color: #142231;
+}
+
+/* ---------- Enlaces de navegacion ---------- */
 .back-link {
     display: inline-block;
     margin-top: 24px;
-    color: #2980b9;
+    color: #4a90e2;
     text-decoration: none;
+    font-size: 14px;
     font-weight: 500;
     transition: color 0.2s;
 }
 .back-link:hover {
-    color: #1a5276;
+    color: #357abd;
     text-decoration: underline;
 }
 
-/* Debug info */
+/* ---------- Debug ---------- */
 #debug-info {
     margin-top: 24px;
-    padding: 12px;
-    background: #f0f0f0;
-    border-radius: 4px;
-    font-family: monospace;
+    padding: 14px 16px;
+    background: #f4f6fb;
+    border: 1px solid #e6eaf0;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 13px;
-    color: #333;
+    color: #3a4657;
 }
 
-/* Responsive */
-@media (max-width: 600px) {
-    .admin-container {
-        padding: 12px 4px;
-    }
+/* ============================================================
+   Dark mode
+   ============================================================ */
+body.dark-mode {
+    background: #181a1b;
+    color: #e3e3e3;
+}
+
+.dark-mode .admin-container {
+    background: #1f2225;
+    border-color: #2c3136;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+    color: #e3e3e3;
+}
+.dark-mode .panel-title,
+.dark-mode .admin-container h2,
+.dark-mode .admin-container h3 {
+    color: #e3e3e3;
+}
+.dark-mode .admin-container p {
+    color: #c3cbd2;
+}
+
+.dark-mode .admin-menu a {
+    background: #23272b;
+    color: #b0d6ff;
+    border-color: #333;
+}
+.dark-mode .admin-menu a:hover,
+.dark-mode .admin-menu a.active {
+    background: #4a90e2;
+    color: #fff;
+    border-color: #4a90e2;
+}
+
+.dark-mode .form-group label,
+.dark-mode #admin-content label {
+    color: #b0d6ff;
+}
+.dark-mode .form-group input,
+.dark-mode .form-group select,
+.dark-mode #admin-content select,
+.dark-mode #log-type {
+    background: #23272b;
+    color: #e3e3e3;
+    border-color: #333;
+    caret-color: #b0d6ff;
+}
+.dark-mode .form-group input:focus,
+.dark-mode .form-group select:focus,
+.dark-mode #admin-content select:focus,
+.dark-mode #log-type:focus {
+    border-color: #4a90e2;
+    background: #23272b;
+}
+.dark-mode input::placeholder,
+.dark-mode textarea::placeholder {
+    color: #7a838c;
+}
+
+/* Botones en dark */
+.dark-mode .btn,
+.dark-mode .btn-primary,
+.dark-mode button {
+    background: #4a90e2;
+    color: #fff;
+}
+.dark-mode .btn:hover:not(:disabled),
+.dark-mode .btn-primary:hover:not(:disabled),
+.dark-mode button:hover:not(:disabled) {
+    background: #357abd;
+    color: #fff;
+}
+.dark-mode .btn-danger {
+    background: #2d1f1f;
+    color: #ff9a90;
+    border-color: #5a3330;
+}
+.dark-mode .btn-danger:hover:not(:disabled) {
+    background: #3a2523;
+    color: #ffb3ab;
+    border-color: #6a3d3a;
+}
+.dark-mode .btn:disabled,
+.dark-mode button:disabled {
+    background: #23272b;
+    color: #5a636c;
+    border-color: #2c3136;
+}
+
+/* Autocompletado en dark */
+.dark-mode #user-suggestions {
+    background: #1f2225;
+    border-color: #333;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.dark-mode #user-suggestions li {
+    color: #cfd6dd;
+    border-bottom-color: #2a2e32;
+}
+.dark-mode #user-suggestions li:hover {
+    background: #26292d;
+}
+
+/* Resultados en dark */
+.dark-mode .result-message,
+.dark-mode #role-result,
+.dark-mode #user-result {
+    color: #c3cbd2;
+}
+.dark-mode .result-message strong,
+.dark-mode #role-result strong,
+.dark-mode #user-result strong {
+    color: #e3e3e3;
+}
+.dark-mode .error-message,
+.dark-mode .error,
+.dark-mode #role-result span[style*="color:red"] {
+    background: #3a1a1a;
+    color: #ffb3b3;
+    border-color: #5a2b2b;
+}
+.dark-mode .success-message,
+.dark-mode .success,
+.dark-mode #role-result span[style*="color:green"] {
+    background: #14321f;
+    color: #a7e6bd;
+    border-color: #285a3a;
+}
+
+/* Listas / tablas en dark */
+.dark-mode #admin-content ul,
+.dark-mode .admin-container table,
+.dark-mode #admin-content table {
+    background: #1f2225;
+    border-color: #2c3136;
+}
+.dark-mode #admin-content li {
+    color: #cfd6dd;
+    border-bottom-color: #2a2e32;
+}
+.dark-mode #admin-content li:hover,
+.dark-mode .admin-container tbody tr:hover td,
+.dark-mode #admin-content tbody tr:hover td {
+    background: #26292d;
+}
+.dark-mode #admin-content li strong {
+    color: #e3e3e3;
+}
+.dark-mode #admin-content li em {
+    color: #9aa6b4;
+}
+.dark-mode .admin-container th,
+.dark-mode #admin-content th {
+    background: #23272b;
+    color: #9aa6b4;
+    border-bottom-color: #2c3136;
+}
+.dark-mode .admin-container td,
+.dark-mode #admin-content td {
+    color: #cfd6dd;
+    border-bottom-color: #2a2e32;
+}
+
+/* Modales en dark */
+.dark-mode .modal,
+.dark-mode .modal-content {
+    background: #1f2225;
+    border-color: #2c3136;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+}
+.dark-mode .modal h3,
+.dark-mode .modal-content h3 {
+    color: #e3e3e3;
+}
+
+.dark-mode .back-link {
+    color: #7cc7ff;
+}
+.dark-mode .back-link:hover {
+    color: #b0d6ff;
+}
+.dark-mode #debug-info {
+    background: #23272b;
+    border-color: #2c3136;
+    color: #9aa6b4;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 820px) {
+    body { padding: 24px 12px 40px; }
+    .admin-container { padding: 24px 18px; }
+    .panel-title,
+    .admin-container h2 { font-size: 22px; }
     .admin-menu ul {
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
     }
+    .admin-menu a { justify-content: center; }
+    #admin-content select,
+    #log-type { width: 100%; }
 }
