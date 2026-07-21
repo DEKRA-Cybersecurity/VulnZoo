@@ -65,3 +65,5 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 - **Layer 2 (Lab Contract):** [`../../../labs/octobot/CONTEXT.md`](../../../labs/octobot/CONTEXT.md)
 - **Stage 01 Spec:** `stages/01_spec/output/octobot-spec.md`
 - **Layer 0 (Global Identity):** [`../../../AGENTS.md`](../../../AGENTS.md)
+
+---
