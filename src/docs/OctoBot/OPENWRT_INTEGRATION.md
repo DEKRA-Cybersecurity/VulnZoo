@@ -18,7 +18,7 @@ The central decision is **not** to insert the Pi into the real-time control path
 ```
  [Joysticks/HU-M16] --> [Arduino UNO] --PWM--> [4 servos]   (LOCAL manual control)
                               ^
-                              | USB serial 115200, "Sx:angle\n" frames
+                         no lo tomé como puerto de arquitectura. No      | USB serial 115200, "Sx:angle\n" frames
                               v
  [Android app] --HTTP/REST--> [PC / Docker cloud]  --Modbus/TCP :502-->  [Raspberry Pi - OpenWRT]
                               (web UI, REST, mobile API,                  (gateway: serial bus / MQTT /
