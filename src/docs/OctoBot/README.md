@@ -157,3 +157,54 @@ HTML routes redirect to `/login` when the session is missing; API routes under `
 ## Status
 
 MWP stages 01-04 complete: the lab is implemented under `src/labs/octobot/`, the cloud under `src/cloud_api/octobot/`, and the OWASP IoT catalog documented under `Vulns/IoT/`. Verified in simulation (gateway plus serial bus). Badges are `IN PROGRESS` pending an on-Pi lab-load verification (procd / opkg / uci / avrdude), which flips them to `DONE`. `IoT:I5` is `PENDING` (unimplemented), and the firmware `DEMO`/`PLAY` loop-service refactor is deferred (per-servo `Sx:angle` control works).
+
+## Lab Architecture
+
+Solid arrows are the legitimate control path (Mobile/Web -> Cloud REST -> Modbus/TCP -> Pi gateway -> USB serial `Sx:angle` -> Arduino -> PWM -> servos). Dashed arrows are attacker paths and the command-echo leaks. The joystick path stays wired in parallel as a local manual fallback.
+
+```mermaid
+flowchart TB
+    subgraph LAN["Air-gapped LAN 192.168.2.0/24 - flat, no VLANs"]
+        ATT["Attacker (same subnet)"]
+        MOB["Android app (Java)<br/>cloud REST only, configurable server (M8)"]
+
+        subgraph HOST["Operator PC - Docker 192.168.2.2 (cloud_api/octobot)"]
+            API["Flask Cloud API + HMI :5002<br/>operator:octobot, SQLite octobot.db<br/>Modbus master + SSH firmware push"]
+        end
+
+        subgraph PI["Pi field gateway - RPi 3B+/OpenWRT - 192.168.2.1 (labs/octobot)"]
+            GW["Gateway HMI/REST :8090<br/>/api/move /api/claw /admin /logs /update (IoT:I3)"]
+            BUS["Serial bus :2000<br/>raw serial-over-TCP, PASS: prefix enforced (IoT:I1)"]
+            MODBUS["Modbus/TCP :502<br/>holding regs -> Sx:angle, auth-fail leaks pass (IoT:I2)"]
+            MQTT["MQTT / mosquitto :1883<br/>cell01/cmd, anonymous, no TLS (IoT:I2)"]
+            FW["firmware robot_arm.hex<br/>unsigned OTA via avrdude (IoT:I4)"]
+        end
+
+        subgraph CELL["Robot cell (physical - HU-M16)"]
+            ARD["Arduino UNO<br/>real-time controller, Sx:angle @115200"]
+            SERVO["4 servos - base/left/right/claw<br/>per-servo angle clamps"]
+            JOY["Joysticks / HU-M16 shield<br/>local manual fallback"]
+        end
+    end
+
+    MOB -->|"REST :5002 - login, servo, command, firmware"| API
+    API -->|"Modbus/TCP :502"| MODBUS
+    API -.->|"SSH firmware push root@.1 (IoT:I4)"| FW
+
+    GW --> BUS
+    MQTT -->|"forwards cell01/cmd, injects PASS:"| BUS
+    MODBUS --> BUS
+    BUS -->|"USB serial /dev/ttyUSB0<br/>PASS:OctoSuperBot2026 Sx:angle"| ARD
+    GW -.->|"echo cmd"| MQTT
+    BUS -.->|"echo cell01/cmd/telemetry"| MQTT
+    ARD -->|"PWM"| SERVO
+    JOY -->|"local PWM"| ARD
+
+    ATT -.->|"no-auth REST, /admin, SSTI/XSS :8090"| GW
+    ATT -.->|"publish cell01/cmd anon :1883"| MQTT
+    ATT -.->|"Modbus write / password leak :502"| MODBUS
+    ATT -.->|"raw Sx:angle telnet :2000"| BUS
+    ATT -.->|"login SQLi (API10) / v0 firmware downgrade (API5) :5002"| API
+    ATT -.->|"unsigned OTA .hex, defeats clamps (IoT:I4)"| FW
+    ATT -.->|"USB reflash / UART / SD secrets (IoT:I10)"| ARD
+```
