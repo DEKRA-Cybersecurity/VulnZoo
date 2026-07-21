@@ -48,8 +48,8 @@ public class LoginActivity extends AppCompatActivity {
     static final String PREFS          = "octobot_prefs";
     static final String KEY_SERVER     = "server";          // "ip:port"
     static final String KEY_COOKIE     = "session_cookie";  // "session=..."
-    static final String DEFAULT_SERVER = "192.168.2.2:5003";
-    static final int    DEFAULT_PORT   = 5003;
+    static final String DEFAULT_SERVER = "192.168.2.2:5002";
+    static final int    DEFAULT_PORT   = 5002;
 
     private EditText etApiIp, etApiPort, etUsername, etPassword;
     private Button   btnLogin, btnDetectWifi, btnTestConnection;
