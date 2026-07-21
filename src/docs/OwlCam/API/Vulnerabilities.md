@@ -112,6 +112,7 @@ elif session_id:
 else:
   return jsonify({'error': 'Authentication required'}), 401
 ```
+
 The `/snapshot` endpoint presents several vulnerabilities related to Broken Authentication and access control:
 
 - **Role-based authorization bypass:** Allows any user with a valid JWT and ‘admin’ or ‘viewer’ role to access snapshots from any camera, without verifying whether they actually have access to that specific camera. There is no ownership control or granular permissions.
@@ -508,7 +509,7 @@ ID           Response   Lines    Word       Chars       Payload
 000102090:   409        3 L      6 W        38 Ch       "peter"
 ```
 
-## Vector de Ataque #1: Cross-Site Request Forgery
+## Attack Vector #1: Cross-Site Request Forgery
 
 ### Vulnerability Description
 
