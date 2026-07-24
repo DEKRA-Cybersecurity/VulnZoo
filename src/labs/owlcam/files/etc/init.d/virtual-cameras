@@ -2,37 +2,44 @@
 START=97
 
 start() {
-    # Remover módulo anterior
+    # Stop any previous producers first so the module can be reloaded cleanly.
+    # ponytail: mirrors camera-streamer's killall guard -> start() is re-runnable
+    #           (the profile-init hook calls start on every provisioning pass).
+    [ -f /var/run/gst_loopback.pid ] && xargs -r kill < /var/run/gst_loopback.pid 2>/dev/null
+    killall -q gst-launch-1.0 2>/dev/null
+    sleep 1
     rmmod v4l2loopback 2>/dev/null
     sleep 1
-    
-    # Cargar v4l2loopback con capacidades de captura
+
+    # Load v4l2loopback with capture capability (3 virtual cameras).
     insmod /lib/modules/$(uname -r)/v4l2loopback.ko \
         devices=3 \
-        video_nr=0,1,2,3 \
+        video_nr=0,1,2 \
         card_label="Cam0","Cam1","Cam2" \
         exclusive_caps=1 \
         max_buffers=2
-    
+
     sleep 2
-    
-    # Iniciar generadores de video
-    for i in 0 1 2 3; do
-        # ffmpeg -re -f lavfi -i testsrc=size=640x480:rate=25 \
-          #  -f v4l2 -vcodec mjpeg -q:v 5 \
-            # /dev/video$i > /var/log/ffmpeg_cam$i.log 2>&1 &
-        ffmpeg -loop 1 -i /root/img_cam$i.jpeg \
-            -vf scale=640:480 -r 25 \
-            -f v4l2 -vcodec mjpeg -q:v 5 /dev/video$i \
-            > /var/log/ffmpeg_cam$i.log 2>&1 &
-        echo $! >> /var/run/ffmpeg_loopback.pid
+
+    # Feed each loopback with a looping static JPEG (MJPEG straight through).
+    # This image's ffmpeg is built with --disable-outdevs, so it has no -f v4l2
+    # output muxer ("Requested output format 'v4l2' is not known"). gstreamer's
+    # v4l2sink is the producer that actually sets the device format, which is
+    # also what unblocks the CAPTURE side for v4l2rtspserver.
+    rm -f /var/run/gst_loopback.pid
+    for i in 0 1 2; do
+        gst-launch-1.0 -q multifilesrc location=/root/img_cam$i.jpeg loop=true \
+            caps="image/jpeg,width=640,height=480,framerate=25/1" \
+            ! v4l2sink device=/dev/video$i \
+            > /var/log/gst_cam$i.log 2>&1 &
+        echo $! >> /var/run/gst_loopback.pid
     done
 }
 
 stop() {
-    [ -f /var/run/ffmpeg_loopback.pid ] && xargs -r kill < /var/run/ffmpeg_loopback.pid 2>/dev/null
-    killall -q ffmpeg 2>/dev/null
-    rm -f /var/run/ffmpeg_loopback.pid
+    [ -f /var/run/gst_loopback.pid ] && xargs -r kill < /var/run/gst_loopback.pid 2>/dev/null
+    killall -q gst-launch-1.0 2>/dev/null
+    rm -f /var/run/gst_loopback.pid
     rmmod v4l2loopback 2>/dev/null
 }
 

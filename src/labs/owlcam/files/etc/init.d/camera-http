@@ -1,0 +1,28 @@
+#!/bin/sh /etc/rc.common
+START=99
+STOP=10
+
+PIDFILE=/var/run/camera-http.pid
+PROG=/opt/owlcam/camera_stream.py
+
+stop() {
+    [ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null
+    # Sweep any stray instance not tracked by the pidfile so port 9090 is freed.
+    for p in $(ps w | grep '[c]amera_stream.py' | awk '{print $1}'); do kill "$p" 2>/dev/null; done
+    rm -f "$PIDFILE"
+}
+
+start() {
+    # ponytail: stop first -> start() is re-runnable (the profile-init hook calls
+    #           start on every provisioning pass, same guard as the other services).
+    stop
+    sleep 1
+    python3 "$PROG" > /var/log/camera-http.log 2>&1 &
+    echo $! > "$PIDFILE"
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
