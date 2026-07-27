@@ -155,7 +155,8 @@ flowchart TB
         MOB["Android app (Kotlin/Compose)<br/>JWT plaintext in SharedPreferences (M9)"]
         subgraph CAM["IP Camera - RPi/OpenWRT - 192.168.2.1<br/>Aviosys 9060ASL"]
             WEB["Web/Device Mgmt UI :8080 (uhttpd)"]
-            RTSP["RTSP stream :8554 - plaintext (IoT2)"]
+            HTTP["HTTP MJPEG :9090/video - plaintext, API feed (IoT2)"]
+            RTSP["RTSP stream :8554 - plaintext, payload mangled (IoT2)"]
             SSH["SSH/Dropbear :22 - root:12345678 (IoT1)"]
             FW["update-firmware - hardcoded key+sig (IoT4)"]
         end
@@ -179,9 +180,10 @@ flowchart TB
     API --- MONGO
     API -->|"snapshot source"| CADMIN
     API --- CELLIOT
-    RTSP -->|"video feed (IoT3)"| API
+    HTTP -->|"MJPEG feed (IoT3)"| API
     FW -->|"curl firmware URL"| API
 
+    ATT -.->|"capture MJPEG :9090"| HTTP
     ATT -.->|"sniff RTSP"| RTSP
     ATT -.->|"SSH authorized_keys injection"| SSH
     ATT -.->|"BOLA/BFLA/JWT crack/LFI/PUT firmware"| API

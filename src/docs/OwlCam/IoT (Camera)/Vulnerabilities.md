@@ -12,11 +12,14 @@ cwe:
   - "CWE-347 Improper Verification of Cryptographic Signature, CWE-494 Download of Code Without Integrity Check (IoT4)"
 affected_components:
   - "labs/owlcam/files/etc/init.d/update-firmware"
+  - "labs/owlcam/files/etc/init.d/virtual-cameras"
   - "labs/owlcam/files/etc/init.d/camera-streamer"
+  - "labs/owlcam/files/etc/init.d/camera-http"
+  - "labs/owlcam/files/opt/owlcam/camera_stream.py"
   - "labs/owlcam/files/etc/camapi/config_vuln.json"
 findings:
   - "IoT1: DONE"
-  - "IoT2: PENDING"
+  - "IoT2: IN PROGRESS"
   - "IoT3: PENDING"
   - "IoT4: DONE"
 ---
@@ -52,7 +55,27 @@ It is also important to note that the update script contains a hardcoded signatu
 
 # IoT2:2018 - Insecure Network Services
 
-In video surveillance systems and IP cameras, video streaming is typically performed using protocols such as HTTP or RTSP. In this environment, there is no evidence of TLS/SSL usage, neither in the service startup scripts nor in the firewall configuration, which means that the streaming is transmitted in **plain text**.
+The camera publishes its feed over two plaintext, unauthenticated network services. Neither uses TLS/SSL in the service startup scripts or in the firewall configuration, so all video is transmitted in **plain text**:
+
+| Service | Endpoint | Served by | Notes |
+|---------|----------|-----------|-------|
+| HTTP MJPEG | `http://192.168.2.1:9090/video` | `camera-http` (`opt/owlcam/camera_stream.py`) | Canonical feed. A `multipart/x-mixed-replace` MJPEG stream. This is the stream the cloud API polls to mark the camera active, and the one that renders cleanly in any client. |
+| RTSP | `rtsp://192.168.2.1:8554/cam0` (also `:8555/cam1`, `:8556/cam2`) | `camera-streamer` (v4l2rtspserver) off the v4l2loopback devices | Classic IP-camera RTSP. No credentials, no TLS. |
+
+Capturing a frame from the HTTP MJPEG feed needs no authentication:
+
+```zsh
+# Decode a single frame straight from the stream
+ffmpeg -y -i http://192.168.2.1:9090/video -frames:v 1 frame.jpg
+# Or pull the multipart stream and view it live
+ffplay http://192.168.2.1:9090/video
+```
+
+Any viewer on the LAN can therefore watch the surveillance feed with no credentials at all.
+
+> **Note on the RTSP payload.** `v4l2rtspserver` ships the loopback MJPEG as JPEG-over-RTP (RFC 2435), which strips the JPEG Huffman and quantization tables and expects the receiver to rebuild them from the standard set. With this camera's tables the reconstructed frame is scrambled, so the reliably-decodable capture is the HTTP MJPEG feed on `:9090`. The RTSP service on `:8554-:8556` is still a valid unauthenticated network-service target for discovery and sniffing, it just does not render a clean picture on this build (H264-over-RTSP is not an option here, the on-device build ships no H264 encoder).
+
+The consequences of exposing the feed over plaintext services:
 
 1. An attacker on the same network as the IP camera can capture network traffic and intercept the video stream in real time.
 2. If streaming authentication credentials are also transmitted in plain text, they can be intercepted and reused.

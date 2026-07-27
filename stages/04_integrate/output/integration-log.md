@@ -432,3 +432,33 @@ Isolation test (PyJWT 2.13): a forged `alg:none` token decodes to its payload, a
 ## Deployment / pending
 
 The API image needs `docker compose up --build` to serve the fixed validator (same rebuild that OWL-C3 and OWL-B1 need).
+
+---
+
+# OWL-A1 - Re-scope the streaming surface: HTTP MJPEG :9090 canonical, RTSP re-scoped (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-A1, wave 3). 01_spec inline.
+
+## Decision (01_spec)
+
+The RTSP `:8554-:8556` surface serves scrambled frames (v4l2rtspserver ships the loopback MJPEG as JPEG-over-RTP, RFC 2435, stripping the Huffman/quantization tables). The two candidate transports that render were: H264-over-RTSP, or declaring the HTTP MJPEG on `:9090` canonical. Checked the Pi live: it ships **no H264/H265 encoder** (only `rtph264pay/depay` payloaders and libav audio encoders, `libx264` is not built into libav), so H264-over-RTSP is not achievable on this build without adding packages. Decision: **HTTP MJPEG `http://192.168.2.1:9090/video` is the canonical decodable stream** (the cloud API already polls it), and RTSP is re-scoped to the raw unauthenticated insecure-services surface (feeds OWL-A2), documented as payload-mangled.
+
+## Code (02_implement)
+
+Found a packaging bug: `etc/init.d/camera-http` and the hook `usr/lib/vulnzoo-hooks/profile-init.d/23-camera-http.sh` were tracked `100644` (non-executable) while every sibling init script/hook is `100755`. On a fresh flash the hook cannot run and `/etc/init.d/camera-http start` fails with `Permission denied`, so the A0 bridge never auto-started. Fixed both to `100755` (`git update-index --chmod=+x`, staged). No streaming-config change was needed, the bridge itself already serves the intact frame.
+
+## Doc (03_document)
+
+- `IoT (Camera)/Vulnerabilities.md`: rewrote the IoT2 opening to name the two concrete plaintext services (HTTP MJPEG `:9090/video` and RTSP `:8554-:8556`) with an endpoint table and a no-auth `ffmpeg`/`ffplay` capture, added a note explaining the RFC 2435 RTSP corruption and why `:9090` is the reliable capture. Expanded `affected_components` to the real streaming stack (`virtual-cameras`, `camera-streamer`, `camera-http`, `camera_stream.py`). Flipped the IoT2 finding badge `PENDING -> IN PROGRESS` (endpoint documented and verified, the full sniff/replay attack is OWL-A2).
+- `README.md`: fixed the architecture mermaid, added the `HTTP MJPEG :9090/video` node in the camera subgraph, repointed the API feed edge from `RTSP` to `HTTP` (the API consumes the bridge, not RTSP), added the attacker `capture MJPEG :9090` edge.
+- `labs/owlcam/CONTEXT.md`: added the `:9090/video` bridge to the verification checklist and the Outputs table, marked RTSP as the raw insecure-services surface with a mangled JPEG/RTP payload.
+
+## Verification
+
+- Started the bridge on the live Pi and carved one frame from `http://127.0.0.1:9090/video`: valid JPEG (SOI/EOI), 640x480, 46243 bytes, **byte-identical to `/root/img_cam0.jpeg`** (md5 `fb672c7edc971ea0a0d55da296fb81fe`). This is the decodable frame the RTSP path cannot produce.
+- After `chmod +x`, verified the packaged path the hook uses: `VULNZOO_DEVICE=owlcam sh .../23-camera-http.sh` -> `/etc/init.d/camera-http start` brings `:9090` up and the frame is still decodable (46243-byte valid JPEG).
+
+## Deployment / pending
+
+- `owlcam.tar.gz` needs a rebuild so fresh flashes ship the executable `camera-http`/hook and auto-start the bridge (the user manages the tar.gz, not repackaged here). The live Pi has the exec bits applied and the bridge running.
+- OWL-A2 builds the full IoT2 attack (weak-cred RTSP discovery, plaintext sniff, replay) on top of this re-scoped surface.
