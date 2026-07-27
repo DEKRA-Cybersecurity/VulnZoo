@@ -289,3 +289,34 @@ Target from `stages/TARGET.md` (OWL-D5). Pass: `01_spec -> 04_integrate` (02 N/A
 ## Stage cleanup
 
 `stages/01_spec/output/owl-d5-spec.md` cleaned after promotion. This log is the durable record.
+
+---
+
+# OWL-C1 - Document the strong undocumented API endpoints (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-C1). Pass: `01_spec -> 04_integrate` (02 N/A, the endpoints already exist, this was a documentation gap).
+
+## Change
+
+Added the section `# Exposed Debug and Administrative Endpoints (additional findings)` to `docs/OwlCam/API/Vulnerabilities.md`, documenting six previously-undocumented findings, each with its OWASP 2023 category, CWE, a `curl` repro and the expected result. All confirmed by reading `cloud_api/owlcam/api_server/app.py`.
+
+1. `POST /firmware/trigger_update` - unauthenticated OS command injection RCE via `shell=True` f-string (API8, CWE-78, Critical).
+2. `POST /firmware/upload` - unauthenticated arbitrary upload + path traversal on the client filename (API8, CWE-434/CWE-22, High).
+3. `GET /api/v1/debug/sessions?admin_id=` - weak-auth dump of all sessions including `_id`, the session token, enabling hijack (API9/API2, High).
+4. `GET /sessions` - unauthenticated session metadata enumeration (API9, CWE-200, Medium).
+5. `GET /camerasdb/delete` + `/restart` - unauthenticated destructive DB wipe over GET, also CSRF-able (API8/API5, High).
+6. `POST /api/debug/decode_token` - unauthenticated JWT decode with signature verification off (API9, CWE-489, Low-Medium).
+
+The frontmatter `findings` list was extended with these six endpoint findings (now 16 total). Badges are `IN PROGRESS`: documented from source review, not reproduced against the live lab (the containers are OOM-exited and the destructive / RCE findings must not be run against a working deployment).
+
+## Correction to the earlier review
+
+`/sessions` projects out `_id`, so it does NOT leak the session token. The token leak is `/api/v1/debug/sessions`, which serializes and returns `_id`. Documented accordingly.
+
+## Verification
+
+Frontmatter parses (`yaml.safe_load`, 16 findings), the section has 6 H2 findings with OWASP/CWE tags and `IN PROGRESS` badges, and no prose line carries a semicolon. All endpoint behaviors were confirmed against `app.py` (`UPLOAD_FOLDER=/vulnzoo/firmware`, `subprocess.Popen(..., shell=True)`, `find({}, {"_id": 0})` vs `find({})`, `drop_database`).
+
+## Stage cleanup
+
+`stages/01_spec/output/owl-c1-spec.md` cleaned after promotion. This log is the durable record.
