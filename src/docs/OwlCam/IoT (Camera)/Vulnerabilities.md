@@ -1,3 +1,26 @@
+---
+id: "OWLCAM-IOT"
+title: "OwlCam IoT Camera Vulnerabilities (OWASP IoT Top 10 2018)"
+category: IoT
+status: IN PROGRESS
+severity: "High to Medium (per finding)"
+owasp: "OWASP IoT Top 10 (2018): IoT1 Weak/Guessable/Hardcoded Passwords, IoT2 Insecure Network Services, IoT3 Insecure Ecosystem Interfaces, IoT4 Lack of Secure Update Mechanism"
+cwe:
+  - "CWE-798 Use of Hard-coded Credentials (IoT1)"
+  - "CWE-319 Cleartext Transmission of Sensitive Information (IoT2)"
+  - "CWE-284 Improper Access Control (IoT3)"
+  - "CWE-347 Improper Verification of Cryptographic Signature, CWE-494 Download of Code Without Integrity Check (IoT4)"
+affected_components:
+  - "labs/owlcam/files/etc/init.d/update-firmware"
+  - "labs/owlcam/files/etc/init.d/camera-streamer"
+  - "labs/owlcam/files/etc/camapi/config_vuln.json"
+findings:
+  - "IoT1: DONE"
+  - "IoT2: PENDING"
+  - "IoT3: PENDING"
+  - "IoT4: IN PROGRESS"
+---
+
 # IoT1:2018 Weak, Guessable, Hardcoded Passwords
 
 The simulated camera is an [Aviosys 9060ASL](https://devices.luxriot.com/device/aviosys/9060asl-i-o). This information is useful, as the default credentials for these IP cameras are _"admin:12345678"_. Testing these credentials confirms that access to the device is possible.
