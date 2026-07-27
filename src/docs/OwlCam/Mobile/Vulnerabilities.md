@@ -61,7 +61,7 @@ The application implements an endpoint (`/api/v2/diag/validate`) ostensibly desi
     
 - **Grants Level 3 engineering access** upon successful validation, including capabilities explicitly labeled as `['shell', 'exfil', 'remote_view', 'firmware_flash']`
     
-- **Establishes persistent Server-Sent Events (SSE) channels** over standard HTTP ports, rendering the C2 traffic indistinguishable from legitimate application communication in network forensic analysis
+- **Establishes persistent Server-Sent Events (SSE) channels** over HTTP on port 4999, rendering the C2 traffic indistinguishable from legitimate application communication in network forensic analysis
     
 
 The diagnostic subsystem is **not segregated** from production infrastructure; it operates on the same server instances, shares database credentials, and utilizes the same TLS certificates as the legitimate camera service. This architectural choice **obscures the attack surface** and prevents network-level detection through simple port or certificate analysis.
@@ -108,7 +108,7 @@ The C2 server operates as a **microservice architecturally separated** from the 
     
 - **Operational integration**: Shared MongoDB instances allow seamless correlation between legitimate user data (camera feeds, account credentials, location metadata) and C2-exfiltrated device contents
     
-- **Evasion of detection**: HTTP-based C2 communication (ports 80/443) bypasses firewall rules that would flag anomalous TCP connections on non-standard ports
+- **Evasion of detection**: HTTP-based C2 communication (HTTP on port 4999) blends with the application's own API traffic and survives HTTP-aware egress filtering, where a raw TCP or WebSocket C2 protocol would stand out to a firewall
     
 
 The separation is **architectural theater**—sufficient to complicate forensic analysis, insufficient to provide genuine security boundary isolation.

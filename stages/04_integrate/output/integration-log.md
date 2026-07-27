@@ -350,3 +350,29 @@ The documented `/snapshot` session-only bypass (`session.status == 'active'`) ne
 ## Stage cleanup
 
 01_spec for OWL-C3 was performed inline (drift verification), no throwaway spec file. This log is the durable record.
+
+---
+
+# OWL-F3 - Fix C2 doc path/network drift and port narrative (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-F3), last item of wave 1. 01_spec done inline (verified the real path, network name and port against the tree and the live `c2-server` container). Pass: `01_spec -> 04_integrate` (02 N/A, docs only).
+
+## Change
+
+| File | Drift | Fix |
+|------|-------|-----|
+| `Mobile/ARCHITECTURE_SSE_C2.md` | `cd cloud_api/c2_server`, README ref `cloud_api/c2_server/README.md` | `cloud_api/owlcam/c2_server` (the README exists there) |
+| `Mobile/ARCHITECTURE_SSE_C2.md` | `docker network inspect cloud_api_c2_net` | `owlcam_c2_net` (real network, confirmed on the running container) |
+| `Mobile/C2-HTTP-SSE-Migration.md` | `cd cloud_api/c2_server`, `docker network inspect cloud_api_c2_net` | `cloud_api/owlcam/c2_server`, `owlcam_c2_net` |
+| `Mobile/Vulnerabilities.md` (M6) | "over standard HTTP ports" | "over HTTP on port 4999" |
+| `Mobile/Vulnerabilities.md` (M6) | "(ports 80/443) bypasses firewall rules that would flag anomalous TCP connections on non-standard ports" (false and self-contradictory, 4999 is itself non-standard) | "(HTTP on port 4999) blends with the application's own API traffic and survives HTTP-aware egress filtering, where a raw TCP or WebSocket C2 protocol would stand out to a firewall" |
+
+The port narrative now agrees across M6: the C2 is HTTP on 4999. The client-side ephemeral-port "connection laundering" section (about the mobile's source ports) is accurate and left as is.
+
+## Verification
+
+`grep` confirms no `cloud_api/c2_server`, `cloud_api_c2_net`, `ports 80/443` or "over standard HTTP ports" remain. The real network name `owlcam_c2_net` was read from the live `c2-server` container, and `cloud_api/owlcam/c2_server/README.md` exists.
+
+## Stage cleanup
+
+01_spec was performed inline. This log is the durable record. Wave 1 (D1-D5, C1, C3, F3) is complete.
