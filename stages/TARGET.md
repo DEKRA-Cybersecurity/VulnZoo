@@ -37,7 +37,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-D5 | [x] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | DONE [verified] |
 | OWL-C1 | [x] | Document the strong undocumented API vulns | API coverage | Doc | DONE [verified] |
 | OWL-C3 | [x] | Fix API doc<->code drifts | API coverage | Code/Doc | DONE [verified] |
-| OWL-F3 | [ ] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | PENDING [doc] |
+| OWL-F3 | [x] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | DONE [verified] |
 | OWL-B1 | [ ] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | PENDING [verified] |
 | OWL-B2 | [ ] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | PENDING [verified] |
 | OWL-A1 | [ ] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | PENDING [verified] |
@@ -103,12 +103,12 @@ The most powerful real findings are undocumented: `/firmware/trigger_update` com
 - [x] 03_document - corrected routes (`/admin/roles`, `/api/v2/userinfo`, `/profile/change_password`), the weak-Referer CSRF claim, the XSS `auth` key, the M9 package, the IoT1 `root:12345678` credential
 - [x] 04_integrate - grep-verified no drift remains, `app.py` parses with 4 `status:'active'`, logged. Code change needs `docker compose up --build` for live repro (containers OOM), noted
 
-#### OWL-F3 - C2 doc path + port consistency · PENDING [doc]
+#### OWL-F3 - C2 doc path + port consistency · DONE [verified]
 The migration doc points the simulator at `cd cloud_api/c2_server` (real path `cloud_api/owlcam/c2_server`), and the M6 doc mixes "ports 80/443" prose with the actual C2 port `4999`.
-- [ ] 01_spec - list the drifted paths and ports vs the real compose/tree
-- [ ] 02_implement - N/A
-- [ ] 03_document - correct the paths and reconcile the port narrative
-- [ ] 04_integrate - promote, log
+- [x] 01_spec - verified real path, network (`owlcam_c2_net` from the live container) and port (4999) inline
+- [x] 02_implement - N/A
+- [x] 03_document - fixed the `cloud_api/owlcam/c2_server` path and `owlcam_c2_net` network in ARCH + MIGRATION, reconciled M6 to HTTP on port 4999
+- [x] 04_integrate - grep-verified no drift remains, the referenced README resolves, logged
 
 ### Wave 2 - Repair the broken flagship chains
 

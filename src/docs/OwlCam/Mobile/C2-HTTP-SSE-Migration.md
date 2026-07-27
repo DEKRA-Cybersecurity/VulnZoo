@@ -192,7 +192,7 @@ conn.setRequestProperty(ApiConfig.HEADER_DIAG_TOKEN, token)
 
 ```bash
 # Start simulator
-cd cloud_api/c2_server
+cd cloud_api/owlcam/c2_server
 python device_simulator.py --token 000007
 
 # Multiple devices
@@ -278,7 +278,7 @@ curl http://localhost:4999/health
 ```bash
 # Check Docker network
 docker network ls
-docker network inspect cloud_api_c2_net
+docker network inspect owlcam_c2_net
 
 # Test from API container
 docker exec -it vulnzoo-vulnerable curl http://c2-server:4999/health

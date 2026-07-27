@@ -88,7 +88,7 @@ Credentials: `letstechin`
 
 ```bash
 # Terminal 1: Start simulator
-cd cloud_api/c2_server
+cd cloud_api/owlcam/c2_server
 python device_simulator.py --token 000007
 
 # Terminal 2: Simulate multiple devices
@@ -252,7 +252,7 @@ curl -N http://localhost:4999/stream \
   -H "X-Device-Model: Test"
 
 # Check Docker network
-docker network inspect cloud_api_c2_net
+docker network inspect owlcam_c2_net
 ```
 
 ### Panel not showing sessions
@@ -267,7 +267,7 @@ curl -X POST http://localhost:4999/panel/auth \
 ## References
 
 - Full documentation: `docs/VulnZoo-Documentation/C2-HTTP-SSE-Migration.md`
-- C2 Server README: `cloud_api/c2_server/README.md`
+- C2 Server README: `cloud_api/owlcam/c2_server/README.md`
 
 ---
 
