@@ -320,3 +320,33 @@ Frontmatter parses (`yaml.safe_load`, 16 findings), the section has 6 H2 finding
 ## Stage cleanup
 
 `stages/01_spec/output/owl-c1-spec.md` cleaned after promotion. This log is the durable record.
+
+---
+
+# OWL-C3 - Fix OwlCam doc<->code drifts (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-C3), broadened from API-only to all OwlCam doc<->code drifts (it absorbs the IoT1 and M9 drifts flagged during OWL-D5). 01_spec done inline (verified every drift against `app.py` and the JS/manifest). Pass: `01_spec -> 04_integrate`. This one carries a small `02_implement` code change.
+
+## Doc fixes (docs match the code now)
+
+| File | Drift | Fix |
+|------|-------|-----|
+| `API/Vulnerabilities.md` | `/admin/v2/userinfo` typo | `/api/v2/userinfo` |
+| `API/Vulnerabilities.md` | `/profile-change_password` | `/profile/change_password` (real route) |
+| `API/Vulnerabilities.md` | `/admin/assign-role` (x8, non-existent) | `/admin/roles` (real role-change route) |
+| `API/Vulnerabilities.md` | CSRF claim "does not validate the origin" (x2) | corrected: the endpoint enforces a weak `Referer` substring check (any `/admin` in the header), bypassed by an attacker URL whose path contains `/admin` |
+| `API/Vulnerabilities.md` | XSS payload reads `localStorage.getItem('jwt')` | `('auth')`, the real key (`login.js` `setItem('auth', ...)`) |
+| `Mobile/Vulnerabilities.md` | shared_prefs path `com.example.vulnzoo` | `com.example.owlcamapp` (real applicationId) |
+| `IoT (Camera)/Vulnerabilities.md` | SSH default `admin:12345678`, "testing confirms access" | keeps the Aviosys vendor default as context, states the lab OpenWRT login is `root:12345678` (verified live, `admin` is denied) |
+
+## Code change (`app.py`, 02_implement)
+
+The documented `/snapshot` session-only bypass (`session.status == 'active'`) never fired because no session document set `status`. Added `'status': 'active'` to all four session-creation sites (init admin session, the `/admin` flow, `/api/v1/login`, `/api/v2/login`), so the documented bypass is now reproducible and completes the chain from the OWL-C1 `/api/v1/debug/sessions` token leak to `/snapshot?session=<id>`.
+
+## Verification
+
+`grep` confirms no drifted string remains in the docs, the corrected routes/keys/credential are present, `app.py` carries four `'status': 'active'` and parses (`ast.parse` OK). The code change is static-verified only, live reproduction needs a `docker compose up --build` (the API/mongo containers are OOM-exited) and is pending.
+
+## Stage cleanup
+
+01_spec for OWL-C3 was performed inline (drift verification), no throwaway spec file. This log is the durable record.

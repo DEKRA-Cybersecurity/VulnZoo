@@ -23,7 +23,7 @@ findings:
 
 # IoT1:2018 Weak, Guessable, Hardcoded Passwords
 
-The simulated camera is an [Aviosys 9060ASL](https://devices.luxriot.com/device/aviosys/9060asl-i-o). This information is useful, as the default credentials for these IP cameras are _"admin:12345678"_. Testing these credentials confirms that access to the device is possible.
+The simulated camera is an [Aviosys 9060ASL](https://devices.luxriot.com/device/aviosys/9060asl-i-o). This is useful reconnaissance, the documented vendor default for these IP cameras is _"admin:12345678"_. On the lab device the OpenWRT SSH account is _root_ with the same weak password, so testing _root:12345678_ confirms that SSH access to the device is possible.
 
 We can get the model of the camera IP model by analysing the ssh connection. Dropbear shows us some information if we use `ssh -v` flag.
 

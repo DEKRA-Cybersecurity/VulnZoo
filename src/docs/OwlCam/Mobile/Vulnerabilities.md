@@ -159,7 +159,7 @@ The VulnZoo scenario is not hypothetical. It reproduces patterns observed in **v
 > These threat agents exploit vulnerabilities like weak encryption, insufficient data protection, insecure data storage mechanisms, and improper handling of user credentials. It is crucial for mobile app developers and organisations to implement strong security measures, such as robust encryption, secure data storage practices, and adherence to best practices for mobile application security, to mitigate the risks associated with insecure data storage.
 
 ## Demonstration: Insecure JWT Storage
-The VulnZoo mobile application stores the session JWT token in plaintext within the device’s shared preferences. As shown in the screenshot below, reading the file `/data/data/com.example.vulnzoo/shared_prefs/session_prefs.xml` reveals the entire JWT token without any encryption or protection.
+The VulnZoo mobile application stores the session JWT token in plaintext within the device’s shared preferences. As shown in the screenshot below, reading the file `/data/data/com.example.owlcamapp/shared_prefs/session_prefs.xml` reveals the entire JWT token without any encryption or protection.
 ![[mobile9_jwt_token_insecure_mobile.png]]
 
 **Exploitation steps:**

