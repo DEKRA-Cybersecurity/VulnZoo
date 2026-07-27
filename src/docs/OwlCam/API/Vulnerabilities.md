@@ -1,3 +1,39 @@
+---
+id: "OWLCAM-API"
+title: "OwlCam Cloud API Vulnerabilities (OWASP API Security Top 10 2023)"
+category: API
+status: IN PROGRESS
+severity: "Critical to Low (per finding)"
+owasp: "OWASP API Security Top 10 2023: API1 BOLA, API2 Broken Authentication, API3 BOPLA, API4 Unrestricted Resource Consumption, API5 BFLA, API6 Unrestricted Access to Sensitive Business Flows, API7 SSRF, API8 Security Misconfiguration, API9 Improper Inventory Management, API10 Unsafe Consumption of APIs"
+cwe:
+  - "CWE-639 Authorization Bypass Through User-Controlled Key (API1)"
+  - "CWE-287 Improper Authentication, CWE-798 Use of Hard-coded Credentials (API2)"
+  - "CWE-213 Exposure of Sensitive Information (API3)"
+  - "CWE-770 Allocation of Resources Without Limits or Throttling (API4)"
+  - "CWE-285 Improper Authorization (API5)"
+  - "CWE-840 Business Logic Errors (API6)"
+  - "CWE-918 Server-Side Request Forgery, CWE-352 Cross-Site Request Forgery (API7)"
+  - "CWE-16 Configuration, CWE-200 Exposure of Sensitive Information (API8)"
+  - "CWE-22 Improper Limitation of a Pathname to a Restricted Directory (API9)"
+  - "CWE-79 Cross-site Scripting, CWE-345 Insufficient Verification of Data Authenticity (API10)"
+affected_components:
+  - "cloud_api/owlcam/api_server/app.py"
+  - "cloud_api/owlcam/api_server/config.py"
+  - "cloud_api/owlcam/api_server/services/jwt_service.py"
+  - "cloud_api/owlcam/api_server/static/js/messages.js"
+  - "cloud_api/owlcam/api_server/core/c2_diag.py"
+findings:
+  - "API1: DONE"
+  - "API2: DONE"
+  - "API3: IN PROGRESS"
+  - "API4: PENDING"
+  - "API5: DONE"
+  - "API6: PENDING"
+  - "API7: PENDING"
+  - "API8: DONE"
+  - "API9: DONE"
+  - "API10: DONE"
+---
 
 # API1:2023 - Broken Object Level Authorization
 

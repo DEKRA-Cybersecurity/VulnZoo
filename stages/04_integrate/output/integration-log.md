@@ -180,3 +180,29 @@ Prose descriptions of the device type ("IP Camera Vulnerable Profile", "IP Camer
 ## Stage cleanup
 
 `stages/01_spec/output/owl-d1-spec.md` cleaned after promotion, per convention. This log is the durable record.
+
+---
+
+# OWL-D2 - YAML frontmatter on OwlCam vuln docs (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-D2). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code).
+
+## Change
+
+Added a collection-level YAML frontmatter block (the 8 convention fields plus a compact per-finding status list) to each aggregate vuln doc. The OwlCam docs aggregate many findings per file, so the frontmatter is per-file, not per-finding. A per-finding split (CANary style) is a larger refactor, out of OWL-D2 scope.
+
+| File | id | status |
+|------|----|--------|
+| `IoT (Camera)/Vulnerabilities.md` | OWLCAM-IOT | IN PROGRESS |
+| `API/Vulnerabilities.md` | OWLCAM-API | IN PROGRESS |
+| `Mobile/Vulnerabilities.md` | OWLCAM-MOBILE | DONE |
+
+Not touched (not vuln findings): `README.md`, `Mobile/ARCHITECTURE_SSE_C2.md`, `Mobile/C2-HTTP-SSE-Migration.md`.
+
+## Verification
+
+All 3 files begin with `---` at byte 0, the YAML parses (`yaml.safe_load`) with keys `id/title/category/status/severity/owasp/cwe/affected_components/findings`, and the original H1 heading follows. The API file's pre-existing leading blank line was dropped so the frontmatter is byte 0.
+
+## Stage cleanup
+
+`stages/01_spec/output/owl-d2-spec.md` cleaned after promotion. This log is the durable record.

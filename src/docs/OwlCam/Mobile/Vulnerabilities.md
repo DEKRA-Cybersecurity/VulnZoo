@@ -1,3 +1,21 @@
+---
+id: "OWLCAM-MOBILE"
+title: "OwlCam Mobile App Vulnerabilities (OWASP Mobile Top 10)"
+category: Mobile
+status: DONE
+severity: "High"
+owasp: "OWASP Mobile Top 10: M6 Inadequate Privacy Controls (C2 backdoor), M9 Insecure Data Storage (plaintext JWT)"
+cwe:
+  - "CWE-506 Embedded Malicious Code, CWE-912 Hidden Functionality (M6)"
+  - "CWE-312 Cleartext Storage of Sensitive Information, CWE-922 Insecure Storage of Sensitive Information (M9)"
+affected_components:
+  - "vulnzoo_apps/owlcam_app/"
+  - "cloud_api/owlcam/c2_server/"
+findings:
+  - "M6: DONE"
+  - "M9: DONE"
+---
+
 # M6: Inadequate Privacy Controls
 
 ## Definition by OWASP

@@ -31,7 +31,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | ID | Done | Target | Group | Type | Status |
 |----|------|--------|-------|------|--------|
 | OWL-D1 | [x] | Dead doc routing `docs/IP Camera/` -> `docs/OwlCam/` | MWP integrity | Doc/Config | DONE [verified] |
-| OWL-D2 | [ ] | Add YAML frontmatter to every OwlCam vuln doc | MWP integrity | Doc | PENDING [verified] |
+| OWL-D2 | [x] | Add YAML frontmatter to every OwlCam vuln doc | MWP integrity | Doc | DONE [verified] |
 | OWL-D3 | [ ] | Standardize status badges to DONE/IN PROGRESS/PENDING | MWP integrity | Doc | PENDING [doc] |
 | OWL-D4 | [ ] | Fix broken Obsidian wikilinks | MWP integrity | Doc | PENDING [doc] |
 | OWL-D5 | [ ] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | PENDING [doc] |
@@ -61,12 +61,12 @@ The folder `docs/IP Camera/` does not exist, the real path is `docs/OwlCam/`, ye
 - [x] 03_document - N/A
 - [x] 04_integrate - rewrote 6 files to `docs/OwlCam/`, verified no path ref remains, logged in integration-log.md
 
-#### OWL-D2 - YAML frontmatter on every OwlCam vuln doc · PENDING [verified]
+#### OWL-D2 - YAML frontmatter on every OwlCam vuln doc · DONE [verified]
 No OwlCam vuln doc carries frontmatter (id/title/category/status/severity/owasp/cwe/affected_components), which the AGENTS.md convention requires and CANary already follows.
-- [ ] 01_spec - define the frontmatter block per finding (IoT1..IoT4, API1..API10, M6, M9)
-- [ ] 02_implement - N/A
-- [ ] 03_document - author the frontmatter for each doc, aligned with the actual code paths
-- [ ] 04_integrate - promote into the `docs/OwlCam/` files, log it
+- [x] 01_spec - decided per-file collection frontmatter (docs aggregate many findings), 3 files in scope, README + C2 guides out
+- [x] 02_implement - N/A
+- [x] 03_document - authored 3 frontmatter blocks (8 convention fields + compact per-finding status), CWE/owasp aligned to the code paths
+- [x] 04_integrate - prepended into the 3 files, validated YAML parses at byte 0, logged in integration-log.md
 
 #### OWL-D3 - Standardize status badges · PENDING [doc]
 The API doc uses non-standard markers (`NOT DEVELOPED`, `PENDING REVIEW`, `ATTACK DOCUMENTATION PENDING`) instead of `DONE`/`IN PROGRESS`/`PENDING`.
