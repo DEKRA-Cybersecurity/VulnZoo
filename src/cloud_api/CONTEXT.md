@@ -109,8 +109,8 @@ docker-compose up -d --build
 |----------|----------|
 | OctoBot Lab Details | `src/docs/OctoBot/OPENWRT_INTEGRATION.md` |
 | OwlCam Lab Details | `cloud_api/owlcam/CONTEXT.md` |
-| API Vulnerabilities | `docs/IP Camera/API/Vulnerabilities.md` |
-| C2 Architecture | `docs/IP Camera/Mobile/ARCHITECTURE_SSE_C2.md` |
+| API Vulnerabilities | `docs/OwlCam/API/Vulnerabilities.md` |
+| C2 Architecture | `docs/OwlCam/Mobile/ARCHITECTURE_SSE_C2.md` |
 | OWASP API Top 10 | 2023 |
 | JWT Attacks | https://portswigger.net/web-security/jwt |
 
@@ -121,5 +121,5 @@ docker-compose up -d --build
 | Deploy OctoBot cloud API | `cloud_api/octobot/` | `src/docs/OctoBot/OPENWRT_INTEGRATION.md` |
 | Deploy OwlCam cloud API | `cloud_api/owlcam/` | `cloud_api/owlcam/CONTEXT.md` |
 | Deploy CareOtter cloud API | `cloud_api/careotter/` | `cloud_api/careotter/CONTEXT.md` |
-| Understand cloud vulnerabilities | `docs/IP Camera/` | `docs/IP Camera/API/Vulnerabilities.md` |
+| Understand cloud vulnerabilities | `docs/OwlCam/` | `docs/OwlCam/API/Vulnerabilities.md` |
 | Configure specific service | `cloud_api/<lab>/` | Lab-specific CONTEXT.md |

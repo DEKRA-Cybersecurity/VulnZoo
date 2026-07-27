@@ -8,7 +8,7 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 |-------------------|--------------------------|--------|
 | `careotter` | `CareOtter/` | Medical (ICD + bedside monitor) |
 | `routcoon` | `Router/` | Home/enterprise router |
-| `owlcam` | `IP Camera/` | IP camera surveillance |
+| `owlcam` | `OwlCam/` | IP camera surveillance |
 | `octobot` | `OctoBot/` | Industrial (robotic arm, ICS) |
 | `canary` | `Canary/` | Automotive (CAN gateway + SOME/IP) |
 

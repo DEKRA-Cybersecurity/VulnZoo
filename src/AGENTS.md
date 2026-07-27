@@ -65,7 +65,7 @@ src/
 |------------------------|----------------------|
 | `careotter` (medical) | [`docs/CareOtter/`](docs/CareOtter/) |
 | `routcoon` (router) | [`docs/Router/`](docs/Router/) |
-| `owlcam` (IP camera) | [`docs/IP Camera/`](docs/IP%20Camera/) |
+| `owlcam` (IP camera) | [`docs/OwlCam/`](docs/OwlCam/) |
 | `octobot` (industrial) | [`docs/OctoBot/`](docs/OctoBot/) |
 | `canary` (automotive) | [`docs/Canary/`](docs/Canary/) |
 

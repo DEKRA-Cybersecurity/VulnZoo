@@ -26,11 +26,11 @@ A video surveillance camera has been installed in a home environment, but the co
 
 | Layer | Source Path | Role/Description |
 |-------|-------------|------------------|
-| **Layer 3** | `../../docs/IP Camera/README.md` | Lab introduction and setup guide |
-| **Layer 3** | `../../docs/IP Camera/API/Vulnerabilities.md` | API vulnerabilities (OWASP API Top 10 2023) |
-| **Layer 3** | `../../docs/IP Camera/IoT (Camera)/Vulnerabilities.md` | IoT vulnerabilities (OWASP IoT Top 10 2018) |
-| **Layer 3** | `../../docs/IP Camera/Mobile/Vulnerabilities.md` | Mobile vulnerabilities (OWASP MASVS) |
-| **Layer 3** | `../../docs/IP Camera/Mobile/ARCHITECTURE_SSE_C2.md` | C2 backdoor architecture |
+| **Layer 3** | `../../docs/OwlCam/README.md` | Lab introduction and setup guide |
+| **Layer 3** | `../../docs/OwlCam/API/Vulnerabilities.md` | API vulnerabilities (OWASP API Top 10 2023) |
+| **Layer 3** | `../../docs/OwlCam/IoT (Camera)/Vulnerabilities.md` | IoT vulnerabilities (OWASP IoT Top 10 2018) |
+| **Layer 3** | `../../docs/OwlCam/Mobile/Vulnerabilities.md` | Mobile vulnerabilities (OWASP MASVS) |
+| **Layer 3** | `../../docs/OwlCam/Mobile/ARCHITECTURE_SSE_C2.md` | C2 backdoor architecture |
 | **Layer 4** | `files/` | OpenWRT overlay files for camera |
 | **Layer 4** | `../../cloud_api/` | Docker containers for backend API |
 | **Layer 4** | `../../vulnzoo_apps/` | Mobile application source (Kotlin/Compose) |
@@ -257,11 +257,11 @@ curl -X PUT --data-binary @malware \
 
 ## References
 
-- Docs: `docs/IP Camera/README.md`
-- API Vulns: `docs/IP Camera/API/Vulnerabilities.md`
-- IoT Vulns: `docs/IP Camera/IoT (Camera)/Vulnerabilities.md`
-- Mobile Vulns: `docs/IP Camera/Mobile/Vulnerabilities.md`
-- C2 Architecture: `docs/IP Camera/Mobile/ARCHITECTURE_SSE_C2.md`
+- Docs: `docs/OwlCam/README.md`
+- API Vulns: `docs/OwlCam/API/Vulnerabilities.md`
+- IoT Vulns: `docs/OwlCam/IoT (Camera)/Vulnerabilities.md`
+- Mobile Vulns: `docs/OwlCam/Mobile/Vulnerabilities.md`
+- C2 Architecture: `docs/OwlCam/Mobile/ARCHITECTURE_SSE_C2.md`
 - OWASP API Top 10: 2023
 - OWASP IoT Top 10: 2018
 - OWASP MASVS: Mobile Application Security
