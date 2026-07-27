@@ -462,3 +462,33 @@ Found a packaging bug: `etc/init.d/camera-http` and the hook `usr/lib/vulnzoo-ho
 
 - `owlcam.tar.gz` needs a rebuild so fresh flashes ship the executable `camera-http`/hook and auto-start the bridge (the user manages the tar.gz, not repackaged here). The live Pi has the exec bits applied and the bridge running.
 - OWL-A2 builds the full IoT2 attack (weak-cred RTSP discovery, plaintext sniff, replay) on top of this re-scoped surface.
+
+---
+
+# OWL-A2 - IoT2 real streaming attack: cleartext capture + replay (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-A2, wave 3). 01_spec inline.
+
+## Decision (01_spec)
+
+Deviated from the original spec's "authenticated-but-weak RTSP" idea. After OWL-A1 established that the RTSP payload is mangled (RFC 2435) and the Pi ships no H264 encoder, cracking weak RTSP credentials to watch a scrambled stream is low value and would need an overlay change plus a re-flash. The IoT2 centerpiece is instead the cleartext transmission itself (CWE-319): the HTTP MJPEG feed on `:9090` renders and is unauthenticated, so a passive sniff recovers the live video verbatim. Unauthenticated RTSP on `:8554-:8556` is documented as the secondary open-service/enumeration target.
+
+## Code (02_implement)
+
+N/A. Both streaming services are insecure by design (unauthenticated, no TLS). No overlay change, so `owlcam.tar.gz` is untouched. All attacker tooling is standard (`nmap`, `nc`, `tcpdump`, `tshark`/Wireshark, `python3`) and the repro snippets live in the doc.
+
+## Doc (03_document)
+
+`IoT (Camera)/Vulnerabilities.md`, under IoT2:
+- Recon and enumeration: `nmap` shows `:8554-:8556` (RTSP) and `:9090` (HTTP MJPEG) open with no auth, an unauthenticated `DESCRIBE` returns `200 OK` and a wrong path leaks the real `cam0` mount point.
+- Passive capture (cleartext sniffing, CWE-319): `tcpdump` the `:9090` feed while a victim watches, reassemble with Wireshark "Follow TCP Stream" or `tshark --export-objects http`, carve JPEG frames on the SOI/EOI markers.
+- Replay: a minimal MJPEG server re-serves the captured frame as a fake live feed, chained to the API `/snapshot` BOLA (this is the concrete path IoT3 owns).
+- Flipped the IoT2 finding badge `IN PROGRESS -> DONE`.
+
+## Verification
+
+Live on the Pi. Captured `:9090` with `tcpdump` while a client pulled the feed, wrote a proper TCP reassembler (parses the pcap, orders server->client segments by seq, strips the HTTP header), then carved the first JPEG: **byte-identical to `/root/img_cam0.jpeg`, md5 `fb672c7edc971ea0a0d55da296fb81fe`**, so the live frame crosses the wire in cleartext and is recovered with no credentials. Unauthenticated RTSP `DESCRIBE` confirmed (no `401`, `cam0` mount point leaked in the 404 body). Replay re-serves that exact captured frame by construction, all test artifacts cleaned from `/tmp`.
+
+## Deployment / pending
+
+None. Doc-only target, no image rebuild. OWL-A3 (IoT3 de-stub) reuses this streaming surface plus the API access-control break.
