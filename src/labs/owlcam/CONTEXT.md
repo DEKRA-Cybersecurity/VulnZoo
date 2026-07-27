@@ -123,7 +123,8 @@ adb shell am start -n com.example.vulnzooapp/.MainActivity
 
 **Verification Steps:**
 - [ ] Camera web interface loads at `http://192.168.2.1`
-- [ ] RTSP stream accessible on port 8554
+- [ ] HTTP MJPEG stream accessible on port 9090 (`/video`, the feed the API polls)
+- [ ] RTSP stream accessible on port 8554 (raw insecure-services surface)
 - [ ] API responds at `http://localhost:5000`
 - [ ] Database initialized with default user `john`
 - [ ] Mobile app connects to API (10.0.2.2 for emulator)
@@ -133,7 +134,8 @@ adb shell am start -n com.example.vulnzooapp/.MainActivity
 | Artifact | Path/Port | Description |
 |----------|-----------|-------------|
 | Camera Web UI | `192.168.2.1:80` | OpenWRT device management |
-| RTSP Stream | `192.168.2.1:8554` | Unencrypted video stream |
+| HTTP MJPEG Bridge | `192.168.2.1:9090/video` | Decodable camera feed the API polls (canonical stream) |
+| RTSP Stream | `192.168.2.1:8554` | Unencrypted RTSP (v4l2rtspserver); raw insecure-services surface, JPEG/RTP payload mangled |
 | API Service | `:5000` | Flask backend |
 | Admin Panel | `:5000/admin` | User/camera management |
 | C2 Panel | `:5000/c2` | Backdoor management (via LFI) |

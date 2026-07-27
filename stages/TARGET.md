@@ -40,7 +40,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-F3 | [x] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | DONE [verified] |
 | OWL-B1 | [x] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | DONE [verified] |
 | OWL-B2 | [x] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | DONE [verified] |
-| OWL-A1 | [ ] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | PENDING [verified] |
+| OWL-A1 | [x] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | DONE [verified] |
 | OWL-A2 | [ ] | IoT2 real streaming attack (weak-cred RTSP, sniff/replay) | Streaming | Code/Doc | PENDING [doc] |
 | OWL-A3 | [ ] | IoT3 concrete repro, de-stub | Streaming | Doc | PENDING [doc] |
 | OWL-C2 | [ ] | Implement or downgrade the prose-only API categories | API coverage | Code/Doc | PENDING [doc] |
@@ -128,12 +128,12 @@ The config advertises `JWT_ALLOW_NONE_ALGORITHM=True` and `jwt_service` lists `'
 
 ### Wave 3 - Build the streaming centerpiece
 
-#### OWL-A1 - RTSP `:8554` serves corrupted JPEG · PENDING [verified]
+#### OWL-A1 - RTSP `:8554` serves corrupted JPEG · DONE [verified]
 v4l2rtspserver ships the loopback MJPEG as JPEG-over-RTP (RFC 2435), which strips the JPEG Huffman/quant tables so the receiver reconstructs a scrambled frame. Confirmed with two independent clients and a standard-Huffman re-encode, all corrupt. The loopback itself is byte-perfect. The API no longer depends on this (it reads the `:9090` bridge), but the RTSP surface the lab advertises is broken.
-- [ ] 01_spec - choose the transport that renders: serve H264 over RTSP (this image's ffmpeg has H264 decode disabled, resolve that) or declare the HTTP MJPEG on `:9090` the canonical stream and re-scope the RTSP surface
-- [ ] 02_implement - apply the chosen streaming config on the lab overlay
-- [ ] 03_document - document the working stream endpoint and how a student captures it
-- [ ] 04_integrate - promote overlay, repackage, verify a decodable frame end to end, log
+- [x] 01_spec - live-checked the Pi: no H264/H265 encoder on this build (only RTP payloaders + libav audio, no libx264), so H264-over-RTSP is out. Decision: declare the HTTP MJPEG on `:9090` the canonical decodable stream, re-scope RTSP to the raw insecure-services surface (feeds OWL-A2)
+- [x] 02_implement - fixed a packaging bug: `camera-http` init script + `23-camera-http.sh` hook were tracked `100644` (non-exec) so the bridge never auto-started on flash. Both now `100755` (staged). Bridge config itself already serves the intact frame
+- [x] 03_document - IoT2 rewritten with the two concrete plaintext endpoints (`:9090/video` MJPEG canonical, `:8554-:8556` RTSP mangled) + no-auth capture; README mermaid repointed the API feed to the HTTP bridge; CONTEXT.md Outputs/checklist updated; frontmatter streaming stack + IoT2 badge `IN PROGRESS`
+- [x] 04_integrate - verified live: `:9090/video` serves a valid 640x480 JPEG byte-identical to source (md5 `fb672c...`), and the packaged hook->init path brings it up. Logged. `owlcam.tar.gz` rebuild pending (user-managed)
 
 #### OWL-A2 - IoT2 real streaming attack · PENDING [doc]
 IoT2 (Insecure Network Services) is purely conceptual today, no reproduction, no capture, no replay. For a camera lab the streaming attack should be the centerpiece.
