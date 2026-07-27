@@ -48,7 +48,7 @@ Although it may seem unusual, **Secure Shell (SSH)** services are quite common i
 
 The rationale is that SSH enables administrators and technicians to remotely access the camera for troubleshooting, advanced configuration, maintenance, and also **security audits**.
 
-It is also important to note that the update script contains a hardcoded signature used for validation. This practice significantly weakens the security of the firmware update process, as an attacker who discovers the hardcoded value can bypass signature verification and upload unauthorized or malicious firmware (see [[IoT - Vulnerabilities and features#IoT4 2018 - Lack of Secure Update Mechanism|Unsecure update mechanism]]).
+It is also important to note that the update script contains a hardcoded signature used for validation. This practice significantly weakens the security of the firmware update process, as an attacker who discovers the hardcoded value can bypass signature verification and upload unauthorized or malicious firmware (see [[#IoT4:2018 - Lack of Secure Update Mechanism|Unsecure update mechanism]]).
 
 # IoT2:2018 - Insecure Network Services
 
@@ -63,7 +63,7 @@ The system should include scripts to manage certificates and enable RTSP over TL
 
 # IoT3:2018 - Insecure Ecosystem Interfaces (API)
 
-The video stream is transmitted to a simulated API server running in Docker. Please refer to the documentation for instructions on deploying the services related to the [[API - Vulnerabilities and features|API]] and review the multiple vulnerabilities that expose the video surveillance service, including the possibility of accessing live streams without proper authorization.
+The video stream is transmitted to a simulated API server running in Docker. Please refer to the documentation for instructions on deploying the services related to the [[API/Vulnerabilities|API]] and review the multiple vulnerabilities that expose the video surveillance service, including the possibility of accessing live streams without proper authorization.
 
 # IoT4:2018 - Lack of Secure Update Mechanism
 
@@ -131,7 +131,7 @@ openssl enc -d -aes-256-cbc -in "$FIRMWARE_PATH" -out "/tmp/update.sh" -k 'super
 chmod +x /tmp/update.sh
 ```
 
-Despite this, the contents of the firmware files are not directly accessible. However, a vulnerability exists in the API at the _/api/status_ endpoint (see more in [[API - Vulnerabilities and features#API9 2023 - Improper Inventory Management|Improper Inventory Management]]). This endpoint is susceptible to a Local File Inclusion (LFI) attack, which allows an attacker to view the contents of files stored on the server controller. Access to the firmware data can be achieved either through Local File Inclusion (LFI) or by utilizing the same mechanism employed by the _update-firmware_ process.
+Despite this, the contents of the firmware files are not directly accessible. However, a vulnerability exists in the API at the _/api/status_ endpoint (see more in [[API/Vulnerabilities#API9:2023 - Improper Inventory Management|Improper Inventory Management]]). This endpoint is susceptible to a Local File Inclusion (LFI) attack, which allows an attacker to view the contents of files stored on the server controller. Access to the firmware data can be achieved either through Local File Inclusion (LFI) or by utilizing the same mechanism employed by the _update-firmware_ process.
 
 ![[api10_firmware_download.png]]
 

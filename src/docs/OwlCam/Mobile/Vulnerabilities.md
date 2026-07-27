@@ -170,5 +170,5 @@ The VulnZoo mobile application stores the session JWT token in plaintext within 
 
 **Security impact:**
 
-This is a clear example of OWASP [[Mobile - Vulnerabilities and features#M9 Insecure Data Storage|M9: Insecure Data Storage]]. Sensitive authentication tokens should never be stored in plaintext on the device. Instead, use secure storage mechanisms such as Android Keystore or encrypted preferences.
+This is a clear example of OWASP [[#M9: Insecure Data Storage|M9: Insecure Data Storage]]. Sensitive authentication tokens should never be stored in plaintext on the device. Instead, use secure storage mechanisms such as Android Keystore or encrypted preferences.
 

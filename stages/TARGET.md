@@ -33,7 +33,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-D1 | [x] | Dead doc routing `docs/IP Camera/` -> `docs/OwlCam/` | MWP integrity | Doc/Config | DONE [verified] |
 | OWL-D2 | [x] | Add YAML frontmatter to every OwlCam vuln doc | MWP integrity | Doc | DONE [verified] |
 | OWL-D3 | [x] | Standardize status badges to DONE/IN PROGRESS/PENDING | MWP integrity | Doc | DONE [verified] |
-| OWL-D4 | [ ] | Fix broken Obsidian wikilinks | MWP integrity | Doc | PENDING [doc] |
+| OWL-D4 | [x] | Fix broken Obsidian wikilinks | MWP integrity | Doc | DONE [verified] |
 | OWL-D5 | [ ] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | PENDING [doc] |
 | OWL-C1 | [ ] | Document the strong undocumented API vulns | API coverage | Doc | PENDING [verified] |
 | OWL-C3 | [ ] | Fix API doc<->code drifts | API coverage | Code/Doc | PENDING [verified] |
@@ -75,12 +75,12 @@ The API doc uses non-standard markers (`NOT DEVELOPED`, `PENDING REVIEW`, `ATTAC
 - [x] 03_document - normalized the 7 badges in API/Vulnerabilities.md, reconciled API8 frontmatter DONE -> IN PROGRESS
 - [x] 04_integrate - verified no non-standard badge remains, logged in integration-log.md
 
-#### OWL-D4 - Fix broken Obsidian wikilinks · PENDING [doc]
+#### OWL-D4 - Fix broken Obsidian wikilinks · DONE [verified]
 Links like `[[IoT - Vulnerabilities and features#...]]`, `[[API - Vulnerabilities and features]]`, `[[Mobile - Vulnerabilities and features#...]]` and `app://obsidian.md/...` do not resolve to the actual `Vulnerabilities.md` filenames.
-- [ ] 01_spec - enumerate the dead wikilinks and their real targets
-- [ ] 02_implement - N/A
-- [ ] 03_document - repoint the links
-- [ ] 04_integrate - promote, verify in a reader, log
+- [x] 01_spec - enumerated 15 dead links across the 3 docs, classified cross-file / self-ref / anchor-drift / junk, mapped real targets
+- [x] 02_implement - N/A
+- [x] 03_document - repointed all 15 (path-qualified cross-file, same-file anchors, junk removed) via asserted literal replacements
+- [x] 04_integrate - verified no legacy note name / junk scheme remains and every anchor matches a real heading, logged
 
 #### OWL-D5 - README onboarding polish · PENDING [doc]
 The README is vague on the device credentials ("default credentials or those you configured", real value `admin:12345678` only appears under IoT1) and mixes host targets (`10.0.2.2` emulator vs `192.168.2.2` host vs `localhost:5000`) without a clear map.
