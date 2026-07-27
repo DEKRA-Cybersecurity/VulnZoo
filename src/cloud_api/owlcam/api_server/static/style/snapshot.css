@@ -1,59 +1,293 @@
 /* ============================================================
    VulnZoo — Snapshot Viewer (componentes específicos de la página)
-   Rediseño profesional (misma paleta que messages.css)
+   Rediseño "reproductor de vídeo profesional" — panel oscuro tipo DVR
+   sobre la paleta compartida de cameras.css.
    Paleta: navy #232f3e · azul #4a90e2 / #357abd · fondo #f4f6fb
-           texto #182036 · apagado #7b8794 · borde #e6eaf0 · rojo #e74c3c / #c0392b
+           texto #182036 · apagado #7b8794 · borde #e6eaf0 · rojo #e74c3c
    NOTA: topbar, dropdown de perfil, inputs, avisos y el modo oscuro global
-   los aporta cameras.css (cargado antes). Aquí solo va lo propio del snapshot.
+   los aporta cameras.css (cargado antes). El reproductor es SIEMPRE oscuro
+   (como un monitor real) en ambos temas; aquí solo va lo propio del snapshot.
    ============================================================ */
 
-/* ---------- Contenedor de la página ---------- */
+/* ---------- Botón de tema (flotante, uso standalone) ---------- */
+.theme-toggle-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 50;
+}
+
+/* ---------- Contenedor de la página: centra el reproductor ---------- */
 .snapshot-container {
     width: 100%;
-    max-width: 1240px;
-    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px 48px;
 }
 
-/* ---------- Tarjeta principal ---------- */
-.snapshot-card {
-    background: #fff;
-    border: 1px solid #e6eaf0;
-    border-radius: 14px;
-    box-shadow: 0 4px 24px rgba(20,30,60,0.06);
-    padding: 32px 32px 28px;
+/* ============================================================
+   Tarjeta / carcasa del reproductor
+   ============================================================ */
+.snapshot-card.player {
+    width: 100%;
+    max-width: 1080px;
+    background: #12181f;
+    border: 1px solid #1e2732;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(8, 12, 20, 0.28);
 }
 
-/* ---------- Cabecera ---------- */
-.snapshot-header {
-    text-align: center;
-    margin-bottom: 20px;
+/* ---------- Cabecera del reproductor ---------- */
+.player-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    background: linear-gradient(180deg, #161d26, #12181f);
+    border-bottom: 1px solid #1e2732;
 }
-.snapshot-header h2 {
-    margin: 0 0 12px;
-    font-size: 26px;
+.player-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+.player-title-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    flex: none;
+    border-radius: 11px;
+    background: #1c2530;
+    border: 1px solid #26303d;
+    color: #4a90e2;
+}
+.player-title-icon svg { width: 22px; height: 22px; }
+.player-title-text { min-width: 0; }
+.player-title-text h2 {
+    margin: 0;
+    font-size: 18px;
     font-weight: 700;
-    letter-spacing: -0.6px;
-    color: #142231;
+    letter-spacing: -0.3px;
+    color: #eef3f8;
+}
+.player-title-text p {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: #8a97a6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Texto de estado — píldora informativa */
 .status {
     display: inline-block;
-    font-size: 14px;
+    flex: none;
+    font-size: 13px;
     font-weight: 600;
-    color: #4a90e2;
-    background: #eaf2fc;
-    padding: 6px 16px;
+    color: #7cc7ff;
+    background: rgba(74, 144, 226, 0.14);
+    border: 1px solid rgba(74, 144, 226, 0.28);
+    padding: 6px 14px;
     border-radius: 20px;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* ---------- Controles ---------- */
-.controls {
+/* ============================================================
+   Escena (canvas del vídeo) — siempre negra, 16:9
+   ============================================================ */
+.player-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: radial-gradient(circle at 50% 42%, #131a24 0%, #0a0d12 72%);
+    overflow: hidden;
     display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
+    align-items: center;
     justify-content: center;
+}
+
+#snapshot {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+}
+
+/* ---------- Overlays (barras superior/inferior con degradado) ---------- */
+.player-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    pointer-events: none;
+    z-index: 6;
+}
+.player-overlay.top {
+    top: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+.player-overlay.bottom {
+    bottom: 0;
+    justify-content: flex-end;
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+}
+
+/* Badge LIVE / STANDBY */
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px;
+    border-radius: 6px;
+    background: rgba(6, 9, 14, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #e6edf5;
+    pointer-events: auto;
+}
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #7b8794;
+    flex: none;
+}
+.live-text { line-height: 1; }
+.live-on { display: none; color: #ff7367; }
+.live-off { display: inline; color: #aeb9c6; }
+body.is-live .live-on { display: inline; }
+body.is-live .live-off { display: none; }
+body.is-live .live-dot {
+    background: #e74c3c;
+    animation: livePulse 1.4s infinite;
+}
+@keyframes livePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.65); }
+    70%  { box-shadow: 0 0 0 7px rgba(231, 76, 60, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
+
+.stream-meta {
+    font: 600 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+    color: #9fb0c3;
+    background: rgba(6, 9, 14, 0.5);
+    padding: 5px 10px;
+    border-radius: 6px;
+}
+
+/* Marca de tiempo del stream (abajo-derecha) */
+.stream-time {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font: 600 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+    color: #cbd5e1;
+    background: rgba(6, 9, 14, 0.5);
+    padding: 5px 10px;
+    border-radius: 6px;
+}
+.rec-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e74c3c;
+    opacity: 0.35;
+    flex: none;
+}
+body.is-live .rec-dot {
+    opacity: 1;
+    animation: livePulse 1.4s infinite;
+}
+
+/* ---------- Overlay de carga ---------- */
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(10, 13, 18, 0.78);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 8;
+}
+.loading-overlay p {
+    color: #9fb0c3;
+    font-size: 13.5px;
+    margin: 0;
+    letter-spacing: 0.02em;
+}
+.spinner {
+    width: 44px;
+    height: 44px;
+    border: 3px solid rgba(255, 255, 255, 0.13);
+    border-top-color: #4a90e2;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Mensaje de error (centrado sobre la escena) ---------- */
+.error-message {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9;
+    max-width: 80%;
+    background: rgba(58, 26, 26, 0.94);
+    color: #ffb3b3;
+    border: 1px solid #5a2b2b;
+    padding: 16px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    text-align: center;
+    white-space: pre-line;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================
+   Barra de transporte (controles)
+   ============================================================ */
+.player-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #161d27;
+    border-top: 1px solid #1e2732;
+    flex-wrap: wrap;
+}
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 /* Botón base */
@@ -63,173 +297,93 @@
     justify-content: center;
     gap: 8px;
     border: 1px solid transparent;
-    border-radius: 8px;
-    padding: 11px 20px;
+    border-radius: 10px;
+    padding: 10px 16px;
     font-size: 14px;
     font-weight: 600;
     font-family: inherit;
+    line-height: 1;
     cursor: pointer;
-    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
-    flex: 1;
-    min-width: 150px;
+    transition: background 0.18s, border-color 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;
 }
+.btn:active { transform: translateY(1px); }
+.btn .icon { width: 18px; height: 18px; flex: none; }
 
-/* Capturar — acción primaria (azul) */
-.btn-refresh {
+/* Auto refresco — transporte principal (play/pause) */
+.btn-auto {
     background: #4a90e2;
     color: #fff;
-    box-shadow: 0 1px 2px rgba(74,144,226,0.4);
+    box-shadow: 0 1px 2px rgba(74, 144, 226, 0.5);
 }
-.btn-refresh:hover { background: #357abd; }
-
-/* Auto refresco — iniciar (verde éxito) */
-.btn-auto {
-    background: #1e7e45;
-    color: #fff;
-}
-.btn-auto:hover { background: #196b3a; }
+.btn-auto:hover { background: #357abd; }
+.btn-auto .icon-pause { display: none; }
 .btn-auto.active {
     background: #e74c3c;
+    box-shadow: 0 1px 2px rgba(231, 76, 60, 0.5);
     animation: pulse 2s infinite;
 }
+.btn-auto.active:hover { background: #c0392b; }
+.btn-auto.active .icon-play { display: none; }
+.btn-auto.active .icon-pause { display: inline-flex; }
 @keyframes pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+    50% { opacity: 0.82; }
 }
 
-/* Detener — rojo */
+/* Capturar — un fotograma (secundario) */
+.btn-refresh {
+    background: #1c2530;
+    color: #cfe0f6;
+    border-color: #28323f;
+}
+.btn-refresh:hover { background: #222d3a; border-color: #33404f; }
+.btn-refresh .icon { color: #4a90e2; }
+
+/* Detener — rojo sutil */
 .btn-stop {
-    background: #e74c3c;
-    color: #fff;
+    background: #1c2530;
+    color: #f0b7b1;
+    border-color: #3a2626;
 }
-.btn-stop:hover { background: #c0392b; }
+.btn-stop .icon { color: #e74c3c; }
+.btn-stop:hover { background: #2a1c1c; border-color: #5a2b2b; color: #ffb3b3; }
 
-/* Volver — secundario (blanco con borde) */
+/* Volver — fantasma, alineado a la derecha */
 .btn-back {
-    background: #fff;
-    color: #3a4657;
-    border-color: #e0e6ef;
+    background: transparent;
+    color: #8a97a6;
 }
-.btn-back:hover { background: #f4f6fb; border-color: #cdd6e3; }
+.btn-back:hover { background: #1c2530; color: #cfd6dd; }
 
-/* ---------- Marco del snapshot ---------- */
-#snapshot-wrapper {
-    position: relative;
-    background: #f8fafc;
-    border: 1px solid #e6eaf0;
-    border-radius: 12px;
-    overflow: hidden;
-    min-height: 400px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#snapshot {
-    max-width: 100%;
-    height: auto;
-    display: block;
-    border-radius: 10px;
-}
-
-/* Overlay de carga */
-.loading-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(255,255,255,0.95);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-}
-.loading-overlay p {
-    color: #7b8794;
-    font-size: 14px;
-    margin: 0;
-}
-
-.spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid #e6eaf0;
-    border-top-color: #4a90e2;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 16px;
-}
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Mensaje de error */
-.error-message {
-    background: #fdecea;
-    color: #c0392b;
-    border: 1px solid #f5c6c0;
-    padding: 14px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    margin: 20px;
-    text-align: center;
-    white-space: pre-line;
+/* ============================================================
+   Modo oscuro — el reproductor ya es oscuro; solo ajustes finos.
+   La página (body) la oscurece cameras.css.
+   ============================================================ */
+.dark-mode .snapshot-card.player {
+    border-color: #242e3a;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
 /* ============================================================
-   Modo oscuro — solo componentes específicos del snapshot
-   (tonos alineados con la sección dark de messages.css)
+   Responsive
    ============================================================ */
-.dark-mode .snapshot-card {
-    background: #1f2225;
-    border-color: #2c3136;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
-    color: #e3e3e3;
-}
-.dark-mode .snapshot-header h2 { color: #e3e3e3; }
-
-.dark-mode .status {
-    background: #1c2733;
-    color: #7cc7ff;
-}
-
-.dark-mode #snapshot-wrapper {
-    background: #23272b;
-    border-color: #2c3136;
-}
-.dark-mode .loading-overlay {
-    background: rgba(24,26,27,0.95);
-}
-.dark-mode .loading-overlay p { color: #9aa6b4; }
-.dark-mode .spinner {
-    border-color: #2c3136;
-    border-top-color: #4a90e2;
-}
-
-.dark-mode .btn-back {
-    background: #23272b;
-    color: #cfd6dd;
-    border-color: #333;
-}
-.dark-mode .btn-back:hover { background: #2c3136; }
-
-.dark-mode .error-message {
-    background: #3a1a1a;
-    color: #ffb3b3;
-    border-color: #5a2b2b;
-}
-
-/* ---------- Responsive ---------- */
 @media (max-width: 768px) {
-    .snapshot-card { padding: 24px 20px; }
-    .snapshot-header h2 { font-size: 21px; }
-    .controls { flex-direction: column; }
-    .btn { min-width: 100%; }
-    #snapshot-wrapper { min-height: 300px; }
+    .snapshot-container { padding: 76px 14px 36px; }
+    .player-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 16px;
+    }
+    .status { align-self: stretch; text-align: center; }
+    .player-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+    .toolbar-group { width: 100%; }
+    .toolbar-group .btn { flex: 1; }
 }
 
 @media (max-width: 480px) {
-    .snapshot-card { padding: 18px 16px; }
-    .snapshot-header h2 { font-size: 19px; }
-    .controls { gap: 8px; }
-    .btn { padding: 10px 16px; font-size: 13px; }
+    .player-title-text h2 { font-size: 16px; }
+    .btn { padding: 10px 12px; font-size: 13px; }
+    .player-overlay { padding: 10px 10px; }
+    .stream-meta { display: none; }
 }

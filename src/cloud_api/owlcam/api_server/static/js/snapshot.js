@@ -57,6 +57,12 @@ class SnapshotViewer {
             return;
         }
         
+        // Etiqueta de cámara en el overlay del reproductor
+        const camLabel = document.getElementById('camera-label');
+        if (camLabel && this.cameraId) {
+            camLabel.textContent = 'Camera ' + this.cameraId;
+        }
+        
         // Bind events
         this.bindEvents();
         
@@ -141,6 +147,8 @@ class SnapshotViewer {
                 
                 const now = new Date().toLocaleTimeString();
                 this.setStatus(`Last update: ${now}`);
+                const timeEl = document.getElementById('stream-time');
+                if (timeEl) timeEl.textContent = now;
             } else {
                 // Manejar errores HTTP
                 const errorData = await response.json().catch(() => ({}));
@@ -212,8 +220,9 @@ class SnapshotViewer {
         this.autoInterval = setInterval(() => this.updateSnapshot(), 2000);
         this.isAutoMode = true;
         
-        this.autoBtn.textContent = '⏸️ Auto ON';
+        this.setAutoLabel('Pause');
         this.autoBtn.classList.add('active');
+        document.body.classList.add('is-live');
     }
 
     /**
@@ -227,8 +236,21 @@ class SnapshotViewer {
         
         this.isAutoMode = false;
         
-        this.autoBtn.textContent = '▶️ Auto Refresh';
+        this.setAutoLabel('Auto Refresh');
         this.autoBtn.classList.remove('active');
+        document.body.classList.remove('is-live');
+    }
+
+    /**
+     * Actualizar la etiqueta del botón de auto-refresco sin destruir el icono
+     */
+    setAutoLabel(text) {
+        const label = this.autoBtn ? this.autoBtn.querySelector('.btn-label') : null;
+        if (label) {
+            label.textContent = text;
+        } else if (this.autoBtn) {
+            this.autoBtn.textContent = text;
+        }
     }
 
     /**
