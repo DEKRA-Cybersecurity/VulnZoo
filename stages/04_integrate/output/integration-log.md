@@ -238,3 +238,28 @@ Left as-is: `> **CSRF is not included in the OWASP API Top 10...**` (explanatory
 ## Stage cleanup
 
 `stages/01_spec/output/owl-d3-spec.md` cleaned after promotion. This log is the durable record.
+
+---
+
+# OWL-D4 - Fix broken Obsidian wikilinks (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-D4). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code).
+
+## Change
+
+15 broken links fixed across the 3 vuln docs (each old string asserted to match exactly once):
+
+- Legacy note names `X - Vulnerabilities and features` -> path-qualified `<folder>/Vulnerabilities`. The three docs share the basename `Vulnerabilities.md`, so the folder path disambiguates the wikilink.
+- Self-references that were written as cross-file links -> same-file `[[#Heading|alias]]` (API7, API1 in the API doc, M9 in Mobile, IoT4 in IoT).
+- Same-file anchor drift matched to the real heading text (API3, Attack Vector #2, API8 were missing the `:` / `#`).
+- Junk links: two `app://obsidian.md/index.html` (`admin_access.js` -> italic, the API3 markdown link -> a wikilink), one `vscode-file://` (`limit` -> a code span), and an empty-anchor Mobile link -> `[[Mobile/Vulnerabilities|Mobile vulnerabilities]]`.
+
+Left as-is (already valid same-file anchors): `[[#3. Insecure JWT]]`, `[[#1. Userinfo leak]]`.
+
+## Verification
+
+`grep -E "Vulnerabilities and features|app://obsidian|vscode-file://"` over the OwlCam docs returns nothing. Every wikilink resolves to a real file (path-qualified for cross-file) or a same-file heading, and each referenced heading exists.
+
+## Stage cleanup
+
+`stages/01_spec/output/owl-d4-spec.md` cleaned after promotion. This log is the durable record.
