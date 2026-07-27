@@ -41,7 +41,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-B1 | [x] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | DONE [verified] |
 | OWL-B2 | [x] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | DONE [verified] |
 | OWL-A1 | [x] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | DONE [verified] |
-| OWL-A2 | [ ] | IoT2 real streaming attack (weak-cred RTSP, sniff/replay) | Streaming | Code/Doc | PENDING [doc] |
+| OWL-A2 | [x] | IoT2 real streaming attack (cleartext sniff/replay) | Streaming | Doc | DONE [verified] |
 | OWL-A3 | [ ] | IoT3 concrete repro, de-stub | Streaming | Doc | PENDING [doc] |
 | OWL-C2 | [ ] | Implement or downgrade the prose-only API categories | API coverage | Code/Doc | PENDING [doc] |
 | OWL-F1 | [ ] | M6 token brute-force step-by-step repro | Mobile/C2 | Doc | PENDING [doc] |
@@ -135,12 +135,12 @@ v4l2rtspserver ships the loopback MJPEG as JPEG-over-RTP (RFC 2435), which strip
 - [x] 03_document - IoT2 rewritten with the two concrete plaintext endpoints (`:9090/video` MJPEG canonical, `:8554-:8556` RTSP mangled) + no-auth capture; README mermaid repointed the API feed to the HTTP bridge; CONTEXT.md Outputs/checklist updated; frontmatter streaming stack + IoT2 badge `IN PROGRESS`
 - [x] 04_integrate - verified live: `:9090/video` serves a valid 640x480 JPEG byte-identical to source (md5 `fb672c...`), and the packaged hook->init path brings it up. Logged. `owlcam.tar.gz` rebuild pending (user-managed)
 
-#### OWL-A2 - IoT2 real streaming attack · PENDING [doc]
-IoT2 (Insecure Network Services) is purely conceptual today, no reproduction, no capture, no replay. For a camera lab the streaming attack should be the centerpiece.
-- [ ] 01_spec - design the exercise: RTSP with weak credentials, plaintext sniffing (Wireshark/ffmpeg), DESCRIBE auth-bypass or MITM/replay
-- [ ] 02_implement - lab overlay: authenticated-but-weak RTSP server config, wiring to the loopback producer, tooling notes
-- [ ] 03_document - IoT2 finding with frontmatter, step-by-step capture + replay repro, expected result, remediation
-- [ ] 04_integrate - promote overlay + doc, repackage, log
+#### OWL-A2 - IoT2 real streaming attack · DONE [verified]
+IoT2 (Insecure Network Services) was purely conceptual, no reproduction, no capture, no replay. For a camera lab the streaming attack is the centerpiece.
+- [x] 01_spec - deviated from the original "weak-cred RTSP" idea: with the RTSP payload mangled (OWL-A1) and no on-device H264 encoder, weak-cred RTSP is low value and needs a re-flash. Centered the exercise on the cleartext capture (CWE-319) of the rendering HTTP MJPEG feed, plus unauthenticated RTSP as a secondary open-service target
+- [x] 02_implement - N/A. The services are insecure by design (unauthenticated, plaintext), no overlay change needed. Repro tooling is inline in the doc (tcpdump/tshark/Wireshark + short carve/replay snippets)
+- [x] 03_document - added Recon/enumeration, Passive capture (cleartext sniffing), and Replay subsections to IoT2 with copy-pasteable commands and expected results, kept impact + remediation, flipped the IoT2 finding badge to DONE
+- [x] 04_integrate - verified live on the Pi: a frame reassembled from a `tcpdump` sniff of `:9090` is byte-identical to the live camera image (md5 `fb672c...`), unauthenticated RTSP DESCRIBE confirmed. Logged. `owlcam.tar.gz` unchanged (no overlay edit)
 
 #### OWL-A3 - IoT3 concrete repro, de-stub · PENDING [doc]
 IoT3 (Insecure Ecosystem Interfaces) is a stub that defers entirely to the API docs, with no repro of its own.

