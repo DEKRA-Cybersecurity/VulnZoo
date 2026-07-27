@@ -263,3 +263,29 @@ Left as-is (already valid same-file anchors): `[[#3. Insecure JWT]]`, `[[#1. Use
 ## Stage cleanup
 
 `stages/01_spec/output/owl-d4-spec.md` cleaned after promotion. This log is the durable record.
+
+---
+
+# OWL-D5 - README onboarding polish (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-D5). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code).
+
+## Change (`docs/OwlCam/README.md`)
+
+- Added a "Hosts, ports and credentials" map table so the reader knows which host to use from where (device `192.168.2.1`, Docker host `192.168.2.2`, emulator alias `10.0.2.2`, API port `5000`).
+- Made the vague device credential explicit: `root` / `12345678` (verified live this session, `admin` is denied).
+- Fixed setup paths: `cd cloud_api` -> `cd cloud_api/owlcam` (two occurrences), `cd vulnzoo_app` -> `cd vulnzoo_apps/owlcam_app`, `com.example.vulnzooapp/.MainActivity` -> `com.example.owlcamapp/.MainActivity`.
+- Mermaid SSH node `admin:12345678` -> `root:12345678` for internal consistency with the map.
+
+## Flagged (out of D5 scope, later C-family target)
+
+- `IoT (Camera)/Vulnerabilities.md` still states the SSH default is `admin:12345678` and that testing it grants device access. The real OS login is `root` / `12345678` (`admin` SSH is denied). Doc<->code drift.
+- `Mobile/Vulnerabilities.md` M9 uses `com.example.vulnzoo` for the shared_prefs path. Real applicationId is `com.example.owlcamapp`. Doc<->code drift.
+
+## Verification
+
+`grep` confirms the README no longer carries `admin:12345678`, a bare `cd cloud_api`, `vulnzooapp`, or the "default credentials or those you have configured" line. The corrected paths, package, and credentials are present, and `root` / `12345678` SSH was verified against the live Pi.
+
+## Stage cleanup
+
+`stages/01_spec/output/owl-d5-spec.md` cleaned after promotion. This log is the durable record.
