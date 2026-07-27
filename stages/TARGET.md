@@ -36,7 +36,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-D4 | [x] | Fix broken Obsidian wikilinks | MWP integrity | Doc | DONE [verified] |
 | OWL-D5 | [x] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | DONE [verified] |
 | OWL-C1 | [x] | Document the strong undocumented API vulns | API coverage | Doc | DONE [verified] |
-| OWL-C3 | [ ] | Fix API doc<->code drifts | API coverage | Code/Doc | PENDING [verified] |
+| OWL-C3 | [x] | Fix API doc<->code drifts | API coverage | Code/Doc | DONE [verified] |
 | OWL-F3 | [ ] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | PENDING [doc] |
 | OWL-B1 | [ ] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | PENDING [verified] |
 | OWL-B2 | [ ] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | PENDING [verified] |
@@ -96,12 +96,12 @@ The most powerful real findings are undocumented: `/firmware/trigger_update` com
 - [x] 03_document - added an "Exposed Debug and Administrative Endpoints" section: 6 findings with OWASP/CWE, curl repro, expected result, IN PROGRESS badges
 - [x] 04_integrate - extended frontmatter findings (+6), verified YAML parses and prose style, logged
 
-#### OWL-C3 - Fix API doc<->code drifts · PENDING [verified]
-`/admin/assign-role` does not exist (real route `/admin/roles`), the XSS payload reads `localStorage 'jwt'` but the key is `auth` (payload exfiltrates null), the `/snapshot` session-only bypass dead-ends because no session document ever sets `status:'active'`, plus the `/admin/v2/userinfo` and `/profile-change_password` typos.
-- [ ] 01_spec - list each drift, decide fix direction (correct the doc, or make the code match the documented attack)
-- [ ] 02_implement - code side: make the session bypass reproducible (a session with `status:'active'`), align the XSS-target key
-- [ ] 03_document - correct the endpoint names, the payload, the typos
-- [ ] 04_integrate - promote code + docs, repackage if the API image changed, log
+#### OWL-C3 - Fix API doc<->code drifts · DONE [verified]
+`/admin/assign-role` does not exist (real route `/admin/roles`), the XSS payload reads `localStorage 'jwt'` but the key is `auth` (payload exfiltrates null), the `/snapshot` session-only bypass dead-ends because no session document ever sets `status:'active'`, plus the `/admin/v2/userinfo` and `/profile-change_password` typos. Broadened to absorb the IoT1 (SSH `admin`->`root`) and M9 (package `com.example.vulnzoo`->`com.example.owlcamapp`) drifts flagged in D5.
+- [x] 01_spec - verified every drift against `app.py`/JS/manifest inline (real routes, `auth` key, 4 session sites with no `status`)
+- [x] 02_implement - added `'status': 'active'` to all four session-creation sites so the documented `/snapshot` session bypass is reproducible (chains with the C1 `/api/v1/debug/sessions` token leak)
+- [x] 03_document - corrected routes (`/admin/roles`, `/api/v2/userinfo`, `/profile/change_password`), the weak-Referer CSRF claim, the XSS `auth` key, the M9 package, the IoT1 `root:12345678` credential
+- [x] 04_integrate - grep-verified no drift remains, `app.py` parses with 4 `status:'active'`, logged. Code change needs `docker compose up --build` for live repro (containers OOM), noted
 
 #### OWL-F3 - C2 doc path + port consistency · PENDING [doc]
 The migration doc points the simulator at `cd cloud_api/c2_server` (real path `cloud_api/owlcam/c2_server`), and the M6 doc mixes "ports 80/443" prose with the actual C2 port `4999`.

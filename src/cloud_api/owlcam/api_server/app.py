@@ -230,6 +230,7 @@ def submit_support_request():
             'user_id': admin_id,
             'username': admin_username,
             'role': 'admin',
+            'status': 'active',
             'ip': '175.200.13.78',
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
             'timestamp': datetime.now().isoformat()
@@ -536,6 +537,7 @@ def admin_panel():
                 'user_id': user_id,
                 'username': user.get('username'),
                 'role': user.get('role'),
+                'status': 'active',
                 'ip': request.remote_addr,
                 'user_agent': request.headers.get('User-Agent'),
                 'timestamp': datetime.now().isoformat()
@@ -1181,6 +1183,7 @@ def login_api_deprecated():
             'user_id': user['_id'],
             'username': user.get('username'),
             'role': user.get('role'),
+            'status': 'active',
             'ip': request.remote_addr,
             'user_agent': request.headers.get('User-Agent'),
             'timestamp': datetime.now().isoformat()
@@ -1241,6 +1244,7 @@ def login_api():
                 'user_id': user['_id'],
                 'username': user.get('username'),
                 'role': user.get('role'),
+                'status': 'active',
                 'ip': request.remote_addr,
                 'user_agent': request.headers.get('User-Agent'),
                 'attempts': 0,
