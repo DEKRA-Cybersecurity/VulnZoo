@@ -406,3 +406,29 @@ Target from `stages/TARGET.md` (OWL-B1, wave 2). 01_spec done inline. The chain 
 
 - `owlcam.tar.gz` needs a rebuild for fresh flashes (the user manages the tar.gz, not repackaged here). The live Pi already has the fixed script.
 - The API image needs `docker compose up --build` to serve the regenerated `firmware-v1.0.3` and to exercise the full API-mediated walkthrough (upload via `/api/status` PUT, trigger via `/firmware/trigger_update`). The device-side chain is verified, the HTTP transport is pending the API being up (currently OOM-exited).
+
+---
+
+# OWL-B2 - Make the alg:none JWT bypass functional (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-B2, wave 2). 01_spec inline. Decision: the `none` algorithm is an intended, classic JWT attack, so make it work rather than remove it.
+
+## Root cause
+
+`config.py` sets `JWT_ALLOW_NONE_ALGORITHM=True` and `jwt_service.decode_token` lists `'none'` in the algorithms, but it calls `jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=[...])` with the non-empty secret. PyJWT 2.13 rejects an `alg:none` token when a key is supplied (`InvalidKeyError: When alg = "none", key value must be None`), so the advertised bypass never fired.
+
+## Code (02_implement)
+
+`services/jwt_service.py`: when `JWT_ALLOW_NONE_ALGORITHM` and the token header declares `alg=none`, decode with `options={'verify_signature': False}` instead of the keyed decode. HS256 tokens still go through the keyed path (signature enforced).
+
+## Doc (03_document)
+
+`API/Vulnerabilities.md`: corrected the false claim "the server does not bypass signature validation" (it does, via `none`), and added a "Bypass: the `none` algorithm" subsection under API2 with the forge-an-admin-token repro.
+
+## Verification
+
+Isolation test (PyJWT 2.13): a forged `alg:none` token decodes to its payload, a normal HS256 token still decodes via the keyed path, and an HS256 token signed with the wrong secret is still rejected (`InvalidSignatureError`). `jwt_service.py` parses (`ast.parse`). Live end-to-end against the running API is pending `docker compose up --build` (the API/mongo containers are OOM-exited), so the doc badge is `IN PROGRESS`.
+
+## Deployment / pending
+
+The API image needs `docker compose up --build` to serve the fixed validator (same rebuild that OWL-C3 and OWL-B1 need).
