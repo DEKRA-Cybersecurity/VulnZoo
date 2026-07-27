@@ -39,7 +39,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-C3 | [x] | Fix API doc<->code drifts | API coverage | Code/Doc | DONE [verified] |
 | OWL-F3 | [x] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | DONE [verified] |
 | OWL-B1 | [x] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | DONE [verified] |
-| OWL-B2 | [ ] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | PENDING [verified] |
+| OWL-B2 | [x] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | DONE [verified] |
 | OWL-A1 | [ ] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | PENDING [verified] |
 | OWL-A2 | [ ] | IoT2 real streaming attack (weak-cred RTSP, sniff/replay) | Streaming | Code/Doc | PENDING [doc] |
 | OWL-A3 | [ ] | IoT3 concrete repro, de-stub | Streaming | Doc | PENDING [doc] |
@@ -119,12 +119,12 @@ The doc encrypts the firmware with `openssl enc ... -pbkdf2 -salt`, but the on-d
 - [x] 03_document - IoT4 snippet/inspect commands fixed, end-to-end repro + expected result added, badge + frontmatter `IN PROGRESS -> DONE`
 - [x] 04_integrate - verified device-side on the live Pi (decrypt+grep+run), logged. `owlcam.tar.gz` rebuild (fresh flashes) and `docker compose up --build` (serve the new blob + full API walkthrough) are pending, noted
 
-#### OWL-B2 - `alg:none` JWT: make it work or remove it · PENDING [verified]
+#### OWL-B2 - `alg:none` JWT: make it work or remove it · DONE [verified]
 The config advertises `JWT_ALLOW_NONE_ALGORITHM=True` and `jwt_service` lists `'none'`, and the code comments call it an intended vuln, but it is non-functional: `decode_token` passes the non-empty `Config.JWT_SECRET_KEY`, and PyJWT 2.13 rejects `alg:none` with `InvalidKeyError: When alg = "none", key value must be None` (verified in isolation this session). The HS256 weak-secret path (`supersecretkey`) works and stays the intended chain.
-- [ ] 01_spec - decide: make `alg:none` a real, documented bypass (decode with `key=None` / `verify_signature=False` when the header alg is `none`) or drop the flag and the comments entirely
-- [ ] 02_implement - apply the chosen code path in `jwt_service`/`decode_token`
-- [ ] 03_document - either add the `alg:none` bypass as a documented API2 sub-finding, or remove the dead claim so the doc matches the code
-- [ ] 04_integrate - promote, repackage the API image, log
+- [x] 01_spec - decided to make it real (the classic attack), fix = decode with `verify_signature=False` when the header alg is `none`
+- [x] 02_implement - `jwt_service.decode_token` branches on the header alg: `none` -> keyless decode, HS256 -> keyed decode (signature still enforced)
+- [x] 03_document - corrected the false "does not bypass signature validation" claim, added a "Bypass: the `none` algorithm" subsection under API2 with the forge repro
+- [x] 04_integrate - isolation-verified (alg:none accepted, HS256 wrong-secret still rejected), logged. Live-against-API and the `docker compose up --build` are pending (containers OOM), doc badge IN PROGRESS
 
 ### Wave 3 - Build the streaming centerpiece
 

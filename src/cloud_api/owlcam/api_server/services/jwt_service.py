@@ -37,10 +37,17 @@ class JWTService:
             # VULNERABILITY: Accept multiple algorithms including 'none'
             algorithms = [Config.JWT_ALGORITHM, 'none'] if Config.JWT_ALLOW_NONE_ALGORITHM else [Config.JWT_ALGORITHM]
             
-            payload = jwt.decode(
-                token,
-                Config.JWT_SECRET_KEY,
-                algorithms=algorithms)
+            # VULNERABILITY: honor alg=none (algorithm confusion). PyJWT refuses to
+            # decode an alg=none token when a key is supplied, so when the header
+            # claims 'none' we decode with signature verification disabled, which
+            # accepts any unsigned token as valid.
+            if Config.JWT_ALLOW_NONE_ALGORITHM and jwt.get_unverified_header(token).get('alg', '').lower() == 'none':
+                payload = jwt.decode(token, options={'verify_signature': False})
+            else:
+                payload = jwt.decode(
+                    token,
+                    Config.JWT_SECRET_KEY,
+                    algorithms=algorithms)
             return {'success': True, 'payload': payload}
         
         except jwt.ExpiredSignatureError:

