@@ -35,7 +35,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-D3 | [x] | Standardize status badges to DONE/IN PROGRESS/PENDING | MWP integrity | Doc | DONE [verified] |
 | OWL-D4 | [x] | Fix broken Obsidian wikilinks | MWP integrity | Doc | DONE [verified] |
 | OWL-D5 | [x] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | DONE [verified] |
-| OWL-C1 | [ ] | Document the strong undocumented API vulns | API coverage | Doc | PENDING [verified] |
+| OWL-C1 | [x] | Document the strong undocumented API vulns | API coverage | Doc | DONE [verified] |
 | OWL-C3 | [ ] | Fix API doc<->code drifts | API coverage | Code/Doc | PENDING [verified] |
 | OWL-F3 | [ ] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | PENDING [doc] |
 | OWL-B1 | [ ] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | PENDING [verified] |
@@ -89,12 +89,12 @@ The README is vague on the device credentials ("default credentials or those you
 - [x] 03_document - added a host/port/cred map, made the credential explicit, fixed 3 wrong setup paths, aligned the mermaid SSH node
 - [x] 04_integrate - verified README self-consistent and correct, flagged IoT1/M9 admin/package drifts for a C-family target, logged
 
-#### OWL-C1 - Document the strong undocumented API vulns · PENDING [verified]
-The most powerful real findings are undocumented: `/firmware/trigger_update` command injection RCE (`subprocess.Popen(f"ssh root@{device_ip} ...", shell=True)` with attacker-controlled `device_ip`), `/sessions` unauthenticated session dump (leaks the admin `session_id`), `/camerasdb/delete` and `/camerasdb/restart` unauthenticated DB wipe, `/firmware/upload` unauthenticated upload, `/api/debug/decode_token`, `/api/v1/debug/sessions`.
-- [ ] 01_spec - confirm each endpoint's behavior in `app.py`, assign OWASP IDs (API8/API9/API5), decide which get full findings vs a note
-- [ ] 02_implement - N/A (endpoints already exist, this is a documentation gap)
-- [ ] 03_document - write the findings with frontmatter, repro (curl), expected result
-- [ ] 04_integrate - promote into `docs/OwlCam/API/`, log
+#### OWL-C1 - Document the strong undocumented API vulns · DONE [verified]
+The most powerful real findings are undocumented: `/firmware/trigger_update` command injection RCE (`subprocess.Popen(f"ssh root@{device_ip} ...", shell=True)` with attacker-controlled `device_ip`), `/sessions` unauthenticated session dump, `/camerasdb/delete` and `/camerasdb/restart` unauthenticated DB wipe, `/firmware/upload` unauthenticated upload, `/api/debug/decode_token`, `/api/v1/debug/sessions`.
+- [x] 01_spec - confirmed all 6 in `app.py`, assigned OWASP/CWE, corrected the review (`/sessions` excludes `_id`, the token leak is `/api/v1/debug/sessions`)
+- [x] 02_implement - N/A (endpoints already exist, documentation gap)
+- [x] 03_document - added an "Exposed Debug and Administrative Endpoints" section: 6 findings with OWASP/CWE, curl repro, expected result, IN PROGRESS badges
+- [x] 04_integrate - extended frontmatter findings (+6), verified YAML parses and prose style, logged
 
 #### OWL-C3 - Fix API doc<->code drifts · PENDING [verified]
 `/admin/assign-role` does not exist (real route `/admin/roles`), the XSS payload reads `localStorage 'jwt'` but the key is `auth` (payload exfiltrates null), the `/snapshot` session-only bypass dead-ends because no session document ever sets `status:'active'`, plus the `/admin/v2/userinfo` and `/profile-change_password` typos.
