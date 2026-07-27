@@ -38,7 +38,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-C1 | [x] | Document the strong undocumented API vulns | API coverage | Doc | DONE [verified] |
 | OWL-C3 | [x] | Fix API doc<->code drifts | API coverage | Code/Doc | DONE [verified] |
 | OWL-F3 | [x] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | DONE [verified] |
-| OWL-B1 | [ ] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | PENDING [verified] |
+| OWL-B1 | [x] | IoT4 firmware crypto parity, finish the RCE chain | Broken chains | Code/Doc | DONE [verified] |
 | OWL-B2 | [ ] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | PENDING [verified] |
 | OWL-A1 | [ ] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | PENDING [verified] |
 | OWL-A2 | [ ] | IoT2 real streaming attack (weak-cred RTSP, sniff/replay) | Streaming | Code/Doc | PENDING [doc] |
@@ -112,12 +112,12 @@ The migration doc points the simulator at `cd cloud_api/c2_server` (real path `c
 
 ### Wave 2 - Repair the broken flagship chains
 
-#### OWL-B1 - IoT4 firmware crypto parity + finish the chain · PENDING [verified]
-The doc encrypts the firmware with `openssl enc ... -pbkdf2 -salt`, but the on-device `/etc/init.d/update-firmware` decrypts with plain `-aes-256-cbc -k 'supersecret'` (no `-pbkdf2`, no salt). Under OpenSSL 3.x the KDF mismatch makes decryption fail, so the firmware-to-RCE chain never completes. The finding is also flagged `IN PROGRESS` with a trailing cron TODO.
-- [ ] 01_spec - decide the canonical crypto (match both sides on `-pbkdf2`), define the end-to-end packaging steps
-- [ ] 02_implement - align the encrypt recipe and the device decrypt call, keep the trivial signature check intentional
-- [ ] 03_document - finish IoT4: full repro (build blob, sign string, upload, trigger, RCE / dropbear key), expected result, flip to DONE
-- [ ] 04_integrate - promote the init script + doc, repackage `owlcam.tar.gz`, log
+#### OWL-B1 - IoT4 firmware crypto parity + finish the chain · DONE [verified]
+The doc encrypts the firmware with `openssl enc ... -pbkdf2 -salt`, but the on-device `/etc/init.d/update-firmware` decrypts with plain `-aes-256-cbc -k 'supersecret'` (no `-pbkdf2`, no salt). Under OpenSSL 3.x the KDF mismatch makes decryption fail, so the firmware-to-RCE chain never completes. Turned out to be broken three ways (parity + signature-grep-on-encrypted-file + a UTF-8-corrupted `firmware-v1.0.3`).
+- [x] 01_spec - inline: found all three breaks, chose `-pbkdf2` canonical + grep-after-decrypt, validated the crypto round-trip
+- [x] 02_implement - device `update-firmware` now decrypts with `-pbkdf2` and greps the decrypted script, regenerated `firmware-v1.0.3` (pbkdf2, clean binary), added a `.gitattributes` to keep it binary
+- [x] 03_document - IoT4 snippet/inspect commands fixed, end-to-end repro + expected result added, badge + frontmatter `IN PROGRESS -> DONE`
+- [x] 04_integrate - verified device-side on the live Pi (decrypt+grep+run), logged. `owlcam.tar.gz` rebuild (fresh flashes) and `docker compose up --build` (serve the new blob + full API walkthrough) are pending, noted
 
 #### OWL-B2 - `alg:none` JWT: make it work or remove it · PENDING [verified]
 The config advertises `JWT_ALLOW_NONE_ALGORITHM=True` and `jwt_service` lists `'none'`, and the code comments call it an intended vuln, but it is non-functional: `decode_token` passes the non-empty `Config.JWT_SECRET_KEY`, and PyJWT 2.13 rejects `alg:none` with `InvalidKeyError: When alg = "none", key value must be None` (verified in isolation this session). The HS256 weak-secret path (`supersecretkey`) works and stays the intended chain.

@@ -376,3 +376,33 @@ The port narrative now agrees across M6: the C2 is HTTP on 4999. The client-side
 ## Stage cleanup
 
 01_spec was performed inline. This log is the durable record. Wave 1 (D1-D5, C1, C3, F3) is complete.
+
+---
+
+# OWL-B1 - Fix IoT4 firmware crypto parity and finish the chain (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-B1, wave 2). 01_spec done inline. The chain turned out to be broken three ways, not one:
+
+1. **Crypto parity**: the device decrypted with legacy `EVP_BytesToKey` (`-aes-256-cbc -k`), while the doc/attacker encrypted with `-pbkdf2`. KDF mismatch, so every update failed with `bad decrypt` (confirmed with OpenSSL 3.0.17).
+2. **Signature check on the encrypted file**: the device grep'd the ENCRYPTED download for a plaintext signature string, which encryption destroys, so the check could never pass on a properly-encrypted firmware.
+3. **Corrupted reference blob**: the shipped `firmware-v1.0.3` had 61 `U+FFFD` sequences (mangled by a UTF-8 pass), un-decryptable with any recipe.
+
+## Code (02_implement)
+
+- `labs/owlcam/files/etc/init.d/update-firmware`: decrypt with `-pbkdf2` (matches the attacker recipe) and move the signature `grep` to AFTER decryption (grep `/tmp/update.sh`) so the trivially-forgeable check actually functions. The hardcoded HMAC secret, encryption key and trivial signature are preserved (the intentional weaknesses).
+- Regenerated `cloud_api/owlcam/api_server/firmware/firmware-v1.0.3`: a legit emulated-update script carrying the signature comment, encrypted with `-pbkdf2`/`supersecret` (240 B, clean binary, 0 U+FFFD).
+- Added `cloud_api/owlcam/api_server/firmware/.gitattributes` marking the blob `binary` to prevent the UTF-8 re-corruption.
+
+## Doc (03_document)
+
+- `IoT (Camera)/Vulnerabilities.md`: updated the device-script snippet (decrypt then grep, `-pbkdf2`), fixed the inspect command (`-pbkdf2 -k`), added an end-to-end reproduction + expected result, flipped the IoT4 badge and frontmatter `IN PROGRESS -> DONE`.
+
+## Verification
+
+- Crypto round-trip verified locally and DEVICE-SIDE on the live Pi (OpenSSL 3.0.17): `firmware-v1.0.3` and an equivalent `firmware-v1.0.4` decrypt, pass the signature grep and execute (the emulated update wrote `/etc/owlcam_firmware_version=1.0.3`, a malware payload would append a dropbear key). Negative control: the old legacy recipe on a pbkdf2 blob returns `bad decrypt`.
+- The new `update-firmware` was deployed to the live Pi (md5 matches source), test artifacts cleaned.
+
+## Deployment / pending
+
+- `owlcam.tar.gz` needs a rebuild for fresh flashes (the user manages the tar.gz, not repackaged here). The live Pi already has the fixed script.
+- The API image needs `docker compose up --build` to serve the regenerated `firmware-v1.0.3` and to exercise the full API-mediated walkthrough (upload via `/api/status` PUT, trigger via `/firmware/trigger_update`). The device-side chain is verified, the HTTP transport is pending the API being up (currently OOM-exited).
