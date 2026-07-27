@@ -20,11 +20,15 @@ curl -v "$URL" \
     -H "X-Signature: $SIGNATURE" \
     -o "$FIRMWARE_PATH"
 
-if ! grep -q "$FIRMWARE_SIGNATURE" "$FIRMWARE_PATH"; then
+# Decrypt first, then "verify" the firmware. The signature check is a plain grep
+# for a hardcoded string inside the decrypted script, so it is trivially forged
+# by including the line in the payload (the intentional weakness).
+openssl enc -d -aes-256-cbc -pbkdf2 -in "$FIRMWARE_PATH" -out "/tmp/update.sh" -k 'supersecret'
+
+if ! grep -q "$FIRMWARE_SIGNATURE" "/tmp/update.sh"; then
     echo "Firmware signature verification failed. Update aborted."
     exit 1
 fi
 
-openssl enc -d -aes-256-cbc -in "$FIRMWARE_PATH" -out "/tmp/update.sh" -k 'supersecret'
 chmod +x /tmp/update.sh
 sh /tmp/update.sh
