@@ -10,21 +10,35 @@ A video surveillance camera has been installed in your home, but the company is 
 
 To begin working with the IP Camera vulnerable profile, follow these steps:
 
+### Hosts, ports and credentials
+
+Where you call a service from decides which host to use. Keep this map at hand for the steps below.
+
+| From | Target | URL or command | Login |
+|------|--------|----------------|-------|
+| Any host on the home LAN | Device management (OpenWRT, port 8080) | `http://192.168.2.1:8080` | `root` / `12345678` |
+| Any host on the home LAN | Device SSH (dropbear, port 22) | `ssh root@192.168.2.1` | `root` / `12345678` |
+| The PC running Docker | Cloud API | `http://localhost:5000` | app user `john` / `doe123` |
+| An Android emulator on that PC | Cloud API | `http://10.0.2.2:5000` | `john` / `doe123` |
+| A physical Android or another LAN host | Cloud API | `http://192.168.2.2:5000` | `john` / `doe123` |
+
+The camera device is `192.168.2.1` and the Docker host (the PC running the containers) is `192.168.2.2` on the home LAN `192.168.2.0/24`. The Cloud API listens on port `5000` on the Docker host, so it is `localhost:5000` from that PC and `192.168.2.2:5000` from the rest of the LAN. `10.0.2.2` is the Android emulator's alias for the host loopback, so use it only from inside an emulator. The `root` / `12345678` device login is the weak default that IoT1 examines, and `john` / `doe123` is the app account that starts without camera access, simulating the onboarding wait.
+
 1. **Deploy the Environment**
 
      Follow these steps to deploy the full vulnerable environment:
 
      **a) Start the IoT Device (OpenWRT Camera)**
      - Download and install the OpenWRT image on your device or a compatible virtual machine.
-     - Connect the device to your local network and access the OpenWRT web interface (e.g., http://192.168.2.1:8080).
-     - Log in with the default credentials or those you have configured.
+     - Connect the device to your local network and access the OpenWRT web interface at `http://192.168.2.1:8080`.
+     - Log in with the device credentials `root` / `12345678` (see the access map above).
      - Configure the camera and required services as described in the `openwrt-resources/` folder.
      - Ensure the camera is accessible from your local network and the internal web interface is working.
 
      **b) Start the VulnZoo API (Backend) with Docker**
      - Open a terminal and navigate to the API folder:
          ```sh
-         cd cloud_api
+         cd cloud_api/owlcam
          ```
      - Make sure Docker and Docker Compose are installed.
      - Launch the API services:
@@ -50,10 +64,10 @@ To begin working with the IP Camera vulnerable profile, follow these steps:
 
      - To build and install the APK:
          ```sh
-         cd vulnzoo_app
+         cd vulnzoo_apps/owlcam_app
          ./gradlew assembleDebug
          adb install -r app/build/outputs/apk/debug/app-debug.apk
-         adb shell am start -n com.example.vulnzooapp/.MainActivity
+         adb shell am start -n com.example.owlcamapp/.MainActivity
          ```
 
      - For emulators, use `10.0.2.2` as the API host (e.g., `http://10.0.2.2:5000`).
@@ -90,7 +104,7 @@ To run the VulnZoo API backend using Docker, follow these steps:
 
 1. Open a terminal and navigate to the API directory:
     ```sh
-    cd cloud_api
+    cd cloud_api/owlcam
     ```
 
 2. Make sure you have Docker installed on your system.
@@ -142,7 +156,7 @@ flowchart TB
         subgraph CAM["IP Camera - RPi/OpenWRT - 192.168.2.1<br/>Aviosys 9060ASL"]
             WEB["Web/Device Mgmt UI :8080 (uhttpd)"]
             RTSP["RTSP stream :8554 - plaintext (IoT2)"]
-            SSH["SSH/Dropbear :22 - admin:12345678 (IoT1)"]
+            SSH["SSH/Dropbear :22 - root:12345678 (IoT1)"]
             FW["update-firmware - hardcoded key+sig (IoT4)"]
         end
     end

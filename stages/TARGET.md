@@ -34,7 +34,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-D2 | [x] | Add YAML frontmatter to every OwlCam vuln doc | MWP integrity | Doc | DONE [verified] |
 | OWL-D3 | [x] | Standardize status badges to DONE/IN PROGRESS/PENDING | MWP integrity | Doc | DONE [verified] |
 | OWL-D4 | [x] | Fix broken Obsidian wikilinks | MWP integrity | Doc | DONE [verified] |
-| OWL-D5 | [ ] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | PENDING [doc] |
+| OWL-D5 | [x] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | DONE [verified] |
 | OWL-C1 | [ ] | Document the strong undocumented API vulns | API coverage | Doc | PENDING [verified] |
 | OWL-C3 | [ ] | Fix API doc<->code drifts | API coverage | Code/Doc | PENDING [verified] |
 | OWL-F3 | [ ] | C2 doc path drift + C2 port inconsistency | Mobile/C2 | Doc | PENDING [doc] |
@@ -82,12 +82,12 @@ Links like `[[IoT - Vulnerabilities and features#...]]`, `[[API - Vulnerabilitie
 - [x] 03_document - repointed all 15 (path-qualified cross-file, same-file anchors, junk removed) via asserted literal replacements
 - [x] 04_integrate - verified no legacy note name / junk scheme remains and every anchor matches a real heading, logged
 
-#### OWL-D5 - README onboarding polish · PENDING [doc]
+#### OWL-D5 - README onboarding polish · DONE [verified]
 The README is vague on the device credentials ("default credentials or those you configured", real value `admin:12345678` only appears under IoT1) and mixes host targets (`10.0.2.2` emulator vs `192.168.2.2` host vs `localhost:5000`) without a clear map.
-- [ ] 01_spec - list the ambiguous/stale spots and the correct values
-- [ ] 02_implement - N/A
-- [ ] 03_document - rewrite the setup section with an explicit host/port/cred map
-- [ ] 04_integrate - promote, log
+- [x] 01_spec - listed vague/stale spots, verified real values live (SSH root:12345678, admin denied; compose path, app path, package)
+- [x] 02_implement - N/A
+- [x] 03_document - added a host/port/cred map, made the credential explicit, fixed 3 wrong setup paths, aligned the mermaid SSH node
+- [x] 04_integrate - verified README self-consistent and correct, flagged IoT1/M9 admin/package drifts for a C-family target, logged
 
 #### OWL-C1 - Document the strong undocumented API vulns · PENDING [verified]
 The most powerful real findings are undocumented: `/firmware/trigger_update` command injection RCE (`subprocess.Popen(f"ssh root@{device_ip} ...", shell=True)` with attacker-controlled `device_ip`), `/sessions` unauthenticated session dump (leaks the admin `session_id`), `/camerasdb/delete` and `/camerasdb/restart` unauthenticated DB wipe, `/firmware/upload` unauthenticated upload, `/api/debug/decode_token`, `/api/v1/debug/sessions`.
