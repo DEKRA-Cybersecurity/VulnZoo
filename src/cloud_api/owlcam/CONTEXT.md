@@ -10,7 +10,7 @@
 |-------|-------------|------------------|
 | **Layer 2 (Parent)** | `cloud_api/CONTEXT.md` | Global cloud API routing and patterns |
 | **Layer 3** | `docs/cloud/` | API specifications, cloud architecture |
-| **Layer 3** | `docs/IP Camera/` | Camera-specific vulnerabilities |
+| **Layer 3** | `docs/OwlCam/` | Camera-specific vulnerabilities |
 | **Layer 4** | `docker-compose.yml` | Service orchestration |
 | **Layer 4** | `api_server/` | Flask API with JWT, support system, C2 proxy |
 | **Layer 4** | `c2_server/` | Command & Control SSE server |
@@ -276,8 +276,8 @@ Delete users via DELETE /admin/users/<id> with forged Referer
 
 ## References
 
-- Docs: `docs/IP Camera/API/Vulnerabilities.md`
-- C2 Architecture: `docs/IP Camera/Mobile/ARCHITECTURE_SSE_C2.md`
+- Docs: `docs/OwlCam/API/Vulnerabilities.md`
+- C2 Architecture: `docs/OwlCam/Mobile/ARCHITECTURE_SSE_C2.md`
 - OWASP API Top 10: 2023
 - OWASP IoT Top 10: 2018
 - JWT Attacks: https://portswigger.net/web-security/jwt

@@ -149,3 +149,34 @@ The change made two committed claims false, corrected in the same edit:
 - Socket integration harness (CAN monkeypatched): error codes correct on both ports (unknown service 0x02, unknown method 0x03, RelayFrame short 0x09, tokenless SetLock 0x01), the invariant holds (no CAN before reflash), SD FindService returns an OfferService advertising 0x1401, reflash + post-reflash inject still work. All pass.
 - Repackaged `canary.tar.gz` (SD + error-code markers confirmed inside).
 - On-Pi verification (2026-07-08, simulation / vcan0): full attack chain passed from the PC. SD FindService returns the OfferService for 0x1401, the error-code sweep enumerates the methods (SetLock E_NOT_OK, GetLockState RESPONSE, RelayFrame E_MALFORMED, unknown E_UNKNOWN_METHOD), a legit SetLock captured with tcpdump on the wire exposes the token in cleartext (I7), the tokenless SetLock is rejected, the invariant holds (no CAN before the reflash), the unsigned firmware is accepted, and the post-reflash RelayFrame unlocks with no token and relays an arbitrary id. All pass. Physical-bus candump pending the CAN module.
+
+---
+
+# OWL-D1 - Fix dead doc routing docs/IP Camera -> docs/OwlCam (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-D1). Divide-and-conquer pass: `01_spec -> 04_integrate` (02/03 N/A, no vuln code).
+
+## Problem
+
+The owlcam Layer 3 folder is `src/docs/OwlCam/`, but Layer 0, both Layer 2 `CONTEXT.md` files, and the factory registration files routed to a non-existent `docs/IP Camera/`. The whole owlcam doc chain was dead.
+
+## Changes (path references only: `docs/IP Camera` -> `docs/OwlCam`)
+
+| File | Change |
+|------|--------|
+| `src/AGENTS.md` | device->folder map row: link text + percent-encoded URL (`docs/IP%20Camera/`) |
+| `src/labs/owlcam/CONTEXT.md` | Inputs table Layer 3 rows + References section |
+| `src/cloud_api/CONTEXT.md` | doc references + "understand cloud vulnerabilities" routing row |
+| `src/cloud_api/owlcam/CONTEXT.md` | Layer 3 input row + References |
+| `shared/glossary.md` | device->doc-folder map cell `` `IP Camera/` `` -> `` `OwlCam/` `` |
+| `_config/promotion-map.md` | device->product paths Docs cell |
+
+Prose descriptions of the device type ("IP Camera Vulnerable Profile", "IP Camera Surveillance Lab", the `(IP camera)` label, "IP camera surveillance", the mermaid CAM label) left intact, they are not paths.
+
+## Verification
+
+`grep -rnE "docs/IP Camera|docs/IP%20Camera"` over the repo returns only the OWL-D1 backlog/spec descriptions, no live routing reference remains. All five target files exist under `docs/OwlCam/`.
+
+## Stage cleanup
+
+`stages/01_spec/output/owl-d1-spec.md` cleaned after promotion, per convention. This log is the durable record.
