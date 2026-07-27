@@ -32,7 +32,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 |----|------|--------|-------|------|--------|
 | OWL-D1 | [x] | Dead doc routing `docs/IP Camera/` -> `docs/OwlCam/` | MWP integrity | Doc/Config | DONE [verified] |
 | OWL-D2 | [x] | Add YAML frontmatter to every OwlCam vuln doc | MWP integrity | Doc | DONE [verified] |
-| OWL-D3 | [ ] | Standardize status badges to DONE/IN PROGRESS/PENDING | MWP integrity | Doc | PENDING [doc] |
+| OWL-D3 | [x] | Standardize status badges to DONE/IN PROGRESS/PENDING | MWP integrity | Doc | DONE [verified] |
 | OWL-D4 | [ ] | Fix broken Obsidian wikilinks | MWP integrity | Doc | PENDING [doc] |
 | OWL-D5 | [ ] | README onboarding polish (creds, host/IP confusion) | MWP integrity | Doc | PENDING [doc] |
 | OWL-C1 | [ ] | Document the strong undocumented API vulns | API coverage | Doc | PENDING [verified] |
@@ -68,12 +68,12 @@ No OwlCam vuln doc carries frontmatter (id/title/category/status/severity/owasp/
 - [x] 03_document - authored 3 frontmatter blocks (8 convention fields + compact per-finding status), CWE/owasp aligned to the code paths
 - [x] 04_integrate - prepended into the 3 files, validated YAML parses at byte 0, logged in integration-log.md
 
-#### OWL-D3 - Standardize status badges · PENDING [doc]
+#### OWL-D3 - Standardize status badges · DONE [verified]
 The API doc uses non-standard markers (`NOT DEVELOPED`, `PENDING REVIEW`, `ATTACK DOCUMENTATION PENDING`) instead of `DONE`/`IN PROGRESS`/`PENDING`.
-- [ ] 01_spec - map each non-standard marker to the canonical badge
-- [ ] 02_implement - N/A
-- [ ] 03_document - normalize the badges across the OwlCam docs
-- [ ] 04_integrate - promote, log
+- [x] 01_spec - mapped 7 non-standard markers (NOT DONE/NOT DEVELOPED/NOT DEVELOPED YET/ATTACK DOCUMENTATION PENDING/PENDING REVIEW) to canonical badges per finding
+- [x] 02_implement - N/A
+- [x] 03_document - normalized the 7 badges in API/Vulnerabilities.md, reconciled API8 frontmatter DONE -> IN PROGRESS
+- [x] 04_integrate - verified no non-standard badge remains, logged in integration-log.md
 
 #### OWL-D4 - Fix broken Obsidian wikilinks · PENDING [doc]
 Links like `[[IoT - Vulnerabilities and features#...]]`, `[[API - Vulnerabilities and features]]`, `[[Mobile - Vulnerabilities and features#...]]` and `app://obsidian.md/...` do not resolve to the actual `Vulnerabilities.md` filenames.

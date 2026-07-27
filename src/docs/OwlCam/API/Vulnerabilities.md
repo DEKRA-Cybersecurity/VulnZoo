@@ -30,7 +30,7 @@ findings:
   - "API5: DONE"
   - "API6: PENDING"
   - "API7: PENDING"
-  - "API8: DONE"
+  - "API8: IN PROGRESS"
   - "API9: DONE"
   - "API10: DONE"
 ---
@@ -316,7 +316,7 @@ The _/api/messages_ endpoint exposes sensitive information by revealing the iden
 ![[api2_sender_id_filtered.png]]
 ## Session token capture - Mass Assignment
 
-> **NOT DONE**
+> **PENDING**
 
 This attack targets session management and authentication tokens. When an unauthorized user attempts to access the _/admin_ endpoint, the endpoint returns a null _admin_session_ cookie, indicating that access to the administration panel is denied.
 
@@ -373,7 +373,7 @@ The server exposes information that may be valuable to an attacker. Even when th
 
 # API4:2023 - # Unrestricted Resource Consumption
 
-> **NOT DEVELOPED**
+> **PENDING**
 
 The login panel processes authentication requests via a POST request to the _/login_ endpoint. This endpoint contains a logic flaw that allows excessive consumption of database resources, potentially leading to system denial of service.
 
@@ -396,13 +396,13 @@ If an attacker discovers this endpoint, they can not only perform brute-force at
 
 ## Demonstration
 
-> NOT DEVELOPED YET
+> **PENDING**
 
 ---
 
 # API5:2023 - Broken Function Level Authorization
 
-> **ATTACK DOCUMENTATION PENDING**
+> **DONE**
 
 ## Referer-based BFLA
 
@@ -441,7 +441,7 @@ This can be verified by creating a new user with the same name as the deleted us
 ---
 # API6:2023 - Unrestricted Access to Sensitive Business Flows
 
-> **NOT DEVELOPED**
+> **PENDING**
 
 A user can purchase cameras and services through the store menu. The company offers a promotion in which new users receive a voucher that allows their first purchase to be free. The voucher consists of a series of encrypted data that is difficult to crack; however, the endpoint responsible for generating and returning the voucher to the user is not secure.
 
@@ -462,7 +462,7 @@ The server has an internal service with *bind* that loads the administration pag
 
 > This internal service could be hosted on another machine or, for example, on the RASPBERRY PI itself, so that the attacker can interact directly with the API alone, but the API has two interfaces, one for communicating with clients and another for the RASPBERRY PI. If the server's operation is altered by SSRF, this resource could be targeted on another network.
 
-> **NOT DEVELOPED**
+> **PENDING**
 Description of the vulnerability
 
 The form found in the `admin.html` template can be exploited by SSRF attacks if the admin user visits a malicious page because it does not include any CSRF token or additional validation.
@@ -568,7 +568,7 @@ In the request submission form that the system administrator will later see, fil
 
 ### Vulnerability Description
 
-> **PENDING REVIEW**
+> **IN PROGRESS**
 
 The endpoint `/api/system/logs` is designed as a system monitoring feature, but it lacks authentication and exposes sensitive information about administrator activities, including their internal ID in multiple log entries.
 

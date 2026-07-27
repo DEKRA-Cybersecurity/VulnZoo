@@ -206,3 +206,35 @@ All 3 files begin with `---` at byte 0, the YAML parses (`yaml.safe_load`) with 
 ## Stage cleanup
 
 `stages/01_spec/output/owl-d2-spec.md` cleaned after promotion. This log is the durable record.
+
+---
+
+# OWL-D3 - Standardize status badges (2026-07-27)
+
+Target from `stages/TARGET.md` (OWL-D3). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code).
+
+## Change
+
+Normalized the non-standard inline status badges in `docs/OwlCam/API/Vulnerabilities.md` to the canonical `DONE` / `IN PROGRESS` / `PENDING` (AGENTS.md convention). IoT and Mobile docs already used only standard badges.
+
+| Old badge | Finding | New |
+|-----------|---------|-----|
+| `NOT DONE` | API3 mass-assignment | `PENDING` |
+| `NOT DEVELOPED` (x3) | API4, API6, API7 | `PENDING` |
+| `NOT DEVELOPED YET` | API4 demo | `PENDING` |
+| `ATTACK DOCUMENTATION PENDING` | API5 | `DONE` (badge was stale, section carries a full demo with 5 screenshots) |
+| `PENDING REVIEW` | API8 Attack Vector #2 (system logs) | `IN PROGRESS` |
+
+Left as-is: `> **CSRF is not included in the OWASP API Top 10...**` (explanatory note, not a status badge).
+
+## Frontmatter reconciliation
+
+`API8` in the D2 `findings` list moved `DONE -> IN PROGRESS`: the primary finding (user enumeration) is DONE but Attack Vector #2 is IN PROGRESS, so the body badges and the frontmatter now agree across all ten API findings.
+
+## Verification
+
+`grep -E "NOT DEVELOPED|NOT DONE|PENDING REVIEW|DOCUMENTATION PENDING"` over the OwlCam docs returns nothing. All 14 body badges are `DONE` / `IN PROGRESS` / `PENDING`.
+
+## Stage cleanup
+
+`stages/01_spec/output/owl-d3-spec.md` cleaned after promotion. This log is the durable record.
