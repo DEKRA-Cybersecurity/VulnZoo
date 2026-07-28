@@ -43,7 +43,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-A1 | [x] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | DONE [verified] |
 | OWL-A2 | [x] | IoT2 real streaming attack (cleartext sniff/replay) | Streaming | Doc | DONE [verified] |
 | OWL-A3 | [x] | IoT3 concrete repro, de-stub | Streaming | Doc | DONE [verified] |
-| OWL-C2 | [ ] | Implement or downgrade the prose-only API categories | API coverage | Code/Doc | PENDING [doc] |
+| OWL-C2 | [x] | Implement or downgrade the prose-only API categories | API coverage | Code/Doc | DONE [verified] |
 | OWL-F1 | [ ] | M6 token brute-force step-by-step repro | Mobile/C2 | Doc | PENDING [doc] |
 | OWL-F2 | [ ] | Mobile coverage expansion (pinning, deep-links, MASVS) | Mobile/C2 | Code/Doc | PENDING [doc] |
 | OWL-E1 | [ ] | API/mongo OOM (exit 137) under `mem_limit: 512m` | Operational | Config | PENDING [verified] |
@@ -151,12 +151,12 @@ IoT3 (Insecure Ecosystem Interfaces) was a stub that deferred entirely to the AP
 
 ### Wave 4 - Expand coverage
 
-#### OWL-C2 - Implement or downgrade the prose-only API categories · PENDING [doc]
-API4 (rate limiting), API6 (voucher/free-purchase), API7 (SSRF/CSRF/avatar-RCE) and the API3 mass-assignment sub-item are documented as attacks but not implemented, so three OWASP categories are dead prose.
-- [ ] 01_spec - per category, decide implement vs downgrade-to-PENDING with an honest status
-- [ ] 02_implement - build the endpoints/behaviors chosen for implementation
-- [ ] 03_document - repro + expected result for the implemented ones, honest status for the rest
-- [ ] 04_integrate - promote code + docs, repackage the API image, log
+#### OWL-C2 - Implement or downgrade the prose-only API categories · DONE [verified]
+API4 (rate limiting), API6 (voucher/free-purchase), API7 (SSRF/CSRF/avatar-RCE) and the API3 mass-assignment sub-item were documented as attacks but not implemented. Code survey found API4 and API7 were already real (undocumented), API3 was a hardcoded non-vuln, and API6 had no scaffolding at all.
+- [x] 01_spec - per category: API4 already real (v1 uncapped vs v2 429) -> verify+DONE; API7 SSRF already real (`process_support_file` server-side fetch, reachable via content-type forgery) -> verify+DONE; API3 mass-assignment not real (change_password hardcodes password) -> implement; API6 store/voucher has zero scaffolding -> honest downgrade
+- [x] 02_implement - `app.py change_password` now `$set`s every submitted field except the two control keys, so `role:admin` in a password change escalates the caller (BOPLA mass assignment). No other code change, API4/API7 already existed
+- [x] 03_document - API4 heading typo fixed, PENDING->DONE with the verified v1/v2 repro; API7 SSRF PENDING->DONE with the support-file-upload repro and the verified internal-fetch results; API3 PENDING->IN PROGRESS with the role-escalation repro; API6 kept PENDING with an explicit "design proposal, no store endpoint in this build" note. Frontmatter findings updated
+- [x] 04_integrate - verified live on the running stack: API4 (`401x3,429x3` vs 6 zombie sessions), API7 (server fetched `mongo:27017` + `vulnzoo-secure:5001` from internal-only hostnames). API3 code + isolation-verified, live end-to-end pends `docker compose up --build` (image is baked, no volume mount). Logged
 
 #### OWL-F1 - M6 token brute-force step-by-step repro · PENDING [doc]
 M6 describes the weak C2 token (hex-digit sum mod 7) but has no runnable brute-force / token-forge walkthrough.
