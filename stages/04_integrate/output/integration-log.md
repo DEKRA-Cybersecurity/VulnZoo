@@ -521,3 +521,41 @@ Authorization is role-based, ownership is never consulted, and the endpoint serv
 ## Deployment / pending
 
 None. Doc-only. Wave 3 (streaming centerpiece: A1, A2, A3) is complete.
+
+---
+
+# OWL-C2 - Implement or downgrade the prose-only API categories (2026-07-28)
+
+Target from `stages/TARGET.md` (OWL-C2, wave 4). 01_spec inline. Containers were up, so API4 and API7 were verified live against the running stack.
+
+## Decision (01_spec)
+
+A code survey (not just the docs) changed the picture: two of the four categories were already implemented but undocumented, one was a hardcoded non-vuln, and one had no code at all.
+- API4 (Unrestricted Resource Consumption): already real. `/api/v1/login` inserts a session on every POST before checking credentials and has no attempt cap, while `/api/v2/login` caps at three and returns `429`. Verify + DONE, no code.
+- API7 (SSRF): already real. `process_support_file` decodes an uploaded HTML attachment and does `requests.get()` on every `<img src>` server-side. `/api/support/modify` only checks the multipart `Content-Type` against an image/PDF allow-list while the processor keys off the file name, so a `.html` payload with a forged `image/png` content-type triggers the fetch. Verify + DONE, no code.
+- API3 (mass assignment): not real. `change_password` hardcoded `$set:{'password':...}`. Implement the sink.
+- API6 (voucher/store): no store, checkout, or voucher endpoint exists anywhere in the codebase. Honest downgrade rather than build a whole business-flow subsystem for one tick.
+
+## Code (02_implement)
+
+`api_server/app.py`, `change_password`: instead of setting only the password, it now `$set`s every field in the JSON body except the control keys `current_password` and `new_password`. A caller can add `"role":"admin"` (or any trusted field such as an `admin_session` value) to a normal password change and have it persisted to their own user document. This is the only code change, API4 and API7 already existed.
+
+## Doc (03_document)
+
+`API/Vulnerabilities.md`:
+- API4: fixed the `# API4:2023 - #` heading typo, flipped section + Demonstration `PENDING -> DONE`, added the verified v1-uncapped / v2-`429` repro and result.
+- API7: flipped the SSRF `PENDING -> DONE`, added a "Reproduced: SSRF via the support-ticket file processor" subsection with the submit-then-modify repro, the forged-content-type detail, and the verified `processing_results` (internal hosts reached). Noted the MJPEG-stream DoS variant.
+- API3: flipped `PENDING -> IN PROGRESS`, added the role-escalation repro via `change_password`, cross-linked to API1 BOLA.
+- API6: kept `PENDING`, added an explicit "design proposal, not implemented in this build" banner so it is not mistaken for a live attack.
+- Frontmatter findings: API4 `DONE`, API7 `DONE`, API6 `PENDING (design only, no store endpoint in this build)`, API3 stays `IN PROGRESS`.
+
+## Verification
+
+Live on the running Docker stack (`vulnzoo-vulnerable:5000`, `mongo`, `vulnzoo-secure`):
+- API4: six `/api/v1/login` bad-cred POSTs returned `401 401 401 401 401 401` and created six new session documents with no throttling, while `/api/v2/login` returned `401 401 401 429 429 429`. Test sessions cleaned up afterward.
+- API7: submitted a support ticket as john, then attached `<img src="http://mongo:27017/"><img src="http://vulnzoo-secure:5001/">` as a `.html` file with a forged `image/png` content-type. The server's `processing_results` showed `mongo:27017` reached (TCP connect then `RemoteDisconnected`) and `vulnzoo-secure:5001` returning `status 200`, both internal-only hostnames the host itself cannot resolve (`host -> mongo:27017 = 000`). Ticket and admin auto-message cleaned up afterward.
+- API3: isolation-verified the update construction (`role:admin` persisted, `current_password`/`new_password` control keys excluded, benign path sets only `password`), `app.py` parses.
+
+## Deployment / pending
+
+Only API3 needs deployment: the API image is baked (no volume mount), so the `change_password` mass-assignment goes live on the next `docker compose up --build`. API4 and API7 are already live and verified. API6 is a documented design proposal, no build needed. If the store/voucher flow (API6) is wanted as a real vuln, it is a separate follow-up (new endpoints + a mongo collection).

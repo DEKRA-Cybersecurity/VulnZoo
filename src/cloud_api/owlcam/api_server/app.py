@@ -1341,9 +1341,15 @@ def change_password():
     if not user or user['password'] != old_password:
         return jsonify({'error': 'Old password is incorrect'}), 403
 
+    # VULNERABILITY (API3 BOPLA - Mass Assignment): the update blindly persists every
+    # field the client submitted, not just the password. Any extra key in the JSON body
+    # (role, admin_session, profile_picture, ...) is written straight to the user document,
+    # so a caller can escalate privileges by adding e.g. "role": "admin" to a password change.
+    updates = {k: v for k, v in data.items() if k not in ('current_password', 'new_password')}
+    updates['password'] = new_password
     mongo_client.vulnzoo_vuln.users.update_one(
         {'_id': ObjectId(user_id)},
-        {'$set': {'password': new_password}}
+        {'$set': updates}
     )
 
     return jsonify({'message': 'Password changed successfully'}), 200

