@@ -492,3 +492,32 @@ Live on the Pi. Captured `:9090` with `tcpdump` while a client pulled the feed, 
 ## Deployment / pending
 
 None. Doc-only target, no image rebuild. OWL-A3 (IoT3 de-stub) reuses this streaming surface plus the API access-control break.
+
+---
+
+# OWL-A3 - IoT3 de-stub: camera stream reachable through the API BOLA (2026-07-28)
+
+Target from `stages/TARGET.md` (OWL-A3, wave 3). 01_spec inline. This closes wave 3 (the streaming centerpiece).
+
+## Decision (01_spec)
+
+IoT3 (Insecure Ecosystem Interfaces) was a stub deferring to the API docs. The concrete ecosystem path it owns: the physical cameras are registered in the cloud API, and `/snapshot` authorizes by role (`admin`/`viewer`) with no per-camera ownership check, so a non-owner pulls any camera's live frame. This is the device-facing framing of the API1 BOLA, and it ties directly to the physical Pi camera ('Parking Lot', `c18a78a6ee98f183f51def10`, `http://192.168.2.1:9090/video`, the OWL-A1/A2 stream).
+
+## Code (02_implement)
+
+N/A. Reuses the existing API and streaming, no code change, no image rebuild.
+
+## Doc (03_document)
+
+`IoT (Camera)/Vulnerabilities.md`, IoT3 rewritten from one vague paragraph into a device-centric section: how `/snapshot` gates access (`session_required_html` only checks a session cookie exists, then a role-only check), the seeded camera table mapping owner to physical source (Parking Lot = the Pi), a forge-a-viewer-token repro, the verified results, cross-links to API1 (BOLA) and API2 (weak secret), and remediation. Flipped the IoT3 finding badge and the doc-level `status` to `DONE` (all four IoT findings are now DONE). Added `app.py (/snapshot)` to `affected_components`.
+
+## Verification
+
+Live on the running Docker stack (`vulnzoo-vulnerable` on `:5000`, `mongo` up). Read the seeded model: users admin(`admin`)/elliot(`viewer`)/john(`user`), john owns Greenhouse (`bd2218...`, active) and the Pi 'Parking Lot' (inactive). Forged an HS256 token with the known secret `supersecretkey` for each user and POSTed `/snapshot?camera=<john's Greenhouse>` with any existing `session_id` cookie:
+- elliot (role `viewer`, NOT the owner) -> `HTTP 200 image/jpeg`, john's camera frame returned. BOLA confirmed.
+- john (role `user`, the actual owner) -> `HTTP 403 Insufficient permissions`.
+Authorization is role-based, ownership is never consulted, and the endpoint serves the physical Pi camera identically when active.
+
+## Deployment / pending
+
+None. Doc-only. Wave 3 (streaming centerpiece: A1, A2, A3) is complete.
