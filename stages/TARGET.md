@@ -42,7 +42,7 @@ This backlog applies **divide and conquer on top of MWP**: every target is split
 | OWL-B2 | [x] | `alg:none` JWT: make it work or remove it | Broken chains | Code/Doc | DONE [verified] |
 | OWL-A1 | [x] | RTSP `:8554` serves corrupted JPEG (RFC 2435) | Streaming | Code/Doc | DONE [verified] |
 | OWL-A2 | [x] | IoT2 real streaming attack (cleartext sniff/replay) | Streaming | Doc | DONE [verified] |
-| OWL-A3 | [ ] | IoT3 concrete repro, de-stub | Streaming | Doc | PENDING [doc] |
+| OWL-A3 | [x] | IoT3 concrete repro, de-stub | Streaming | Doc | DONE [verified] |
 | OWL-C2 | [ ] | Implement or downgrade the prose-only API categories | API coverage | Code/Doc | PENDING [doc] |
 | OWL-F1 | [ ] | M6 token brute-force step-by-step repro | Mobile/C2 | Doc | PENDING [doc] |
 | OWL-F2 | [ ] | Mobile coverage expansion (pinning, deep-links, MASVS) | Mobile/C2 | Code/Doc | PENDING [doc] |
@@ -142,12 +142,12 @@ IoT2 (Insecure Network Services) was purely conceptual, no reproduction, no capt
 - [x] 03_document - added Recon/enumeration, Passive capture (cleartext sniffing), and Replay subsections to IoT2 with copy-pasteable commands and expected results, kept impact + remediation, flipped the IoT2 finding badge to DONE
 - [x] 04_integrate - verified live on the Pi: a frame reassembled from a `tcpdump` sniff of `:9090` is byte-identical to the live camera image (md5 `fb672c...`), unauthenticated RTSP DESCRIBE confirmed. Logged. `owlcam.tar.gz` unchanged (no overlay edit)
 
-#### OWL-A3 - IoT3 concrete repro, de-stub · PENDING [doc]
-IoT3 (Insecure Ecosystem Interfaces) is a stub that defers entirely to the API docs, with no repro of its own.
-- [ ] 01_spec - define the concrete ecosystem path (stream reachable through the API BOLA/snapshot chain) that IoT3 owns
-- [ ] 02_implement - N/A (reuses existing API + streaming), or minor glue if a demo needs it
-- [ ] 03_document - give IoT3 its own repro tying the camera stream to the API access-control break
-- [ ] 04_integrate - promote, log
+#### OWL-A3 - IoT3 concrete repro, de-stub · DONE [verified]
+IoT3 (Insecure Ecosystem Interfaces) was a stub that deferred entirely to the API docs, with no repro of its own.
+- [x] 01_spec - the ecosystem path IoT3 owns: the physical Pi camera ('Parking Lot', `c18a78...`, `192.168.2.1:9090`) is registered in the cloud API, and `/snapshot` authorizes by role (`admin`/`viewer`), never by camera ownership, so a non-owner reads any camera's live frame (BOLA / API1)
+- [x] 02_implement - N/A. Reuses the existing API + streaming, no code change
+- [x] 03_document - rewrote the IoT3 stub into a device-centric section: the seeded camera table (owner vs physical source), a forge-a-viewer-token repro against `/snapshot`, verified results, cross-links to API1/API2, remediation. IoT3 badge + doc status -> DONE
+- [x] 04_integrate - verified live on the running stack: elliot (`viewer`, non-owner) -> `200 image/jpeg` on john's camera, john (`user`, owner) -> `403`. Logged. Doc-only, no image rebuild
 
 ### Wave 4 - Expand coverage
 

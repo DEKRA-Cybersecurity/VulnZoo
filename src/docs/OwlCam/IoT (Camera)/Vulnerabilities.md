@@ -2,7 +2,7 @@
 id: "OWLCAM-IOT"
 title: "OwlCam IoT Camera Vulnerabilities (OWASP IoT Top 10 2018)"
 category: IoT
-status: IN PROGRESS
+status: DONE
 severity: "High to Medium (per finding)"
 owasp: "OWASP IoT Top 10 (2018): IoT1 Weak/Guessable/Hardcoded Passwords, IoT2 Insecure Network Services, IoT3 Insecure Ecosystem Interfaces, IoT4 Lack of Secure Update Mechanism"
 cwe:
@@ -17,10 +17,11 @@ affected_components:
   - "labs/owlcam/files/etc/init.d/camera-http"
   - "labs/owlcam/files/opt/owlcam/camera_stream.py"
   - "labs/owlcam/files/etc/camapi/config_vuln.json"
+  - "cloud_api/owlcam/api_server/app.py (/snapshot)"
 findings:
   - "IoT1: DONE"
   - "IoT2: DONE"
-  - "IoT3: PENDING"
+  - "IoT3: DONE"
   - "IoT4: DONE"
 ---
 
@@ -154,7 +155,36 @@ The system should include scripts to manage certificates and enable RTSP over TL
 
 # IoT3:2018 - Insecure Ecosystem Interfaces (API)
 
-The video stream is transmitted to a simulated API server running in Docker. Please refer to the documentation for instructions on deploying the services related to the [[API/Vulnerabilities|API]] and review the multiple vulnerabilities that expose the video surveillance service, including the possibility of accessing live streams without proper authorization.
+The physical cameras do not stand alone. Each one is registered in the cloud API (the ecosystem interface), and the API is what serves its live frames to operators and the mobile app. The device is therefore only as protected as that interface, and the interface authorizes camera access by **role, not ownership**, which is a Broken Object Level Authorization flaw (see [[API/Vulnerabilities#API1:2023 - Broken Object Level Authorization|API1 BOLA]]).
+
+`/snapshot` reaches the camera through a single outer gate (`session_required_html`, which only checks that some `session_id` cookie exists, no role, no owner) and then an inner check that hands the frame to any token whose user has the `admin` or `viewer` role. It never verifies that the caller owns, or was granted, the requested `camera` id. So any viewer-level account in the ecosystem can pull the live feed of a camera belonging to someone else.
+
+The cameras seeded in the lab show the tie to the physical device:
+
+| Camera | Owner | Physical source |
+|--------|-------|-----------------|
+| Main Entrance (`aa0f3c...`) | elliot (`viewer`) | `172.30.0.11:9090` simulator |
+| Greenhouse (`bd2218...`) | john (`user`) | `172.30.0.22:9090` simulator |
+| Parking Lot (`c18a78...`) | john (`user`) | **the physical Raspberry Pi camera `http://192.168.2.1:9090/video`** (the IoT2 stream) |
+
+Forge a viewer token with the weak HS256 secret (see [[API/Vulnerabilities#API2:2023 - Broken Authentication|API2]]) and read a camera you do not own:
+
+```zsh
+# elliot is a viewer who owns only 'Main Entrance'. Read john's 'Greenhouse'.
+SESSION=<any valid session_id cookie>   # session_required_html only needs one to exist
+TOKEN=<HS256 JWT for elliot's user_id, signed with 'supersecretkey'>
+curl -s -X POST "http://localhost:5000/snapshot?camera=bd2218502b114cc93c7d195e" \
+    -b "session_id=$SESSION" -H "X-Auth-Token: $TOKEN" -o stolen_frame.jpg
+```
+
+Verified on the running stack:
+
+- elliot (role `viewer`, not the owner) returns `HTTP 200 image/jpeg`, the frame of john's camera.
+- john (role `user`, the actual owner) returns `HTTP 403 Insufficient permissions`.
+
+The authorization is inverted: a bystander viewer sees the camera, the owner is refused, and ownership is never consulted. The same endpoint serves the physical 'Parking Lot' Pi camera (`192.168.2.1:9090`, the IoT2 stream) once it is active, so any admin or viewer in the ecosystem can watch the real premises without ever being granted that camera. Chained with the IoT2 capture and replay, an attacker can also push stale footage back through this same interface.
+
+Remediation: enforce object-level authorization on `/snapshot` so the caller must own or be explicitly granted the requested camera, stop treating a role as a grant, and require real authentication instead of the mere existence of a session cookie.
 
 # IoT4:2018 - Lack of Secure Update Mechanism
 
