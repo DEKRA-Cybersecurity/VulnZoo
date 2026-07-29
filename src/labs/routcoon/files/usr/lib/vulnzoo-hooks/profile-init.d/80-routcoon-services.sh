@@ -98,4 +98,19 @@ else
     log_message "ERROR: ftpd init script not found"
 fi
 
+# ==========
+# Samba (anonymous SMB guest share)
+# ==========
+# ponytail: start smbd directly with the lab's /etc/samba/samba.conf, bypassing
+# the UCI-driven /etc/init.d/samba4 so the raw vulnerable share config is served as-is.
+mkdir -p /mnt/sdcard/share
+chmod 777 /mnt/sdcard/share
+if command -v smbd >/dev/null 2>&1; then
+    smbd -s /etc/samba/samba.conf &
+    nmbd -s /etc/samba/samba.conf &
+    log_message "Samba smbd started, guest share 'public' -> /mnt/sdcard/share"
+else
+    log_message "WARNING: smbd not found (samba4-server not installed), SMB share not started"
+fi
+
 exit 0

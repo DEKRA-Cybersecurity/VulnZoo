@@ -559,3 +559,614 @@ Live on the running Docker stack (`vulnzoo-vulnerable:5000`, `mongo`, `vulnzoo-s
 ## Deployment / pending
 
 Only API3 needs deployment: the API image is baked (no volume mount), so the `change_password` mass-assignment goes live on the next `docker compose up --build`. API4 and API7 are already live and verified. API6 is a documented design proposal, no build needed. If the store/voucher flow (API6) is wanted as a real vuln, it is a separate follow-up (new endpoints + a mongo collection).
+
+---
+
+# RC-D1 - Fix dead doc routing docs/Router -> docs/RoutCoon (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-D1, wave 1, first RoutCoon target). Divide-and-conquer pass: `01_spec -> 04_integrate` (02/03 N/A, no vuln code). Same class as OWL-D1.
+
+## Problem
+
+The routcoon Layer 3 folder is `src/docs/RoutCoon/`, but Layer 0 (`src/AGENTS.md`), the Layer 2 lab contract (`src/labs/routcoon/CONTEXT.md`) and the factory promotion map routed to a non-existent `docs/Router/`. No `src/docs/Router/` directory exists, so the whole routcoon Layer 2 -> Layer 3 chain was dead.
+
+## Changes (path references only: `docs/Router/` -> `docs/RoutCoon/`)
+
+| File | Change |
+|------|--------|
+| `src/AGENTS.md` | device -> doc-folder map row (link text + URL) |
+| `src/labs/routcoon/CONTEXT.md` | Inputs table Layer 3 rows (x3) + References section (x3) |
+| `_config/promotion-map.md` | device -> product paths, Docs folder cell (out of the target's original Layer 0 + Layer 2 scope, caught by the 01_spec grep) |
+
+Prose naming the device type ("Router", "vulnerable OpenWRT-based router", the `(router)` label) left intact, those are not paths.
+
+## Verification
+
+`grep -rn "docs/Router" --include="*.md"` over the repo returns only the `stages/TARGET_ROUTCOON.md` backlog description (the target that documents the drift), no live routing reference remains. The three real targets (`README.md`, `API/Vulnerabilities.md`, `IoT (Router)/Vulnerabilities.md`) all resolve under `src/docs/RoutCoon/`.
+
+## Stage cleanup
+
+01_spec was performed inline (a repo-wide grep), no throwaway spec file. This log is the durable record.
+
+---
+
+# RC-D2 - YAML frontmatter on RoutCoon vuln docs (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-D2, wave 1). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code). Same class as OWL-D2.
+
+## Scope decision (01_spec)
+
+The AGENTS.md convention is that *vuln docs* carry frontmatter. Following the OWL-D2 precedent (which excluded the OwlCam README), frontmatter was added to the two aggregate vuln docs and **not** to `README.md`, which is an onboarding/intro doc, not a findings doc (its content is handled by RC-D5). So the target's initial "every doc" wording is narrowed to the two `Vulnerabilities.md` files.
+
+## Change
+
+Added a collection-level YAML frontmatter block (the 8 convention fields `id/title/category/status/severity/owasp/cwe/affected_components` plus a compact per-finding `findings` list) at byte 0 of each aggregate vuln doc. The RoutCoon docs aggregate many findings per file, so the frontmatter is per-file, matching the OwlCam pattern. `cwe` and `affected_components` were aligned to the real overlay code paths confirmed during the RC analysis (not the doc's prose).
+
+| File | id | status | findings |
+|------|----|--------|----------|
+| `API/Vulnerabilities.md` | ROUTCOON-API | IN PROGRESS | API2/API7/API8 (all DONE) |
+| `IoT (Router)/Vulnerabilities.md` | ROUTCOON-IOT | IN PROGRESS | IoT1-10: I1/I3/I4/I9 DONE, I2/I5 IN PROGRESS, I6/I7/I8/I10 PENDING (not developed) |
+
+The per-finding statuses reflect current documentation maturity, not a live re-verification. Known content drifts (IoT1 root credential, IoT4 FTP path, IoT5 endpoint) are left for the RC-C targets, matching how OWL-D2 set statuses before OWL-C3 fixed drifts. The IN PROGRESS / PENDING (not developed) markers will be reconciled with the body badges by RC-D3.
+
+Not touched (not a vuln findings doc): `README.md`.
+
+## Verification
+
+Both files begin with `---` at byte 0, the YAML parses (`yaml.safe_load`) with all 8 required keys plus `findings`, and the original H1 heading follows the block (`# Introduction`, `# IoT:I1 - Weak Guessable, or Hardcoded Passwords`). API doc: 3 findings / 3 cwe / 5 components. IoT doc: 10 findings / 10 cwe / 10 components.
+
+## Stage cleanup
+
+01_spec (template + OwlCam shape review, scope decision) performed inline, no throwaway spec file. This log is the durable record.
+
+---
+
+# RC-D3 - Standardize non-standard status badges (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-D3, wave 1). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code). Same class as OWL-D3.
+
+## Change
+
+Normalized the 8 non-standard inline markers in `docs/RoutCoon/IoT (Router)/Vulnerabilities.md` to the canonical `DONE` / `IN PROGRESS` / `PENDING` (AGENTS.md convention). The API doc was already clean (grep-confirmed, no markers). Each new badge reconciles with the RC-D2 frontmatter `findings` status.
+
+| Line | Old marker | New badge | Rationale |
+|------|-----------|-----------|-----------|
+| Samba 2.2 | `> **ON DEVELOPMENT**` | `PENDING` | SMB config on disk but the service is not enabled in this build (matches IoT2 frontmatter note) |
+| DHCP/DNS | `> **CHECK ATTACKS**` | `IN PROGRESS` | attacks described in prose, not yet reproduced |
+| IoT3 | `> **VERY BASIC VULNERABILITY:** ...` | `DONE` | low-severity, editorial "relegate to mobile interface" note preserved as prose |
+| IoT5 | `> **NEEDS CHECK: Overlaps with [[...IoT I3...]]**` | `IN PROGRESS` | overlap note preserved, wikilink left verbatim for RC-D4 |
+| IoT6/7/8/10 | `> **NOT DEVELOPED**` (x4) | `PENDING` | not developed, matches frontmatter |
+
+Where a marker carried real information beyond the status (the IoT3 editorial suggestion, the IoT5 overlap note), the note was rewritten as plain prose after the canonical badge rather than dropped. The IoT5 broken wikilink was intentionally left untouched (RC-D4 owns link fixes, one stage one job).
+
+## Verification
+
+`grep -E "ON DEVELOPMENT|NOT DEVELOPED|CHECK ATTACKS|NEEDS CHECK|VERY BASIC|NOT DONE|PENDING REVIEW"` over both docs returns nothing. All 8 body markers are now `DONE` / `IN PROGRESS` / `PENDING` blockquotes, consistent with the RC-D2 per-finding statuses.
+
+## Stage cleanup
+
+01_spec (marker enumeration + mapping) performed inline. This log is the durable record.
+
+---
+
+# RC-D4 - Fix broken Obsidian wikilinks (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-D4, wave 1). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code). Same class as OWL-D4.
+
+## Change
+
+12 broken text wikilinks fixed across the two vuln docs. Every one turned out to be a **self-reference**: the note name `IoT Vulnerabilities` (and the colon-less `#API8 2023`) were the file's own old identity, but the file is named `Vulnerabilities.md`, so the note-name links did not resolve and the anchors had drifted from the real heading text. All were converted to same-file `[[#Heading]]` anchors matching the exact heading text. No cross-file links exist between the two docs.
+
+| Doc | Old link | Fixed anchor |
+|-----|----------|--------------|
+| API (x2) | `[[#API8 2023 Security Misconfiguration]]` | `[[#API8:2023 Security Misconfiguration]]` |
+| IoT | `[[IoT Vulnerabilities#IoT I1 - Weak Guessable, or Hardcoded Passwords]]` | `[[#IoT:I1 - Weak Guessable, or Hardcoded Passwords]]` |
+| IoT | `[[IoT Vulnerabilities#IoT7 Insecure Data Transfer and Storage]]` | `[[#IoT:I7 - Insecure Data Transfer and Storage]]` |
+| IoT | `[[IoT Vulnerabilities#IoT5 Using Insecure or Outdated Components]]` | `[[#IoT:I5: Using Insecure or Outdated Components]]` |
+| IoT | `[[IoT Vulnerabilities#IoT I8 - Lack of device management]]` | `[[#IoT:I8 - Lack of device management]]` |
+| IoT | `[[IoT Vulnerabilities#No. 9 Insecure Default Settings]]` | `[[#IoT:I9 - Insecure Default Settings]]` |
+| IoT | `[[IoT Vulnerabilities#IoT I3 - Insecure Ecosystem Interfaces]]` | `[[#IoT:I3 - Insecure Ecosystem Interfaces]]` |
+| IoT | `[[IoT Vulnerabilities#IoT I9 - Insecure Default Settings\|IoT9]]` | `[[#IoT:I9 - Insecure Default Settings\|IoT9]]` |
+| IoT | `[[IoT Vulnerabilities#IoT I1 - Weak, Guessable, or Hardcoded Passwords]]` | `[[#IoT:I1 - Weak Guessable, or Hardcoded Passwords]]` (comma drift) |
+| IoT | `[[IoT Vulnerabilities#IoT I10 - Lack of Physical Hardening]]` | `[[#IoT:I10 - Lack of Physical Hardening]]` |
+| IoT | `[[IoT Vulnerabilities#FTP\|FTP]]` | `[[#2.4 FTP\|FTP]]` |
+
+Image embeds (`[[api1_*.png]]`, `[[iot3_*.png]]`, etc., 12 of them) were left untouched: Obsidian resolves them by basename against `API/images/` and `IoT (Router)/images/`, matching how OWL-D4 handled embeds.
+
+## Verification
+
+`grep -E '\[\[IoT Vulnerabilities#|\[\[#API8 2023'` returns nothing. A script that extracts every `[[#anchor]]` and checks it against the doc's real headings reports ALL RESOLVE (2 API + 10 IoT anchors, each matching an existing heading, including the colon-in-text `IoT:I5:` and the numbered `2.4 FTP`).
+
+## Stage cleanup
+
+01_spec (wikilink enumeration + heading map) performed inline. This log is the durable record. Wave 1 doc-integrity targets D1-D4 are complete; D5 (README onboarding) remains.
+
+---
+
+# RC-D5 - README onboarding: fabricated creds, stale paths, host/IP map (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-D5, wave 1, last). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code). Same class as OWL-D5. Closes wave 1.
+
+## Problem (verified against the overlay)
+
+- The README advertised web/API credentials `admin` / `admin123` (and `user` / `user123` in the access section), but no `admin` or `user` account is created anywhere. `11-add-users.sh` creates only `openwrtuser`, `anonymous`, `nobody`, plus the base `root`. Both credentials were fabricated.
+- The real web/API login is `root` / `uncrackable`: the LuCI dispatcher gates the admin tree with `allowed_users = track.sysauth` (root-only), and `openwrtuser` only yields the differential 403/401 used for the enumeration exercise.
+- The setup step referenced an `openwrt_resources/` folder that exists nowhere in the repo (grep: only the README named it).
+
+## Change (`docs/RoutCoon/README.md`)
+
+- Added a "Hosts, ports and credentials" map table (device `192.168.2.1` canonical, LuCI :80 root-only, SSH :22 openwrtuser, FTP :21 anon, Telnet :5515 unauth root, SNMP :161 public/private, UPnP :5000/:1900, Device Manager :8080), with a note that `192.168.2.1` is authoritative over the `192.168.1.1` seen in some walkthroughs.
+- Replaced the fabricated `admin:admin123` / `user:user123` with the real `root:uncrackable`, framed as the white-box shortcut, and stated there is no `admin` account so the black-box path is credential discovery.
+- Dropped the dead `openwrt_resources/` reference, repointed setup to the real `API/Vulnerabilities.md` and `IoT (Router)/Vulnerabilities.md`.
+- Kept the correct white-box line (`openwrtuser:openwrtuserpwned`, `root:uncrackable`) and clarified SSH (openwrtuser) vs web/API (root) as separate paths, noting root SSH password login is disabled.
+
+## Flagged (out of D5 scope, later targets)
+
+- The vuln-doc scans still use `192.168.1.1` in places (network drift) -> RC-C4.
+- The FTP anonymous home in the vuln docs is described as `/tmp`; the real ftpd root is `/opt/oem-updates/pending` -> RC-C2. The README map deliberately states no FTP path to avoid pre-empting that fix.
+
+## Verification
+
+`grep` confirms the README no longer carries `admin123`, `user123`, `openwrt_resources`, or the "default credentials or those you have configured" line. The host/port/credential map, the `root:uncrackable` login, and the "no `admin` account" note are present and consistent across the map, the Getting Started API section, and the Access section.
+
+## Stage cleanup
+
+01_spec (account/login verification against the overlay) performed inline. This log is the durable record. **Wave 1 (RC-D1..D5, MWP/doc integrity) is complete.**
+
+---
+
+# RC-C1 - root credential drift: IoT1 "crack root" is false (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-C1, wave 2, first). Pass: `01_spec -> 04_integrate` (02 N/A, the credential is intended and must not be weakened). Doc-truth fix.
+
+## Problem (verified against the overlay)
+
+IoT1 told the reader that the `pwned` wordlists "can be used to crack the root user's password" and showed a `john` run recovering `pwned`. The overlay sets `root:uncrackable` (`11-add-users.sh:42`), and IoT9's own demo uses `sshpass -p "uncrackable" ssh root@...`. No account has the password `pwned`, so the `john`-cracks-root block was fabricated/stale. The CONTEXT.md user table (`root | pwned`) and the IoT:I1 bullet ("Crackable root hash (type 5 - SHA256)") carried the same false claim. The genuinely crackable account is `openwrtuser` (`openwrtuserpwned`, `sha256crypt $5$`, combination attack), which was already documented correctly.
+
+## Change
+
+- `IoT (Router)/Vulnerabilities.md` (IoT1): replaced the false "crack root" sentence and the fabricated `john`-recovers-`pwned` block with an accurate paragraph: `pwned` is the tell for `openwrtuser`, the `root` hash is a decoy whose password `uncrackable` is not in the `pwned` wordlists, so a `john` run against it exhausts the list with no result, and root is reached by escalating from `openwrtuser` (wikilink to IoT9), not by cracking. Kept the real `grep pwned rockyou`, the `openwrtuser` hashcat combination attack, and the web-differential brute force.
+- `labs/routcoon/CONTEXT.md`: user table `root | pwned` -> `root | uncrackable` (and "SSH disabled" -> "SSH password login disabled"); the IoT:I1 bullets rewritten so `openwrtuser` is named the crackable account and `root` is the deliberately-uncrackable escalation target.
+
+## Verification
+
+`grep` for a root-cracking / `Crackable root` / `root ... pwned` claim across the two docs, the README and CONTEXT returns only the corrected text (which states root is NOT crackable) and the IoT9 `sshpass -p "uncrackable"` demo. The new `[[#IoT:I9 - Insecure Default Settings|IoT9]]` wikilink resolves to the real heading (line 1028), matching the anchor RC-D4 already uses. Password values are confirmed from `11-add-users.sh`; the on-image `/etc/shadow` hash type is a reasonable inference (chpasswd default = the `$5$` sha256crypt the `openwrtuser` hash already shows) but a live flashed-image confirmation is still pending.
+
+## Stage cleanup
+
+01_spec (IoT1 + CONTEXT re-read, overlay credential verification) performed inline. This log is the durable record.
+
+---
+
+# RC-C2 - FTP root drift: /tmp vs /opt/oem-updates/pending (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-C2, wave 2). Pass: `01_spec -> 04_integrate` (02 N/A, the code chain is correct and intended). Doc-truth fix.
+
+## Problem (verified against the overlay)
+
+The FTP -> cron RCE chain works in code: `files/etc/init.d/ftpd:10` serves anonymous write on `/opt/oem-updates/pending` (and `80-routcoon-services.sh:90` `chmod 777`s it), `auto-updater.sh` scans that directory every 3 min and `/bin/sh`-executes any uploaded `.sh` as root. But the docs described the FTP home as `/tmp`, so the exercise fails as written: the docs sent the learner to the wrong upload directory. The IoT2 doc even embedded a stale copy of the init script (`ftpd -w -a anonymous /tmp`, plus a `mkdir/chmod/chown /tmp/ftp` block that the real script does not have).
+
+## Change (docs match the working code now)
+
+`IoT (Router)/Vulnerabilities.md` (5 sites):
+- IoT2 2.4: the "/tmp home" description -> `/opt/oem-updates/pending` (named as the OEM update staging area), with a wikilink to IoT4 explaining why anonymous write there is dangerous (root cron executes it).
+- IoT2 2.4: replaced the embedded stale `start()` block with the real `files/etc/init.d/ftpd` body (`tcpsvd ... /opt/oem-updates/pending`, no `/tmp/ftp` prep, that lives in the services hook).
+- IoT4: "upload the script to the /tmp/cron-tmp folder" -> `/opt/oem-updates/pending` (the anonymous FTP home).
+- IoT9: anonymous upload target "/tmp" -> `/opt/oem-updates/pending`; the `mount -o remount,noexec /tmp/ftp` remediation -> `/opt/oem-updates/pending`.
+
+`labs/routcoon/CONTEXT.md` (5 sites): user table anonymous home, the IoT:I2 `tcpsvd` snippet + its comment, the users list, the Outputs FTP row, and Chain 3 all moved `/tmp` (and `/tmp/ftp`) -> `/opt/oem-updates/pending`.
+
+Legitimate `/tmp` uses were deliberately left untouched: the dnsmasq lease/hosts files (`/tmp/dhcp.leases`, `/tmp/hosts`) and the reverse-shell fifo (`mkfifo /tmp/f`) are real and unrelated to the FTP home.
+
+## Verification
+
+`grep` for any FTP-home `/tmp` pattern (`/tmp/ftp`, `/tmp/cron-tmp`, `anonymous /tmp`, write/upload/home near `/tmp`) across the IoT doc and CONTEXT returns nothing. `/opt/oem-updates/pending` now appears 6x in each file. The three legitimate `/tmp` references remain. The new `[[#IoT:I4 - Lack of Secure Update Mechanism|IoT4]]` wikilink resolves to the real heading. Live confirmation (anon `put` lands in pending, cron executes it as root) still needs a flashed image.
+
+## Stage cleanup
+
+01_spec (FTP-reference enumeration, init-script diff) performed inline. This log is the durable record.
+
+---
+
+# RC-C3 - IoT5 endpoint/header drift + IoT3 duplication (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-C3, wave 2). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code). Doc-truth fix + dedup.
+
+## Problem (verified against the overlay)
+
+The IoT5 claims about SSH-key injection did not match the code. The wrong `/cgi-bin/luci/debug/ssh` route and `X-Debug-Mode` header lived in `labs/routcoon/CONTEXT.md` (the IoT:I5 bullets and the summary table); grep-confirmed neither string exists in the overlay, and there is no `/debug` entry node in any controller. The real mechanism is `controller/support/remote.lua`: the "Remote Connectivity Check" at `/cgi-bin/luci/support/remote/diagnostic` (`sysauth = false`), which authorizes by a spoofable forwarded-IP (`X-Forwarded-For`/`real_ip`/`xff`/`remote_addr`) matched to `203.0.113.0/24`, answers `?debug=1` with an env dump, and exposes `update_ssh_access` -> `/etc/dropbear/authorized_keys`. Separately, the IoT5 doc body duplicated the entire IoT3 wfuzz endpoint-discovery section verbatim (114 lines).
+
+## Change
+
+- `IoT (Router)/Vulnerabilities.md` (IoT5): removed the 114-line duplicated IoT3 wfuzz block and replaced it with a one-paragraph cross-reference to IoT3. Reframed the vague "/api, /tools, /debug + X-Debug-Mode" narrative to the real surface: `/api` and `/tools` are the unauthenticated `network_tools.lua` SSRF/diagnostic nodes (cross-linked to API7/API8), and the high-value leftover is `/support/remote/diagnostic` with the forwarded-IP spoof, the `?debug=1` dump, and the `update_ssh_access` key injection into `authorized_keys` (noting the `RootPasswordAuth off` bypass). Kept all six IoT5 images and the IoT9 cross-link. The full forge-and-inject walkthrough is handed to RC-A1 (referenced in prose, no dead wikilink).
+- `labs/routcoon/CONTEXT.md`: rewrote the IoT:I5 bullets (`/debug/ssh`, `X-Debug-Mode` -> the real endpoint, the forwarded-IP spoof, the `?debug=1` dump) and the IoT summary-table Evidence cell.
+
+The IoT5 "OpenWrt 24.10.3" version line was left untouched (RC-E1 owns the version drift).
+
+## Verification
+
+`grep -E "debug/ssh|X-Debug-Mode"` over all RoutCoon docs and CONTEXT returns nothing. The real `support/remote/diagnostic` + `203.0.113.0/24` mechanism is named in both files. An `awk` scan of the IoT5 section counts zero `luci/admin/FUZZ` lines (duplication gone), all six `iot5_*` images remain, the IN PROGRESS badge and the frontmatter (byte 0) are intact. Live forge-and-inject confirmation is RC-A1 / a flashed image.
+
+## Stage cleanup
+
+01_spec (IoT5 read, support/remote.lua confirmation, no-`/debug`-node check) performed inline. The IoT-doc dedup+reframe was done with a line-range splice (asserted anchors) because the wfuzz tables carry trailing whitespace. This log is the durable record.
+
+---
+
+# RC-C4 - dnsmasq drift: rapid-commit + network subnet (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-C4, wave 2). Pass: `01_spec -> 04_integrate` (02 N/A, decided against a blind config change). Doc-truth fix.
+
+## Problem (verified against the overlay)
+
+`CONTEXT.md` IoT9 listed "DHCP rapid commit enabled", but `dnsmasq.conf:87` has `#dhcp-rapid-commit` commented out (disabled). The IoT doc DHCP/DNS section already stated this correctly ("`dhcp-rapid-commit` is commented out"), so only CONTEXT carried the false claim. Separately, `dnsmasq.conf` serves `dhcp-range=192.168.1.100-254` / gateway `192.168.1.1` while the lab's management surface is `192.168.2.1`.
+
+## Decision on the subnet (01_spec)
+
+The overlay ships no `/etc/config/network`, so the LAN interface IP comes from the base image (OpenWRT default `br-lan` = `192.168.1.1`), not the routcoon overlay. The `192.168.1.x` DHCP pool is consistent with a default `br-lan`, while the attack surface answers on `eth0` at `192.168.2.1` (per the SNMP scan in the doc). Whether the device is genuinely dual-homed (`br-lan` .1.x + `eth0` .2.1) or the range should be `.2.x` cannot be settled without a live Pi, and changing the DHCP subnet blindly could break a working `br-lan`. So the config was left unchanged and the reality documented instead, with the topology flagged for a live check.
+
+## Change
+
+- `labs/routcoon/CONTEXT.md`: IoT9 bullet "DHCP rapid commit enabled" -> "No DHCP rate limiting (`dhcp-rapid-commit` commented out, `dhcp-lease-max=100000`)", which is both accurate and the real insecure-default framing.
+- `IoT (Router)/Vulnerabilities.md` (2.7 DHCP/DNS): added a paragraph clarifying the DHCP pool is `192.168.1.x` / gw `192.168.1.1` (`br-lan` default) while the targeted management surface is `eth0` `192.168.2.1`, and that `192.168.2.1` is the canonical target.
+
+Not changed: `dnsmasq.conf` (no live confirmation of the interface topology; the insecure options themselves are intended) and the many `192.168.1.1` nmap-output lines in the scans (illustrative; RC-D5 already made `192.168.2.1` authoritative in the README, and mass-rewriting captured tool output is out of proportion).
+
+## Verification
+
+`grep` for a "rapid commit enabled" claim across the docs, README and CONTEXT returns nothing. The CONTEXT bullet now reads "No DHCP rate limiting", the IoT doc keeps the correct "commented out" statement and carries the new subnet note. Ground truth: `dnsmasq.conf:87` `#dhcp-rapid-commit` is commented. The `br-lan` vs `eth0` interface topology still needs a flashed-image confirmation.
+
+## Stage cleanup
+
+01_spec (option-by-option diff of `dnsmasq.conf` vs the docs, interface-IP search) performed inline. This log is the durable record.
+
+---
+
+# RC-C5 - SNMP: drop unverifiable CVE claims (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-C5, wave 2, last). Pass: `01_spec -> 04_integrate` (02 N/A, no vuln code). Doc-truth trim. Closes wave 2.
+
+## Problem
+
+The SNMP section (2.5) pinned "Net-SNMP version 5.9.4" and cited specific CVEs, including `CVE-2025-68615` framed as a "CVSS 9.8 Critical (RCE attack)". The version was not evidenced anywhere (the nmap `snmp-sysdescr` shows only the kernel `OpenWrt 6.6.104`, not the net-snmp package version), and a 9.8 RCE in net-snmp is implausible and unverifiable at this cutoff. The reproducible, config-backed finding is the default communities (`rocommunity public` / `rwcommunity private`, written by `80-routcoon-services.sh` / `files/etc/snmp/snmpd.conf`).
+
+## Change (`IoT (Router)/Vulnerabilities.md`, 2.5 SNMP)
+
+Replaced the version + CVE block (the "5.9.4" pin, the `CVE-2024-26464` / `CVE-2025-68615` links, the "CVSS 9.8 RCE", the malformed-OID and exploitation bullets) with two honest paragraphs: net-snmp has had memory-safety issues in general (no fabricated CVE numbers), but the in-scope reproducible finding is the default-community + cleartext-v1/v2c misconfiguration; the exact package version is deliberately not asserted and must be read off the running image (`opkg list-installed | grep snmp`) and checked against advisories before chaining any version-specific bug.
+
+Kept intact: the `nmap -sU -p161` scan output (real evidence of the exposed net-snmp agent), and the entire 2.5.1 Default Community Strings section (the `snmpwalk -c public` enumeration repro, the risk table, the `rwcommunity private` exposure, the attack-chain and remediation).
+
+## Verification
+
+`grep` for `5.9.4`, `CVE-2024-26464`, `CVE-2025-68615`, `CVSS 9.8`, `RCE attack` across the IoT doc returns nothing; none of these ever appeared in CONTEXT/README. The default-community finding, the config lines, the `snmpwalk` repros and the nmap scan are all still present. The honest "does not pin a specific CVE / read the version off the image" framing is in place. The net-snmp package version remains intentionally unconfirmed (that was the point) pending a live image.
+
+## Stage cleanup
+
+01_spec (SNMP section read, evidence check for the version pin) performed inline. The intro replacement used a line-range splice (asserted anchors) because the block carries trailing whitespace and Obsidian `==highlight==` markup. This log is the durable record. **Wave 2 (RC-C1..C5, doc<->code chain truth) is complete.**
+
+---
+
+# RC-A1 - Document the support/remote SSH-key-injection chain (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-A1, wave 3, first). Pass: `01_spec -> 04_integrate` (02 N/A, the endpoint exists and is intended, this was a documentation gap). Doc only.
+
+## What was undocumented
+
+`controller/support/remote.lua` exposes the lab's strongest chain and had no prose (only the `iot5_*` images). RC-C3 named the mechanism and handed the full writeup here.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, new `##` subsection under IoT5)
+
+Added "Unauthenticated SSH key injection via the support endpoint", a first-class writeup with the code-quoted root cause and a copy-pasteable repro:
+- The endpoint `/cgi-bin/luci/support/remote/diagnostic` is registered `page.sysauth = false` (unauthenticated).
+- `get_forwarded_ip()` falls through from real headers to attacker-controlled form params (`X-Forwarded-For`, `real_ip`, `xff`, `remote_addr`), and `is_support_ip()` authorizes anything in `203.0.113.0/24`, so a POST `real_ip=203.0.113.100` becomes "authorized support". The unauthorized page leaks the expected `203.0.113.100` in an HTML comment and advertises `?debug=1` (env dump).
+- The `update_ssh_access` action appends the supplied key to `/etc/dropbear/authorized_keys`. The repro forges the IP, injects an ed25519 key, and SSHes in.
+- Impact framed as unauthenticated-to-root: `/etc/dropbear/authorized_keys` is root's key file and `RootPasswordAuth off` (IoT9) gates only password auth, so the injected pubkey is expected to bypass the whole restricted-shell path. OWASP API5:2023 / CWE-290 / CWE-306, plus remediation.
+
+## Verification
+
+The subsection is placed before IoT6, the IoT9 wikilink resolves, and all five quoted code snippets (`page.sysauth = false`, `http.formvalue("real_ip")`, the `203%.0%.113%.%d+$` match, `action == "update_ssh_access"`, `auth_file = "/etc/dropbear/authorized_keys"`) exist verbatim in `support/remote.lua`. The endpoint reachability and the key write are code-verified; the final root pubkey login is explicitly marked as needing a flashed-image confirmation (dropbear `RootLogin`/`authorized_keys` handling comes from the base image, not the overlay), so the IoT5 frontmatter finding stays IN PROGRESS.
+
+## Stage cleanup
+
+01_spec (support/remote.lua trace) performed inline. This log is the durable record.
+
+---
+
+# RC-A2 - Document the IoTGoat legacy surface (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-A2, wave 3). Pass: `01_spec -> 04_integrate` (02 N/A, code exists and is intended). Doc only.
+
+## What was undocumented
+
+`controller/iotgoat/iotgoat.lua` registers a hidden IoTGoat developer console (`admin/iotgoat/cmdinject` + `webcmd`) plus two menu stubs (`cam`, `door`), none of it documented.
+
+## 01_spec findings (auth resolved)
+
+- `webcmd()` runs `io.popen(tostring(cmd).." 2>&1")` with no filtering, as root (LuCI/uhttpd context). `cmd.htm` is the "Secret Developer Diagnostics Page" console that POSTs `cmd` to it.
+- Auth: the admin root node sets `page.sysauth = "root"` (`controller/admin/index.lua:17`), and the iotgoat entries do not override it, so `admin/iotgoat/webcmd` requires an authenticated root session (NOT unauthenticated). `vulnerable_mode` in the luci config is not consulted in the dispatcher sysauth path.
+- `camera.htm` / `door.htm` are empty `PLACEHOLDER` stubs (no backend).
+
+## Change (`API/Vulnerabilities.md`, new `##` under API8)
+
+Added "OS Command Injection via the IoTGoat developer console": the code-quoted `cmdinject`/`webcmd` registration and the unfiltered `io.popen`, an Authentication subsection (root session required, obtained via `root:uncrackable` white-box or by chaining the IoT5 SSH-key injection to a root shell first), a browser + `curl` repro, and an honest "Non-functional siblings" note that `cam`/`door` are placeholder stubs. Framed as a cleaner post-auth root RCE than `diag_ping`. Extended the frontmatter (`iotgoat.lua` component, an `API8 IoTGoat webcmd console (CWE-78): DONE` finding).
+
+## Verification
+
+The subsection sits under API8, the frontmatter parses (component + finding added), and all four quoted snippets (`cmdinject` entry, `webcmd` entry, `http.formvalue("cmd")`, `io.popen(tostring(cmd).." 2>&1")`) exist verbatim in `iotgoat.lua`. The route registration and the root-context `io.popen` are code-verified; the page render and live execution still want a flashed image.
+
+## Stage cleanup
+
+01_spec (iotgoat.lua + templates + admin sysauth trace) performed inline. This log is the durable record.
+
+---
+
+# RC-A3 - Document check_service RCE + service_status SSRF (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-A3, wave 3, last). Pass: `01_spec -> 04_integrate` (02 N/A, intended and unfiltered by design). Doc only. Closes wave 3.
+
+## What was undocumented
+
+`network_tools.lua` was documented only as the `file://` SSRF on `/api/v1/check` and the filtered `ping_host`. Two stronger `sysauth = false` sinks in the same file were undocumented.
+
+## 01_spec findings
+
+- `check_service` builds `string.format("curl -m %d '%s' 2>&1", timeout, url)` and `io.popen`s it. The `url` is single-quoted but unsanitized, so a `'` breaks out into command injection. The node is `sysauth = false`, so this is unauthenticated RCE over a plain GET, no `diag_ping` pivot needed. (The existing API7 prose implied the injection only reachable via a pivot to `diag_ping`, which undersold this endpoint.)
+- `service_status` fetches any `internal_url` server-side, unauthenticated, and logs it `critical`, a second SSRF distinct from the `file://` read.
+- `ping_host` is the filtered one (`host:match("[;&|...]")`), which is why `check` is the clean injection.
+
+## Change (`API/Vulnerabilities.md`, new `##` at the end of API7)
+
+Added "Additional unauthenticated sinks in network_tools.lua" with two code-quoted subsections: the `/api/v1/check` single-quote-breakout command injection (unauth RCE, CWE-78, with a `curl --data-urlencode "url=x';id;'"` repro and the exact shell string it builds) and the `/api/v1/status` `internal_url` SSRF (CWE-918). Contrasted with the filtered `ping_host`. Extended the frontmatter findings.
+
+## Verification
+
+The subsection sits at the end of API7 (before API8), the frontmatter parses with the new finding, and the three quoted snippets (the single-quoted `curl` `string.format`, the `url` formvalue, the `internal_url` formvalue) exist verbatim in `network_tools.lua`. The single-quote breakout and the unauthenticated reachability are code-verified; the live `id`-in-JSON and internal-fetch outputs want a flashed image.
+
+## Stage cleanup
+
+01_spec (network_tools.lua re-trace, quote-breakout reasoning) performed inline. This log is the durable record. **Wave 3 (RC-A1..A3, the strong undocumented surfaces) is complete.**
+
+---
+
+# RC-I1 - Realize IoT:I7 Insecure Data Transfer and Storage (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-I1, wave 4, first). Pass: `01_spec -> 04_integrate` (02 N/A, realized from exposures already on the device). This is the first of the "finish the OWASP IoT Top 10" targets the README asks for.
+
+## 01_spec: realize from existing exposures, no new code
+
+I7 was a `PENDING` stub. It is fully realizable from what already ships, so no overlay change was needed (YAGNI):
+- In transit (CWE-319): `30-uhttpd-config.sh` sets `listen_http` on `:80` only (no `listen_https`, no cert), so the LuCI login is cleartext; FTP `:21`, SNMP v1/v2c `:161`, Telnet `:5515`, and the `support/remote` key POST are all plaintext too.
+- At rest (CWE-312 / CWE-732): `dnsmasq.conf` stores the DHCP database world-modifiable in `/tmp` (`dhcp-leasefile=/tmp/dhcp.leases`, `dhcp-hostsfile=/tmp/hosts`) and logs DNS queries to `/var/log/dnsmasq.log`; `support/remote.lua` writes `/tmp/support_env_debug.log` and `/var/log/support_access.log`; provisioning writes `/root/vulnzoo.log`.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, IoT7 section)
+
+Replaced the stub with a full section: an "In transit" subsection (the cleartext-login `tcpdump` repro recovering `root:uncrackable` + the `sysauth` cookie, plus the other plaintext services), an "At rest" subsection (the `/tmp` DHCP state and a table of the plaintext log/key sinks), impact + remediation, and the OWASP/CWE mapping (CWE-319/312/732). Flipped the finding badge and the frontmatter `IoT7: PENDING (not developed) -> IN PROGRESS`. The DHCP-section link that already pointed at this heading now lands on real content.
+
+## Verification
+
+The section carries the In transit / At rest / Impact subsections and the CWE mapping (no longer a `PENDING` stub); the frontmatter parses with `IoT7: IN PROGRESS`; the existing `[[#IoT:I7 ...]]` link resolves. Ground truth holds: `30-uhttpd-config.sh` configures `listen_http` `:80` only and `dnsmasq.conf` puts the leasefile in `/tmp`. The live packet capture is the one step left for a flashed image (hence the finding stays IN PROGRESS).
+
+## Stage cleanup
+
+01_spec (exposure inventory across uhttpd/dnsmasq/support-remote/hooks) performed inline. This log is the durable record.
+
+---
+
+# RC-I2 - Realize IoT:I8 Lack of Device Management (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-I2, wave 4). Pass: `01_spec -> 04_integrate` (02 N/A). Doc synthesis.
+
+## 01_spec: a management-lens synthesis, no new code
+
+I8 is a lifecycle/management category, not a single exploit. It is realized by tying together management-layer gaps already demonstrated by concrete, code-verified findings: no secure update management (IoT4), no monitoring/response and tamperable world-readable logs (IoT7), no brute-force protection on any auth surface (IoT2 SSH / API2 LuCI / the unauth `api`,`tools` endpoints), and no key/credential lifecycle or decommissioning (IoT5 injected keys persist, hardcoded creds). No overlay change (YAGNI).
+
+## Change (`IoT (Router)/Vulnerabilities.md`, IoT8 section)
+
+Replaced the stub with four gap subsections (Update management -> IoT4, No monitoring/response CWE-778 -> IoT7, No brute-force protection CWE-307 -> IoT2/API2, No key-lifecycle/decommissioning -> IoT5) plus impact + remediation and the OWASP/CWE mapping. Flipped the finding badge and frontmatter `IoT8 -> DONE`.
+
+## Verification
+
+The section carries all four gap subsections and the CWE mapping (no longer a stub); the two new wikilinks (`IoT4`, `IoT7`) resolve to real headings; the frontmatter parses with `IoT8: DONE`. All the cross-linked findings this synthesis rests on are code-verified, so I8 is DONE without a separate live step.
+
+## Stage cleanup
+
+01_spec (management-gap synthesis across the existing findings) performed inline. This log is the durable record.
+
+---
+
+# RC-I3 - Realize IoT:I6 Insufficient Privacy Protection (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-I3, wave 4). Pass: `01_spec -> 04_integrate` (02 N/A). Doc.
+
+## 01_spec: realize with a scope note (not a blank downgrade)
+
+A router holds little classic PII, so I6 was decided as realize-with-honest-scope rather than fabricate a data store. The genuine privacy exposure is network metadata: device identity/presence (SNMP `public` ARP table, `/tmp/dhcp.leases` hostnames + `read-ethers`) and browsing behavior (dnsmasq `log-queries` -> `/var/log/dnsmasq.log`, a per-client DNS history). All exist already, so no overlay change.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, IoT6 section)
+
+Replaced the stub with two angle subsections ("Who is on the network" via the unauth SNMP ARP dump + DHCP hostnames; "What they browse" via the DNS query log, cross-linked to IoT7 for the cleartext capture), impact + remediation, an explicit **Scope note** that this is network-metadata privacy and there is no stored end-user PII to invent, and the OWASP/CWE mapping (CWE-359 / CWE-200). Flipped the finding badge and frontmatter `IoT6 -> DONE`.
+
+## Verification
+
+The section carries the two angle subsections, the scope note and the CWE mapping (no longer a stub); the IoT7 wikilink resolves; the frontmatter parses with `IoT6: DONE`. The SNMP ARP repro it rests on is already presented (with output) in section 2.5, and the DNS-log read is a trivial `cat`, so the finding is realized rather than left pending.
+
+## Stage cleanup
+
+01_spec (privacy-sink inventory, realize-vs-downgrade decision) performed inline. This log is the durable record.
+
+---
+
+# RC-I4 - Realize IoT:I10 Lack of Physical Hardening (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-I4, wave 4, last). Pass: `01_spec -> 04_integrate` (02 N/A). Doc. Closes wave 4.
+
+## 01_spec: realize scoped to the Pi hardware
+
+I10 is realizable for a Raspberry Pi lab and was written rather than downgraded: no secure boot, an unencrypted removable microSD, and an exposed GPIO UART. `50-ttylogin.sh` sets `ttylogin=1` (serial getty requires a password), so the free-shell-on-serial angle is honestly qualified, but microSD extraction is unconditional. No overlay change.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, IoT10 section)
+
+Replaced the stub with two angle subsections (microSD extraction -> full rootfs read/write, secret theft, and persistence, cross-linked to IoT1 as the physical mechanism behind its firmware-extraction assumption; UART serial console -> boot-log leak and login/bootloader access, qualified by `ttylogin=1`), impact + remediation, an **On-device note** (hardware findings, microSD unconditional, exact serial behavior needs the physical Pi), and OWASP/CWE (CWE-1263 / CWE-1191). Flipped the finding badge and frontmatter `IoT10 -> DONE`.
+
+## Verification
+
+The section carries both angle subsections, the on-device note and the CWE mapping; the IoT1 wikilink resolves; the frontmatter parses. With this, **all ten OWASP IoT Top 10 findings now carry real content, no `not developed` / `PENDING (not developed)` entry remains** (IoT1/3/4/6/8/9/10 DONE, IoT2/5/7 IN PROGRESS pending live steps). This meets the README's stated purpose of finishing the undeveloped points.
+
+## Stage cleanup
+
+01_spec (Pi physical-surface inventory, `50-ttylogin.sh` check) performed inline. This log is the durable record. **Wave 4 (RC-I1..I4, finish the OWASP IoT Top 10) is complete.**
+
+---
+
+# RC-B1 - Samba "ON DEVELOPMENT": honest downgrade (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-B1, wave 5, first). Pass: `01_spec -> 04_integrate` (02 N/A). Doc.
+
+## 01_spec: wire vs downgrade
+
+Decided to downgrade honestly, not wire. `samba.conf` defines a genuinely dangerous share (`[public]`, `guest ok = yes`, `read only = no`, `force user = root`, an unauthenticated world-writable root-owned share), but the SMB **server** package is not in the image: `labs/routcoon/.config` has `samba4-server` and every `ksmbd-server`/`samba4-*` package `is not set` (only `kmod-fs-ksmbd`, the filesystem module, is enabled), and no hook starts a daemon. Adding an `smbd` start to the services hook would fail on flash because no server binary ships, which is exactly the doc<->code drift this backlog removes. Wiring it is a build-time change (enable the package, rebuild) that cannot be verified without a Pi.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, IoT2 2.2)
+
+Expanded the RC-D3 one-line note into an honest downgrade: retitled the section (dropped the unsubstantiated "Samba 4.18.8"), quoted the intended dangerous share config, explained precisely why it is not reachable (`samba4-server`/`ksmbd-server` unset, no daemon), corrected the fabricated version, and gave the build-time enable path (enable an SMB server package in `.config`, ship the init script, create `/mnt/sdcard/share`, start it from `80-routcoon-services.sh`). Kept the finding PENDING; the IoT2 frontmatter already reads "Samba not yet enabled".
+
+## Verification
+
+The 2.2 section now documents the share design and its non-reachability; grep confirms no `Samba 4.18.8` version is asserted (only the explicit "was not substantiated" correction). Ground truth: `.config` has `ksmbd-server` and `samba4-server` unset. No overlay change was made (a non-functional `smbd` hook would have been the wrong move).
+
+## Stage cleanup
+
+01_spec (samba.conf read, `.config` package check) performed inline. This log is the durable record.
+
+---
+
+# RC-B1 (revised) - Samba wired after the user installed the server packages (2026-07-28)
+
+Supersedes the RC-B1 downgrade above: the user installed `samba4-server` and `ksmbd-server` on the device, so the wire path is now viable. Pass: `01_spec -> 04_integrate` with a real `02_implement`.
+
+## Decision
+
+Wired samba4 `smbd` (not ksmbd): the existing `/etc/samba/samba.conf` is Samba smb.conf format (`/etc/samba/` path, `force user` directive), so smbd consumes it natively. Only one server can bind `:445`, so ksmbd is intentionally left unwired (and unset in `.config`) to avoid the conflict.
+
+## Code (02_implement)
+
+- `labs/routcoon/.config`: `samba4-server` and `samba4-libs` flipped to `=y` (they were `is not set`; the user had installed them via opkg, so the repo build config now matches). `ksmbd-server` left unset; `kmod-fs-ksmbd` was already `=y` and is harmless.
+- `files/etc/samba/samba.conf`: added a `[global]` with `map to guest = bad user` + `guest account = root` (so anonymous connections are accepted) and `server min protocol = NT1` (allow SMB1, a deliberate weakening); kept the `[public]` guest-writable `force user = root` share.
+- `files/usr/lib/vulnzoo-hooks/profile-init.d/80-routcoon-services.sh`: after the FTP block, create `/mnt/sdcard/share` (chmod 777) and start `smbd -s /etc/samba/samba.conf &` + `nmbd` (guarded by `command -v smbd`, logged), matching the lab's direct-daemon idiom (telnetd/ftpd). Marked with a `ponytail:` comment noting it bypasses the UCI-driven `/etc/init.d/samba4` to serve the raw vulnerable config.
+
+## Doc (03_document)
+
+`IoT (Router)/Vulnerabilities.md` 2.2 flipped from the PENDING downgrade to an IN PROGRESS wired finding: the full config, how `map to guest` + `guest ok` + `force user = root` yields an unauthenticated root-owned file drop, and an `smbclient -N` list + write repro. Frontmatter IoT2 note -> "Samba wired, live-pending".
+
+## Verification
+
+`.config` shows `samba4-server=y`/`samba4-libs=y` and `ksmbd-server` unset; the hook block is present and `sh -n` passes; `samba.conf` carries the `[global]` guest mapping and the `[public]` share; the doc + frontmatter are consistent and parse. The live check is on the user's device: after re-running the hook (or reflashing), `smbclient -L //192.168.2.1 -N` should list `public`, and `smbclient //192.168.2.1/public -N -c 'put ...'` should drop a root-owned file in `/mnt/sdcard/share`. If the user prefers ksmbd, or if `smbd` needs different flags on their samba build, that is the one open item.
+
+## Stage cleanup
+
+This revision is the durable record. The finding stays IN PROGRESS until the user confirms the share live.
+
+---
+
+# RC-B2 - UPnP AddPortMapping 501 / internal_iface lo: document honestly (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-B2, wave 5). Pass: `01_spec -> 04_integrate` (02 N/A). Doc-truth.
+
+## 01_spec: make-functional vs document-honestly
+
+Documented honestly, no config change. The 501 is topological, not a package gap: `miniupnpd` refuses `internal_iface == external_iface`, and the lab has a single NIC (`eth0`), so the UCI pins `internal_iface 'lo'` / `external_iface 'eth0'`. With no distinct internal LAN interface and no separate WAN, the NAT redirect rule cannot be built, so `AddPortMapping` returns 501. No config makes a single-NIC box do real external->internal forwarding (setting internal to a LAN alias would collide with external and stop miniupnpd), so there is nothing to "make functional". The actual vulnerability, `secure_mode '0'` plus a wide-open `perm_rule`, is real and already demonstrated by the unauthenticated SOAP request reaching the execution phase.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, 2.6 UPNP)
+
+- Replaced the vague "absence of WAN NAT capabilities" in the intro with the concrete cause (single NIC -> `internal_iface 'lo'` -> no interface to build a forward on).
+- Added a paragraph naming the authoritative UCI source (`/etc/config/upnpd`): `secure_mode '0'` + the permissive `perm_rule` (`int_addr '0.0.0.0/0'`, `ext_ports '0-65535'`) are the flaw, `internal_iface 'lo'` is the single-NIC constraint and the concrete reason for the 501 (a topology limit, not a security control), and on a real two-interface router the same config forwards attacker-chosen ports to arbitrary internal hosts.
+
+Kept the existing honest 501 breakdown (request accepted, reached execution, failed at the iptables/NAT layer) and the risk assessment.
+
+## Verification
+
+The 2.6 section now explains `internal_iface 'lo'` and the single-NIC 501, and every config value it cites matches the UCI ground truth (`internal_iface 'lo'`, `external_iface 'eth0'`, `secure_mode '0'`, `int_addr '0.0.0.0/0'`). No overlay change was made (the config is correct for a single-NIC lab; the vuln is at the authorization layer).
+
+## Stage cleanup
+
+01_spec (miniupnpd 501 root-cause analysis, UCI read) performed inline. This log is the durable record.
+
+---
+
+# RC-B3 - dnsmasq attacks: scope the prose against the real config (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-B3, wave 5, last). Pass: `01_spec -> 04_integrate` (02 N/A). Doc-truth. Closes wave 5.
+
+## 01_spec: verify each attack against dnsmasq.conf
+
+The 2.7 section listed three attacks as prose. Checked against the shipped config (static read, no live run this session):
+- Lease-file tampering: works, but as a LOCAL attack, `dhcp-leasefile=/tmp/dhcp.leases` is world-writable so any local user can rewrite leases and `killall -HUP dnsmasq`.
+- DHCP starvation: does NOT work as written. `dhcp-ignore=tag:!known` makes dnsmasq ignore requests from unknown clients, so the random-MAC `DISCOVER` flood is dropped and no leases are consumed. Starvation would need MACs already in `/etc/ethers`.
+- DNS cache poisoning: the naive off-path scapy snippet is unreliable (dnsmasq randomizes source port + txid). The real config-backed DNS weakness is DNS rebinding, `stop-dns-rebind` is commented out.
+
+## Change (`IoT (Router)/Vulnerabilities.md`, 2.7)
+
+Five surgical edits (labels/prose, code blocks left intact): updated the badge to name the per-attack outcome; scoped the intro; relabeled lease tampering as "works, local" with the `/tmp` reason; relabeled starvation as "does not work as written" with the `dhcp-ignore=tag:!known` explanation; relabeled the DNS item to lead with the real DNS-rebinding weakness (`stop-dns-rebind` commented) and mark the off-path poisoning as illustrative-only against port/txid randomization.
+
+## Verification
+
+The three scoped labels are present and the scapy/zsh code blocks are unchanged; the old bullet labels are gone. Every claim matches the config ground truth: `dhcp-ignore=tag:!known` (starvation blocked), `#stop-dns-rebind` commented (rebinding), `dhcp-leasefile=/tmp/dhcp.leases` (local tamper). No overlay change; live reproduction still wants a flashed image. **Wave 5 (RC-B1..B3, the half-built services) is complete** (B1 wired pending the user's live SMB test, B2/B3 documented honestly).
+
+## Stage cleanup
+
+01_spec (per-attack config verification) performed inline. This log is the durable record.
+
+---
+
+# RC-F1 - Expand the API doc (API5/API9) + reconcile orphan images (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-F1, wave 6). Pass: `01_spec -> 04_integrate` (02 N/A). Doc + a cross-lab file move.
+
+## 01_spec findings
+
+- Categories the LuCI `:80` API genuinely supports beyond API2/API7/API8: **API5 (Broken Function-Level Authorization)** and **API9 (Improper Inventory Management)**. API1 BOLA was deliberately skipped, there is no object-ownership check to violate in this API, and the `api1_*` images are the IoT1 login-brute-force screenshots (already used in the IoT doc), not OWASP API1.
+- The two unreferenced images turned out to be **misfiled OwlCam assets**: reading them showed a Flask/Werkzeug app on `:5000` (`GET /admin` with an `X-Auth-Token` JWT returning the "Admin Panel - User Management"; `POST /register` returning `409 User already exists`). No such Flask service exists in the routcoon overlay (`cloud_api/` has only careotter/octobot/owlcam), and OwlCam's own API doc references both by basename (`OwlCam/API/Vulnerabilities.md:324,578`). They belong to OwlCam, not RoutCoon.
+
+## Change
+
+- `git mv` `api2_admin_access.png` and `api8_register.png` from `docs/RoutCoon/IoT (Router)/images/` to `docs/OwlCam/API/images/` (their owning lab, which references them). Obsidian resolves embeds by basename, so OwlCam's `![[...]]` still resolve, now from the correct folder; no RoutCoon doc referenced them, so nothing breaks.
+- `API/Vulnerabilities.md`: added two categories.
+  - **API5 Broken Function-Level Authorization**: a table of privileged functions reachable without proper function-level auth (`api/v1/check` RCE, `api/v1/status` SSRF, `support/remote/diagnostic` SSH provisioning, all `sysauth=false`; `admin/iotgoat/webcmd` root RCE gated only by a generic session), cross-referencing the concrete repros under API7/API8/IoT5. CWE-285/862.
+  - **API9 Improper Inventory Management**: the leftover/undocumented debug endpoints shipped in production (`support/remote`, `api/v1/status` and the `api`/`tools` tree, the `iotgoat` console). CWE-1059/489.
+  - Frontmatter extended: owasp string (+API5,+API9), two cwe entries, `API5: DONE` / `API9: DONE`.
+
+No routcoon Flask/registration finding was fabricated (there is no such service).
+
+## Verification
+
+The API doc now carries API2/API5/API7/API8/API9; the frontmatter parses with API5/API9 in owasp and findings and 5 cwe entries. The moved images exist under `docs/OwlCam/API/images/` and OwlCam's two embeds resolve to them; no routcoon doc referenced them. The API5/API9 content rests on already-code-verified endpoints (RC-A1/A2/A3).
+
+## Stage cleanup
+
+01_spec (image content read, cloud_api inventory, category mapping) performed inline. This log is the durable record.
+
+---
+
+# RC-E1 - Version drift + build note (2026-07-28)
+
+Target from `stages/TARGET_ROUTCOON.md` (RC-E1, ongoing, last). Pass: `01_spec -> 04_integrate` (02 N/A). Doc.
+
+## 01_spec: the drift is the reverse of the assumption
+
+The banner `files/etc/banner` reads `OpenWrt 24.10.3, r28739-d9340319c6`, so the routcoon image really is 24.10.3, and the IoT5 "OpenWrt 24.10.3" claim is correct. The stale value was routcoon's own `CONTEXT.md` ("OpenWRT v24.10.2"). The SNMP scan's `6.6.104` is the kernel version (correct for 24.10.x), not a conflict. `.config` carries no explicit version string (it comes from the source tree).
+
+## Change (`labs/routcoon/CONTEXT.md`)
+
+- Platform line `v24.10.2` -> `v24.10.3` (`r28739-d9340319c6`, per the banner), noting it is a point release above the 24.10.2 project baseline in AGENTS.md.
+- Added `samba4 (smbd, guest share)` to the Services list (wired in RC-B1).
+- Added a `## Build` section: compile `rshell.c` for bcm27xx/ARM -> `files/usr/bin/rshell` (openwrtuser's login shell); select `samba4-server` + `samba4-libs` in `.config` (`make defconfig` reconciles deps, `ksmbd-server` unset to avoid the `:445` conflict); package `files/` as `routcoon.tar.gz`.
+
+The project-wide `AGENTS.md` / `PROJECT_OVERVIEW.md` "24.10.2" were left unchanged: that is the ecosystem baseline across labs, not a routcoon-specific value, and changing cross-lab docs for one lab's point release is out of scope.
+
+## Verification
+
+banner == CONTEXT == IoT5 == `24.10.3` now; the build note is present; the project baseline stays `24.10.2`. Doc-only, no overlay change.
+
+## Stage cleanup
+
+01_spec (banner/`.config`/doc version reconciliation) performed inline. This log is the durable record. **The RoutCoon backlog (waves 1-6 + RC-E1) is complete.**
