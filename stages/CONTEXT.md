@@ -10,8 +10,11 @@
 Develop something for a lab (a new vulnerability, a fix, a feature) through small,
 reviewable passes, and **promote** the result into `src/`. Each stage reads the
 previous stage's `output/`, transforms it, and writes its own `output/`. The
-**terminal stage `04_integrate` writes into `src/`** (it does not produce a
-throwaway artifact) — that handoff is where outputs "adapt into the product".
+**`04_integrate` stage promotes validated artifacts into `src/`** (it does not
+produce a throwaway artifact) - that handoff is where outputs "adapt into the
+product". The terminal **`05_verify`** stage then runs the spec's acceptance
+criteria against the promoted lab and certifies the result by earning the `DONE`
+badge.
 
 ## Pipeline (execution order = folder number)
 
@@ -21,12 +24,13 @@ throwaway artifact) — that handoff is where outputs "adapt into the product".
 | **02_implement** | Write the vulnerable code/config (drafts) | `01_spec/output/` | `02_implement/output/code/` + `manifest.md` (target paths) |
 | **03_document** | Write the Layer 3 product doc | `01_spec/output/`, `02_implement/output/` | `03_document/output/<VULN-ID>.md` |
 | **04_integrate** | **Promote** validated artifacts into `src/` | `02_implement/output/`, `03_document/output/`, `../_config/promotion-map.md` | edits in `../src/…` + `04_integrate/output/integration-log.md` |
+| **05_verify** | **Certify**: run acceptance / repro, earn the `DONE` badge | `01_spec/output/`, promoted `../src/…`, `04_integrate/output/` | `05_verify/output/<id>-verification.md` + badge `IN PROGRESS`->`DONE` in `../src/docs/…` |
 
 ```
-[questionnaire] → 01_spec → 02_implement → 03_document → 04_integrate ──► src/ (product)
-                     │           │             │              │
-                  output/     output/       output/      (no temp output — writes src/)
-                     └──── human review gate at every boundary ────┘
+[questionnaire] → 01_spec → 02_implement → 03_document → 04_integrate ──► src/ ──► 05_verify
+                     │           │             │              │                       │
+                  output/     output/       output/       promotes src/         output/ + badge
+                     └───────── human review gate at every boundary ────────────────┘
 ```
 
 ## Rules
