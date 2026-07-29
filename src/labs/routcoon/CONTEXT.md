@@ -33,6 +33,7 @@ A new router has been installed in a home/office environment but the company has
 | SNMP | 161 | UDP | Device monitoring |
 | UPnP | 5000/1900 | TCP/UDP | Port forwarding |
 | Device Manager | 8080 | TCP | VulnZoo base system |
+| WiFi AP | - | 802.11 | Own network 192.168.3.0/24, weak WPA2-PSK |
 
 **User Accounts:**
 | Username | Password | Shell | Privileges |
@@ -152,6 +153,7 @@ echo "*/3 * * * * /opt/oem-updates/scripts/auto-updater.sh" > /etc/crontabs/root
 | UPnP | `:5000`, `:1900` | IGD with secure_mode=no |
 | Device Manager | `:8080` | VulnZoo base |
 | rshell | `/usr/bin/rshell` | Restricted shell for privesc |
+| WiFi AP | 802.11 | SSID `RoutCoon`, WPA2-PSK weak (`password123`), 2.4GHz ch6 NOHT, net `192.168.3.1/24` |
 
 ## Verification
 
@@ -200,7 +202,7 @@ UPnP discovery → AddPortMapping → Redirect external to internal services
 | ID | Vulnerability | Severity | Evidence |
 |----|---------------|----------|----------|
 | IoT:I1 | Weak Passwords | Critical | Crackable hashes, brute force via web |
-| IoT:I2 | Insecure Services | Critical | Telnet root, FTP anon write, SNMP public |
+| IoT:I2 | Insecure Services | Critical | Telnet root, FTP anon write, SNMP public, WiFi AP weak WPA2-PSK |
 | IoT:I3 | Insecure Interfaces | High | Endpoint disclosure via response size |
 | IoT:I4 | Insecure Updates | High | opkg check_signature=0, unsigned cron updates |
 | IoT:I5 | Insecure Components | Medium | Unauth `/api`,`/tools` + `support/remote` SSH-key injection via forwarded-IP spoof |
@@ -235,7 +237,7 @@ option check_signature 0
 
 - Platform: OpenWRT v24.10.3 (`r28739-d9340319c6`, per the image banner; a point release above the 24.10.2 project baseline in AGENTS.md), Raspberry Pi 3B/4
 - Web: uhttpd + LUCI (Lua)
-- Services: dropbear, miniupnpd, snmpd, dnsmasq, samba4 (smbd, guest share)
+- Services: dropbear, miniupnpd, snmpd, dnsmasq, samba4 (smbd, guest share), wpad (AP mode, WPA2-PSK)
 - Tools: busybox (telnetd, ftpd), tcpsvd
 - Custom: rshell.c (restricted shell)
 
@@ -243,6 +245,7 @@ option check_signature 0
 
 - Compile `rshell.c` for the target architecture (bcm27xx / ARM) and place the binary at `files/usr/bin/rshell`; it is the login shell for `openwrtuser`.
 - The SMB share needs `samba4-server` + `samba4-libs` selected in `.config` (a `make defconfig` reconciles the dependencies); `ksmbd-server` is left unset to avoid a `:445` conflict.
+- The Wi-Fi AP (`88-routcoon-wifi-ap.sh`) needs no `.config` change: `wpad-basic-mbedtls`, `wireless-regdb` and `kmod-brcmfmac` + nvram 43430/43455 are already selected. The onboard radio requires a Pi 3B/3B+ (a real Pi 2 needs a USB Wi-Fi adapter).
 - Package the overlay under `files/` as `routcoon.tar.gz` (the VulnZoo Device Manager loads `<device>.tar.gz`).
 
 ## References
