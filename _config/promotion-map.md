@@ -34,7 +34,7 @@ mv <device>.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/<device>.tar.gz
 | Device | Lab overlay | Cloud API | Docs folder |
 |--------|-------------|-----------|-------------|
 | `careotter` | `src/labs/careotter/` | `src/cloud_api/careotter/` | `src/docs/CareOtter/` |
-| `routcoon` | `src/labs/routcoon/` | — | `src/docs/Router/` |
+| `routcoon` | `src/labs/routcoon/` | — | `src/docs/RoutCoon/` |
 | `owlcam` | `src/labs/owlcam/` | `src/cloud_api/owlcam/` | `src/docs/OwlCam/` |
 | `octobot` | `src/labs/octobot/` | `src/cloud_api/octobot/` | `src/docs/OctoBot/` |
 | `canary` | `src/labs/canary/` | - (phase 0: none) | `src/docs/Canary/` |

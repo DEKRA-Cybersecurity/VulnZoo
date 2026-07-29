@@ -10,9 +10,9 @@ A new router has been installed in a home/office environment but the company has
 
 | Layer | Source Path | Role/Description |
 |-------|-------------|------------------|
-| **Layer 3** | `../../docs/Router/README.md` | Lab introduction and setup |
-| **Layer 3** | `../../docs/Router/API/Vulnerabilities.md` | API vulnerabilities (OWASP API Top 10) |
-| **Layer 3** | `../../docs/Router/IoT (Router)/Vulnerabilities.md` | IoT vulnerabilities (OWASP IoT Top 10) |
+| **Layer 3** | `../../docs/RoutCoon/README.md` | Lab introduction and setup |
+| **Layer 3** | `../../docs/RoutCoon/API/Vulnerabilities.md` | API vulnerabilities (OWASP API Top 10) |
+| **Layer 3** | `../../docs/RoutCoon/IoT (Router)/Vulnerabilities.md` | IoT vulnerabilities (OWASP IoT Top 10) |
 | **Layer 4** | `files/etc/config/` | UCI network/dropbear/snmp configs |
 | **Layer 4** | `files/usr/lib/lua/luci/` | Custom LUCI pages and dispatcher |
 | **Layer 4** | `files/etc/init.d/` | Service init scripts (ftpd, miniupnpd) |
@@ -37,24 +37,24 @@ A new router has been installed in a home/office environment but the company has
 **User Accounts:**
 | Username | Password | Shell | Privileges |
 |----------|----------|-------|------------|
-| root | pwned | /bin/ash | Full (SSH disabled) |
+| root | uncrackable | /bin/ash | Full (SSH password login disabled) |
 | openwrtuser | openwrtuserpwned | /usr/bin/rshell | Restricted |
-| anonymous | (none) | FTP only | /tmp/ftp access |
+| anonymous | (none) | FTP only | /opt/oem-updates/pending access |
 
 ### 2. Apply Vulnerability Configuration
 
 **IoT:I1 - Weak/Guessable Passwords:**
-- Crackable root hash (type 5 - SHA256)
-- `openwrtuser` password = username + "pwned" suffix
-- Brute force possible via web/API login differential responses
+- `openwrtuser` password = username + "pwned" suffix, the crackable account (sha256crypt `$5$`, combination attack)
+- Brute force possible via web/API login differential responses (403 valid user vs 401)
+- `root` password is `uncrackable`, deliberately not recovered by the `pwned` wordlists; root is reached by escalating from `openwrtuser` (see IoT9), not by cracking
 
 **IoT:I2 - Insecure Network Services:**
 ```bash
 # SSH: No rate limiting, password + pubkey auth
 dropbear: RootPasswordAuth='off', MaxAuthTries='3'
 
-# FTP: Anonymous write access to /tmp
-tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /tmp
+# FTP: Anonymous write access to /opt/oem-updates/pending
+tcpsvd -vE 0.0.0.0 21 ftpd -w -a anonymous /opt/oem-updates/pending
 
 # Telnet: Hidden on port 5515, root shell without auth
 busybox telnetd -p 5515 -l /bin/sh
@@ -82,14 +82,14 @@ echo "*/3 * * * * /opt/oem-updates/scripts/auto-updater.sh" > /etc/crontabs/root
 ```
 
 **IoT:I5 - Insecure Components:**
-- Debug endpoints: `/api`, `/tools`, `/debug`
-- X-Debug-Mode headers expose development endpoints
-- SSH key injection via `/cgi-bin/luci/debug/ssh`
+- Unauthenticated debug/tool endpoints: `/api`, `/tools` (`network_tools.lua`, `sysauth=false`), plus the support endpoint's `?debug=1` env dump
+- Forwarded-IP spoofing (`X-Forwarded-For`/`real_ip` matched to `203.0.113.0/24`) authorizes the support endpoint
+- SSH key injection via `/support/remote/diagnostic` (`support/remote.lua`) -> `/etc/dropbear/authorized_keys`
 
 **IoT:I9 - Insecure Default Settings:**
 - Restricted shell bypass via `awk 'BEGIN {system("/bin/sh")}'`
 - DNS rebinding enabled (stop-dns-rebind disabled)
-- DHCP rapid commit enabled
+- No DHCP rate limiting (`dhcp-rapid-commit` commented out, `dhcp-lease-max=100000`)
 - Large cache sizes without validation
 
 ### 3. Transform (Deployment Steps)
@@ -114,7 +114,7 @@ echo "*/3 * * * * /opt/oem-updates/scripts/auto-updater.sh" > /etc/crontabs/root
 3. **Configure users:**
    - root: password hash type 5 (SHA256), SSH disabled
    - openwrtuser: password `openwrtuserpwned`, rshell
-   - anonymous: FTP-only access to /tmp/ftp
+   - anonymous: FTP-only access to /opt/oem-updates/pending
 
 4. **Enable services:**
    ```bash
@@ -146,7 +146,7 @@ echo "*/3 * * * * /opt/oem-updates/scripts/auto-updater.sh" > /etc/crontabs/root
 |----------|-----------|-------------|
 | LUCI Admin | `:80` | OpenWRT web interface |
 | SSH | `:22` | Dropbear (root disabled) |
-| FTP | `:21` | Anonymous write to /tmp |
+| FTP | `:21` | Anonymous write to /opt/oem-updates/pending |
 | Telnet | `:5515` | Hidden root shell |
 | SNMP | `:161/udp` | v1/v2c public/private |
 | UPnP | `:5000`, `:1900` | IGD with secure_mode=no |
@@ -178,7 +178,7 @@ HTTP fuzzing → Discover valid user → Brute force password → SSH as openwrt
 
 ### Chain 3: Anonymous FTP → RCE
 ```
-FTP anonymous → Upload to /tmp/ftp → Wait for cron (3min) → Reverse shell
+FTP anonymous → Upload to /opt/oem-updates/pending → Wait for cron (3min) → Reverse shell
 ```
 
 ### Chain 4: UPnP → Internal Redirection
@@ -203,7 +203,7 @@ UPnP discovery → AddPortMapping → Redirect external to internal services
 | IoT:I2 | Insecure Services | Critical | Telnet root, FTP anon write, SNMP public |
 | IoT:I3 | Insecure Interfaces | High | Endpoint disclosure via response size |
 | IoT:I4 | Insecure Updates | High | opkg check_signature=0, unsigned cron updates |
-| IoT:I5 | Insecure Components | Medium | Debug endpoints, X-Debug-Mode headers |
+| IoT:I5 | Insecure Components | Medium | Unauth `/api`,`/tools` + `support/remote` SSH-key injection via forwarded-IP spoof |
 | IoT:I9 | Insecure Defaults | High | Root SSH disabled, rshell bypassable |
 
 ## Configuration Files
@@ -233,15 +233,21 @@ option check_signature 0
 
 ## Dependencies
 
-- Platform: OpenWRT v24.10.2 (Raspberry Pi 3B/4)
+- Platform: OpenWRT v24.10.3 (`r28739-d9340319c6`, per the image banner; a point release above the 24.10.2 project baseline in AGENTS.md), Raspberry Pi 3B/4
 - Web: uhttpd + LUCI (Lua)
-- Services: dropbear, miniupnpd, snmpd, dnsmasq
+- Services: dropbear, miniupnpd, snmpd, dnsmasq, samba4 (smbd, guest share)
 - Tools: busybox (telnetd, ftpd), tcpsvd
 - Custom: rshell.c (restricted shell)
+
+## Build
+
+- Compile `rshell.c` for the target architecture (bcm27xx / ARM) and place the binary at `files/usr/bin/rshell`; it is the login shell for `openwrtuser`.
+- The SMB share needs `samba4-server` + `samba4-libs` selected in `.config` (a `make defconfig` reconciles the dependencies); `ksmbd-server` is left unset to avoid a `:445` conflict.
+- Package the overlay under `files/` as `routcoon.tar.gz` (the VulnZoo Device Manager loads `<device>.tar.gz`).
 
 ## References
 
 - Based on: OWASP IoTGoat Project
-- Docs: `docs/Router/README.md`
-- API Vulns: `docs/Router/API/Vulnerabilities.md`
-- IoT Vulns: `docs/Router/IoT (Router)/Vulnerabilities.md`
+- Docs: `docs/RoutCoon/README.md`
+- API Vulns: `docs/RoutCoon/API/Vulnerabilities.md`
+- IoT Vulns: `docs/RoutCoon/IoT (Router)/Vulnerabilities.md`

@@ -64,7 +64,7 @@ src/
 | Device (lab/code name) | Doc folder (Layer 3) |
 |------------------------|----------------------|
 | `careotter` (medical) | [`docs/CareOtter/`](docs/CareOtter/) |
-| `routcoon` (router) | [`docs/Router/`](docs/Router/) |
+| `routcoon` (router) | [`docs/RoutCoon/`](docs/RoutCoon/) |
 | `owlcam` (IP camera) | [`docs/OwlCam/`](docs/OwlCam/) |
 | `octobot` (industrial) | [`docs/OctoBot/`](docs/OctoBot/) |
 | `canary` (automotive) | [`docs/Canary/`](docs/Canary/) |
