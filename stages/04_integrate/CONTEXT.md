@@ -1,6 +1,6 @@
 # Stage 04 — Integrate / Promote (Layer 2)
 
-> **Parent:** [`../CONTEXT.md`](../CONTEXT.md) (pipeline). **Terminal pass.** This
+> **Parent:** [`../CONTEXT.md`](../CONTEXT.md) (pipeline). **Promotion pass.** This
 > stage does **not** produce a throwaway artifact — its output *is the change to
 > `src/`*. This is where the pipeline's outputs **adapt into the product**.
 
@@ -22,7 +22,7 @@ For each artifact, copy it to its canonical `src/` destination per
 | `02_implement/output/code/<path>` | same `<path>` under `src/` (per `manifest.md`) |
 | Lab overlay change | repackage `src/labs/<device>/files/` → `src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/<device>.tar.gz` |
 | `03_document/output/<VULN-ID>.md` | `src/docs/<Device>/Vulns/<Category>/<VULN-ID>.md` |
-| Index + status update | `src/docs/<Device>/Vulns/README.md` → set badge `DONE` |
+| Index + status update | `src/docs/<Device>/Vulns/README.md` → set badge `IN PROGRESS` (`05_verify` earns `DONE`) |
 
 Then:
 1. Verify the change builds/loads (see the device's `src/labs/<device>/CONTEXT.md`).
@@ -35,5 +35,6 @@ Then:
 | **The product change** | edits under `../../src/…` |
 | Integration log | `output/integration-log.md` (what was promoted, where, when) |
 
-**Done when:** `src/` contains the change, the doc is in place, the index badge is
-updated, and the lab still loads.
+**Handoff:** `05_verify` runs the spec's acceptance criteria against the promoted lab and earns the `DONE` badge.
+
+**Done when:** `src/` contains the change, the doc is in place, the index badge reads `IN PROGRESS`, and the lab still loads.
