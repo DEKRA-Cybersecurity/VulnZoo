@@ -101,14 +101,23 @@ fi
 # ==========
 # Samba (anonymous SMB guest share)
 # ==========
-# ponytail: start smbd directly with the lab's /etc/samba/samba.conf, bypassing
-# the UCI-driven /etc/init.d/samba4 so the raw vulnerable share config is served as-is.
+# ponytail: serve the raw vulnerable /etc/samba/samba.conf directly. Two other SMB
+# servers fight for :445 and must be stood down first or our 'public' share never
+# binds: the samba4 package's own procd service (default config, no share) and
+# ksmbd (kernel SMB server) which grabs :445 and answers with an empty config.
+# Verified live: with both stopped, our smbd owns :445 and serves 'public'.
 mkdir -p /mnt/sdcard/share
 chmod 777 /mnt/sdcard/share
 if command -v smbd >/dev/null 2>&1; then
+    /etc/init.d/ksmbd disable 2>/dev/null
+    /etc/init.d/ksmbd stop 2>/dev/null
+    /etc/init.d/samba4 disable 2>/dev/null
+    /etc/init.d/samba4 stop 2>/dev/null
+    killall smbd nmbd 2>/dev/null
+    sleep 1
     smbd -s /etc/samba/samba.conf &
     nmbd -s /etc/samba/samba.conf &
-    log_message "Samba smbd started, guest share 'public' -> /mnt/sdcard/share"
+    log_message "Samba smbd started (ksmbd + samba4 stood down), guest share 'public' -> /mnt/sdcard/share"
 else
     log_message "WARNING: smbd not found (samba4-server not installed), SMB share not started"
 fi

