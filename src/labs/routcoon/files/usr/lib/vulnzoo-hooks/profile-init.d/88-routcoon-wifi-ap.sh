@@ -108,7 +108,19 @@ uci commit wireless
 uci commit firewall
 
 /etc/init.d/network reload
-/etc/init.d/dnsmasq restart
 wifi reload
 
-hook_log "AP '${AP_SSID}' up on ${RADIO} (WPA2-PSK), net ${AP_IP}/24, DHCP .${AP_DHCP_START}-.$((AP_DHCP_START + AP_DHCP_LIMIT - 1))"
+# ponytail: RC-V7. Restart dnsmasq only AFTER the wlan L3 interface is up. wifi
+# reload and network reload are async, so restarting dnsmasq immediately makes it
+# regenerate its config before the wlan subnet resolves, and it drops the wlan
+# dhcp-range ("no address range available for DHCP request via phy0-ap0"). Poll
+# for the AP IP (bounded, 15s) before the restart. Ceiling: if the radio never
+# comes up the restart still runs, no worse than before.
+i=0
+while [ $i -lt 15 ] && ! ip -4 addr 2>/dev/null | grep -qw "$AP_IP"; do
+    sleep 1
+    i=$((i + 1))
+done
+/etc/init.d/dnsmasq restart
+
+hook_log "AP '${AP_SSID}' up on ${RADIO} (WPA2-PSK), net ${AP_IP}/24, DHCP .${AP_DHCP_START}-.$((AP_DHCP_START + AP_DHCP_LIMIT - 1)), waited ${i}s for wlan"
