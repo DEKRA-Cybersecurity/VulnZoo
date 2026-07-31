@@ -6,16 +6,16 @@ OctoBot is the VulnZoo industrial/ICS lab. A 4-DOF robot arm (HU-M16 shield on a
 
 ## Quick facts
 
-|                      |                                                                          |
-| -------------------- | ------------------------------------------------------------------------ |
-| Domain               | Industrial control system (robotic arm)                                  |
-| Platform             | OpenWRT v24.10.2 on Raspberry Pi 3B+                                     |
-| Real-time controller | Arduino UNO + HU-M16 shield, 4 servos (SG90/MG90S)                       |
-| Pi <-> Arduino link  | USB serial 115200, `Sx:angle` frames                                     |
-| Industrial protocol  | Modbus/TCP (`:502`) PC master -> Pi gateway                              |
-| Cloud                | Dockerized Flask REST + web UI (`:5002`), single-operator login (SQLite) |
+|                      |                                                                                |
+| -------------------- | ------------------------------------------------------------------------------ |
+| Domain               | Industrial control system (robotic arm)                                        |
+| Platform             | OpenWRT v24.10.3 on Raspberry Pi 3B+                                           |
+| Real-time controller | Arduino UNO + HU-M16 shield, 4 servos (SG90/MG90S)                             |
+| Pi <-> Arduino link  | USB serial 115200, `Sx:angle` frames                                           |
+| Industrial protocol  | Modbus/TCP (`:502`) PC master -> Pi gateway                                    |
+| Cloud                | Dockerized Flask REST + web UI (`:5002`), single-operator login (SQLite)       |
 | Mobile               | Android control app (Java, cloud REST) under `../../vulnzoo_apps/octobot_app/` |
-| Network              | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet                   |
+| Network              | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet                         |
 
 ## Help / inspection account
 
@@ -34,7 +34,7 @@ A README at `/home/easyuser/README.txt` reminds the student that this account is
 - [`../../labs/octobot/arduino_stuff/bot-overview.md`](../../labs/octobot/arduino_stuff/bot-overview.md) - HU-M16 firmware, drivers, and controller analysis.
 - [`Vulns/README.md`](Vulns/README.md) - vulnerability index (OWASP IoT Top 10).
 - [`../../labs/octobot/CONTEXT.md`](../../labs/octobot/CONTEXT.md) - Layer 2 lab contract.
-- [`Build_Guide.md`](Build_Guide.md) - merged into the integration doc, kept as a pointer.
+- Build guide: merged into [`OPENWRT_INTEGRATION.md`](OPENWRT_INTEGRATION.md); there is no separate `Build_Guide.md`.
 
 ## Vulnerability surface
 
@@ -153,6 +153,7 @@ HTML routes redirect to `/login` when the session is missing; API routes under `
 | GET | `/api/v0/firmware/version` | No | Read the embedded firmware version marker |
 | GET | `/api/v2/firmware` | Session | Same download as v0 |
 | PUT | `/api/v2/firmware` | Session | Upload a `.hex` firmware and push it to the Pi |
+| GET | `/api/v2/firmware/version` | No | Read the embedded firmware version marker (the endpoint the Android app calls) |
 
 ## Status
 

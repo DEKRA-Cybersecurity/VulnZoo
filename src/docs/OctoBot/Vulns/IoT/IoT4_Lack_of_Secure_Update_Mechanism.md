@@ -52,7 +52,7 @@ def firmware_v0():
 
     if 'file' not in request.files:
         return jsonify(error='no file provided'), 400
-    return FirmwareService.save_and_push(request.files['file'], 'v0'), 200
+    return FirmwareService.save_and_push(request.files['file'], 'v1'), 200
 ```
 
 v0 accepts any uploaded file and pushes it straight to `/opt/octobot/firmware/robot_arm.hex` on the Pi. v2 adds a session gate and a `.hex` extension check, but still does not validate content:
@@ -75,10 +75,10 @@ Because the cloud server trusts the operator session as the only authorization b
 
 ### Get the downgraded endpoint
 
-There would be various steps to get the downgraded endpoint. [[OctoBot/Vulns/Mobile/M8_Security_Misconfiguration|M8_Security_Misconfiguration]] shows one way including mobile dynamically analysis.
+There would be various steps to get the downgraded endpoint. [M8 — Security Misconfiguration](../Mobile/M8_Security_Misconfiguration.md) shows one way, including mobile dynamic analysis.
 ### Get the firmware
 
-Once we discover `/api/v1/firmware` endpoint we can obtain the latest firmware file by HTTP GET method.
+Once we discover the `/api/v0/firmware` endpoint we can obtain the latest firmware file by HTTP GET method.
 
 ![[iot4_firmware_download.png]]
 ### Analyse it
@@ -103,7 +103,7 @@ Cloud endpoints:
 # --- v0: unauthenticated upload ---
 # Upload any file; the cloud server replaces the Pi firmware path.
 curl -s -X PUT -F 'file=@evil.hex' http://localhost:5002/api/v0/firmware
-# -> {"version": "v0", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
+# -> {"version": "v1", "filename": "robot_arm.hex", "path": "/app/firmware/robot_arm.hex", "pushed": true}
 
 # Download the current firmware image without authentication.
 curl -s http://localhost:5002/api/v0/firmware -o current.hex
@@ -151,16 +151,26 @@ strings robot_arm.bin | grep -iE "OCTOBOT_FW_VERSION|OctoSuperBot|PASS:|ERR AUTH
 # -> ERR AUTH
 ```
 
-After step 2 or any successful cloud upload, check the Pi:
+After a successful cloud push (or the gateway `POST /update`), check the Pi:
 
 ```bash
 ssh root@192.168.2.1 'md5sum /opt/octobot/firmware/robot_arm.hex'
-# The hash matches the attacker-supplied image.
+# If the push succeeded, the hash matches the attacker-supplied image.
 ```
+
+### What the cloud PUT actually does
+
+The cloud upload is a three-stage operation, and only the first stage is unconditional.
+
+1. **Store in the container (always).** `FirmwareService.save_and_push` writes the uploaded file to `/app/firmware/robot_arm.hex` inside the cloud container. This always happens, which is why the request returns `200` even when the later stages fail.
+2. **Copy to the Pi (needs SSH trust).** `push_to_pi` runs `ssh -o BatchMode=yes root@192.168.2.1 'cat > /opt/octobot/firmware/robot_arm.hex'`, it never calls `avrdude`. The `pushed` field reports whether that SSH copy succeeded. The default `docker-compose.yml` mounts no key into the container, so out of the box the container cannot authenticate to the Pi and `pushed` is `false` (the image stays in the container only). Provision an SSH key trusted by the Pi's `root` to get `pushed: true`.
+3. **Flash the Arduino (next flash only).** Even once the image is on the Pi, nothing re-flashes the Arduino at upload time. The replaced `.hex` reaches the controller through an existing flash path: an immediate gateway OTA (`POST http://192.168.2.1:8090/update`, which runs `avrdude` on hardware) or a reboot (the `40-octobot-flash-firmware.sh` hook reflashes on cold boot, because its md5 stamp in tmpfs `/tmp/octobot/flashed.md5` is wiped). With no Arduino attached (`use_real_hardware=0`, simulation) the image is stored but never flashed.
+
+The fast, self-contained cloud-to-arm chain is therefore two calls: the cloud PUT stages the malicious image on the Pi, then a gateway `/update` flashes it. The cloud PUT on its own replaces the stored image, it does not move the servos.
 
 ## Expected Result
 
-The uploaded image is accepted and flashed, and the arm subsequently executes attacker-controlled firmware that no longer honors the `servo_min_angle`/`servo_max_angle` clamps. On the cloud path, v0 requires no credentials and v2 only checks the session cookie and file extension, so an attacker can replace the Pi firmware image from the cloud API.
+On the local gateway path (`POST /update`) the uploaded image is flashed with `avrdude` on hardware, and the arm subsequently executes attacker-controlled firmware that no longer honors the `servo_min_angle`/`servo_max_angle` clamps. On the cloud path, v0 requires no credentials and v2 only checks the session cookie and file extension, so an attacker replaces the stored Pi firmware image from the cloud API. As detailed above, that cloud PUT stages the image (it does not flash the Arduino itself), which then runs on the next flash.
 
 ## How It Should Be
 

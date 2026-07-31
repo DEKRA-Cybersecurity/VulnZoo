@@ -122,6 +122,30 @@ The cloud API makes the image even easier to obtain. The unauthenticated endpoin
 
 A fourth path exists when the attacker can dump the Pi's SD card or extract the base Squashfs rootfs. Binwalk extraction of `/dev/mmcblk0p2` recovers `/etc/shadow` (blank root password), `/etc/config/rpcd` and `/etc/config/uhttpd` (default password `openwrt`), and the live OctoBot overlay reveals `api_key 'octobot-industrial-2020'` and `admin/admin`. Converting `robot_arm.hex` to binary and running `strings` recovers `OctoSuperBot2026` even without the cloud API. See [IoT:I10-FW — Firmware Static Analysis](IoT_Firmware_Static_Analysis.md).
 
+## Recovery vectors for `OctoSuperBot2026`
+
+The actuator password is not gated by a single control. It is recoverable through several independent vectors, which fall into two classes. The first class reads the value where it already sits in cleartext (overlay source, the firmware image, the UCI config). The second, more useful to an attacker who only has network reach, is runtime disclosure: the device itself volunteers the plaintext through an error path or a leaky register, with no source or firmware access at all. The numbered steps below implement every vector. The two tables here index them and, importantly, state what each one actually requires, so an attacker picks the vector that matches the access they have.
+
+### Reading the stored value (static disclosure)
+
+| Vector | Access required | Repro | Notes |
+|--------|-----------------|-------|-------|
+| Overlay source (`serial_bus.py`, `octobot_gateway.py`, `robot_mqtt_bridge.py`, `robot_modbus_server.py`, the Arduino `.ino`) | Shell on the Pi, or the extracted overlay | Step 3 | The constant is compile-time cleartext on every side |
+| Local firmware image (`strings` on `robot_arm.hex` / `.bin`) | Shell on the Pi | Steps 3, 12 | Also yields the `OCTOBOT_FW_VERSION` marker |
+| Unauthenticated cloud download `GET /api/v0/firmware` then `strings` | Network reach to the cloud `:5002`, no Pi shell and no credentials | Step 11 | The strongest static vector, fully remote (see [API5:2023](../API/API5_Broken_Function_Level_Authorization.md)) |
+| SD-card dump plus `binwalk` | Physical access, or root on the Pi | Step 12 | Recovers the base-image secrets as well |
+
+### Runtime disclosure (the device hands you the plaintext)
+
+These are the alternatives that never touch the hardcoded value: the device leaks the password to you at runtime.
+
+| Vector | Access required | Repro | Notes |
+|--------|-----------------|-------|-------|
+| Modbus failure leak into holding registers 40038-40053 | Network reach to `:502`, unauthenticated | Step 9 | Canonical vector. A single command-register write with no password makes the server copy the cleartext into readable registers |
+| Raw `:2000` serial-bus `ERR AUTH` reply | Network reach to `:2000`, unauthenticated | Step 6 | The rejection message itself embeds the password (`serial_bus.py` interpolates `HARD_CODED_PASSWORD` into the error line) |
+| Cloud REST `hint` field in the `403` JSON | An authenticated cloud session, plus a Modbus auth failure | Step 10 | Only surfaces when the Pi's Modbus auth actually fails. The cloud master normally sends the correct password, so this is the Modbus leak (Step 9) propagated through REST, not an always-on channel |
+| Passive `:502` capture, then XOR `0x55` | Sniff one legitimate authenticated Modbus write | [IoT:I7](IoT7_Insecure_Data_Transfer_and_Storage.md) | Registers 40021-40036 carry the password XORed with the fixed key `0x55`. The key is itself hardcoded, but a single-byte XOR is trivially broken even without it |
+
 ## Steps to Reproduce
 
 ```bash
@@ -173,7 +197,7 @@ curl -s -X POST http://localhost:5002/api/servo/1 -H 'Content-Type: application/
 # If the Pi rejects the Modbus auth, response contains:
 # {"error":"actuator authentication failed","hint":"OctoSuperBot2026"}
 
-# 7. Download the firmware from the unauthenticated cloud endpoint and extract the password
+# 11. Download the firmware from the unauthenticated cloud endpoint and extract the password
 curl -s http://localhost:5002/api/v0/firmware -o robot_arm.hex
 
 objcopy -I ihex robot_arm.hex -O binary robot_arm.bin
@@ -181,7 +205,7 @@ objcopy -I ihex robot_arm.hex -O binary robot_arm.bin
 strings robot_arm.bin | grep -i octosuperbot
 # -> OctoSuperBot2026
 
-# 8. Firmware static analysis path (SD-card dump, no network access needed)
+# 12. Firmware static analysis path (SD-card dump, no network access needed)
 ssh root@192.168.2.1 'dd if=/dev/mmcblk0p2 bs=4M count=32 2>/dev/null' > p2_sample.img
 binwalk -e -M p2_sample.img
 # Inspect the extracted Squashfs rootfs:
