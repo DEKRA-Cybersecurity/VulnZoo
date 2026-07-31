@@ -20,7 +20,7 @@ The OctoBot cloud API exposes the same firmware-management capability through tw
 
 The Android login panel and web UI only reference `/api/v2/firmware/version`, so they do not directly expose the v0 path. However, the visible `/api/v2/` versioning scheme invites route enumeration; an attacker who fuzzes lower versions quickly discovers `/api/v0/firmware` and the unauthenticated downgrade.
 
-Because the uploaded file overwrites `/opt/octobot/firmware/robot_arm.hex` on the Pi, the v1 route becomes a remote firmware replacement primitive. When combined with the lack of signature verification documented in [IoT:I4](../IoT/IoT4_Lack_of_Secure_Update_Mechanism.md), the attacker can move straight from discovering the legacy route to controlling the actuator firmware.
+Because the uploaded file overwrites `/opt/octobot/firmware/robot_arm.hex` on the Pi, the v1 route becomes a remote firmware replacement primitive. When combined with the lack of signature verification documented in [IoT:I4](../IoT/IoT4_Lack_of_Secure_Update_Mechanism.md), the attacker can move straight from discovering the legacy route to replacing the actuator firmware image. The cloud PUT stages that image on the Pi over SSH, it does not flash the Arduino itself, so the malicious build runs on the next flash (a gateway `/update` or a reboot with hardware). See [IoT:I4](../IoT/IoT4_Lack_of_Secure_Update_Mechanism.md) for the full staging.
 
 ## Root Cause
 

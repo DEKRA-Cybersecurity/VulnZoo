@@ -78,7 +78,7 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 | Component | Requirement |
 |---|---|
 | Hardware | Raspberry Pi 3B+, Arduino UNO + HU-M16 shield, 4 servos, external 5 V / 2-3 A servo PSU with common GND |
-| OS | OpenWRT v24.10.2 |
+| OS | OpenWRT v24.10.3 (shipped point release, above the AGENTS.md 24.10.2 baseline) |
 | Python | 3.11+ with `pyserial`, `paho-mqtt`, `flask` baked into the base image (the hook only verifies); the Modbus server is stdlib (no pymodbus) |
 | Tooling | `avrdude` (base image), `arduino-cli` on the PC for compiling |
 | Network | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet |

@@ -18,7 +18,7 @@ The central decision is **not** to insert the Pi into the real-time control path
 ```
  [Joysticks/HU-M16] --> [Arduino UNO] --PWM--> [4 servos]   (LOCAL manual control)
                               ^
-                         no lo tomé como puerto de arquitectura. No      | USB serial 115200, "Sx:angle\n" frames
+                              | USB serial 115200, "Sx:angle\n" frames
                               v
  [Android app] --HTTP/REST--> [PC / Docker cloud]  --Modbus/TCP :502-->  [Raspberry Pi - OpenWRT]
                               (web UI, REST, mobile API,                  (gateway: serial bus / MQTT /
@@ -273,7 +273,7 @@ REST endpoints the web UI and the app consume:
 
 The Android client uses plain HTTP/REST to the cloud (Retrofit or `HttpURLConnection`), and never speaks Modbus. In the hardened pass it gets TLS pinning and a JWT, which is itself the before/after for the transport and auth items.
 
-> `cloud_api/octobot/` does not exist yet. Creating it is Stage 02 work, and `octobot` must first be added to the device tables in `_config/promotion-map.md` and the routing table in `src/AGENTS.md`.
+> `cloud_api/octobot/` is built and promoted (Stage 02 complete): the Docker stack, `app.py`, `docker-compose.yml`, and `static/` live under `src/cloud_api/octobot/`. `octobot` is registered in the device tables of `_config/promotion-map.md` and the routing table in `src/AGENTS.md`.
 
 ---
 
@@ -300,7 +300,7 @@ This table is the catalog that drives the lab. Stage 03 writes one doc per row u
 
 Build this through the pipeline (`stages/01_spec` -> `02_implement` -> `03_document` -> `04_integrate`), promoting into `src/` only through `_config/promotion-map.md`.
 
-**Pre-requisite (register the new device).** OctoBot is not yet known to the workspace. Before Stage 02 promotion, add `octobot` to the device tables in `_config/promotion-map.md` (lab overlay `src/labs/octobot/`, cloud API `src/cloud_api/octobot/`, docs `src/docs/OctoBot/`) and to the routing tables in `src/AGENTS.md`. Fill the currently-empty `docs/OctoBot/OctoBot.md` device landing doc.
+**Device registration (done).** `octobot` is registered in the workspace: the device tables in `_config/promotion-map.md` (lab overlay `src/labs/octobot/`, cloud API `src/cloud_api/octobot/`, docs `src/docs/OctoBot/`) and the routing tables in `src/AGENTS.md`. The device landing doc is `docs/OctoBot/README.md`.
 
 | Stage | Produces | Promotes to (`src/`) |
 |---|---|---|
@@ -364,5 +364,5 @@ The per-item toggle makes each fix teachable as a before/after. The hardening pa
 ## Related Documents
 
 - [`bot-overview.md`](../../labs/octobot/arduino_stuff/bot-overview.md) - HU-M16 firmware, drivers, and controller analysis (Layer 3 hardware reference).
-- [`Build_Guide.md`](./Build_Guide.md) - merged into this file, kept as a pointer.
-- `labs/octobot/CONTEXT.md` - the Layer 2 lab contract (first Stage 01 output, not created yet).
+- Build guide: merged into this document (Sections 3-4 and 8); there is no separate `Build_Guide.md`.
+- [`labs/octobot/CONTEXT.md`](../../labs/octobot/CONTEXT.md) - the Layer 2 lab contract.

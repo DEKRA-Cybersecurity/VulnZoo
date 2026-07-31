@@ -19,7 +19,7 @@ verified_date: ""
 
 An IoT field gateway often runs a frozen software stack for years: an old web server, an outdated TLS library, a stale Python framework. Each carries published CVEs an attacker can look up from a version banner. The intended lab vector is a deliberately pinned, outdated component set (old Dropbear / uHTTPd / Flask / jQuery, stale OpenWRT) that `nmap -sV` fingerprints and maps to known exploits.
 
-rcise in a session and that one showed something pretty clear goi## Implementation Status
+## Implementation Status
 
 NOT YET IMPLEMENTED. The Stage 02 dependency hook `15-octobot-python-deps.sh` installs current package versions, so no outdated component is pinned today. The Stage 02 manifest tagged this item to that hook, but the hook does not yet pin vulnerable versions. Implementing I5 requires a follow-up Stage 02 pass that pins specific old versions (and documents the chosen CVEs), so this doc is `PENDING` until that lands.
 
