@@ -234,10 +234,12 @@ window.onload = function() {
 
 // Device-specific interface management
 function openDeviceInterface(deviceType) {
-    // All devices use the same IP and port since only one can be active at a time
-    // The device interface is available at port 80 when a device is loaded
-    const deviceIP = '192.168.2.1';  // OpenWrt device IP
-    
+    // Per-device host and port: some devices expose a LuCI UI on the Pi (:80),
+    // others a cloud API reachable by its api.<device>.lab name. Declared with let
+    // because the per-device branches below reassign them.
+    let deviceIP = '192.168.2.1';    // default: OpenWrt device IP
+    let devicePort = '80';           // default: Pi web UI
+
     if (!currentDevice) {
         updateStatus('No device is currently running. Please load a device first.');
         return;
