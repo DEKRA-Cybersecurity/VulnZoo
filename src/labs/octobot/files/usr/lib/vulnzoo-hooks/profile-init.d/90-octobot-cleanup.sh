@@ -48,15 +48,26 @@ disable_service "miniupnpd"
 disable_service "radius"
 disable_service "snmpd"
 
+# File sharing and network discovery: not used by OctoBot. The shared base image
+# ships two SMB servers (samba4's smbd/nmbd on :139 + :137-:138 and the kernel
+# ksmbd on :445), the WS-Discovery/LLMNR responder wsdd2 (:5355 + :3702) that
+# advertises those shares to Windows, and avahi mDNS. OctoBot has no file-sharing
+# surface and addresses everything by raw IP, so all four are dead weight.
+disable_service "samba4"
+disable_service "ksmbd"
+disable_service "wsdd2"
+disable_service "avahi-daemon"
+
 # dbus is typically only needed by BlueZ on these images.
 # Disable it after the Bluetooth services; if another component needs it,
 # procd or manual start will still work.
 disable_service "dbus"
 
-# Optional: Wi-Fi access point daemon. Keep it if you use the wireless
-# cell variant; otherwise disable it to reduce attack surface.
-# Uncomment the next line to disable wpad on Ethernet-only deployments.
-# disable_service "wpad"
+# Wi-Fi access point daemon: OctoBot is an Ethernet-only lab (Pi at 192.168.2.1
+# on eth0, radio0 disabled), so the wireless stack is unused and wpad only leaves
+# an idle hostapd/supplicant running. Disable it to shrink the attack surface.
+# Re-comment this if you run the optional wireless-cell variant (OPENWRT_INTEGRATION.md Section 3).
+disable_service "wpad"
 
 # Attempt opkg removal of the related packages. If a package is baked into
 # the Squashfs base image this only records the removal in the overlay, but
@@ -64,6 +75,8 @@ disable_service "dbus"
 if command -v opkg >/dev/null 2>&1; then
     for pkg in bluez-daemon bluez-libs motion mjpg-streamer v4l2rtspserver \
                miniupnpd freeradius3-common freeradius3 snmpd snmp-mibs \
+               samba4-server samba4-libs ksmbd-server kmod-fs-ksmbd wsdd2 \
+               avahi-dbus-daemon libavahi-client libavahi-dbus-support \
                dbus dbus-utils; do
         if opkg list-installed 2>/dev/null | grep -q "^${pkg} "; then
             log_message "Removing package $pkg from overlay..."
