@@ -61,15 +61,15 @@
       <div class="content-section">
         <h2>Where to start?</h2>
         <p><strong>Click "Load OctoBot" to deploy the lab on the Raspberry Pi.</strong> The init hooks install dependencies, detect the arm (or fall back to simulation), and start the services on the Pi.</p>
-        <p><strong>Then launch the cloud controller</strong> from the VulnZoo repository: <code>cd cloud_api/octobot &amp;&amp; docker compose up --build -d</code>, then open <code>http://localhost:5003</code> and log in with the single operator account (default <code>operator</code> / <code>octobot</code>) to reach the control panel.</p> You can also use the cloudctl.sh script to launch the cloud controller: <code>./cloudctl.sh start</code>.
-        <p>Detailed launch, service checks, and per-vulnerability reproduction live in the repo docs: <code>docs/OctoBot/OctoBot.md</code> (launch &amp; verify) and <code>docs/OctoBot/Vulns/</code> (OWASP IoT catalog).</p>
+        <p><strong>Then launch the cloud controller</strong> from the VulnZoo repository: <code>cd cloud_api/octobot &amp;&amp; docker compose up --build -d</code>, then open <code>http://localhost:5002</code> and log in with the single operator account (default <code>operator</code> / <code>octobot</code>) to reach the control panel.</p> You can also use the cloudctl.sh script to launch the cloud controller: <code>./cloudctl.sh start</code>.
+        <p>Detailed launch, service checks, and per-vulnerability reproduction live in the repo docs: <code>docs/OctoBot/README.md</code> (launch &amp; verify) and <code>docs/OctoBot/Vulns/</code> (OWASP IoT catalog).</p>
       </div>
 
       <div class="content-section">
         <h2>Lab prerequisites</h2>
         <ul>
           <li><strong>Ethernet</strong>: a <strong>direct cable</strong> between Raspberry Pi and PC (Pi <code>192.168.2.1</code>, PC static <code>192.168.2.2/24</code>) for the cloud-to-Pi Modbus/TCP link and all network attacks.</li>
-          <li><strong>Docker</strong>: on the attacker PC, to run the cloud controller (<code>:5003</code>).</li>
+          <li><strong>Docker</strong>: on the attacker PC, to run the cloud controller (<code>:5002</code>).</li>
           <li><strong>Robot arm (optional)</strong>: Arduino UNO + HU-M16 shield + 4 servos, connected to the Pi by USB. Without it the lab runs in simulation.</li>
           <li><strong>Servo power (with the arm)</strong>: an <strong>external 5 V / 2-3 A</strong> supply to the HU-M16 servo rail with a <strong>common GND</strong> across PSU, Arduino, and Pi. Do not power four moving servos from the USB rail.</li>
           <li><strong>Isolation</strong>: run on a <strong>dedicated, air-gapped LAN</strong>. This is deliberately vulnerable and physically moves hardware.</li>
@@ -84,7 +84,7 @@
           <li><strong>HMI / REST gateway</strong> (<code>:8090</code>): Flask panel with <code>/api/move</code>, <code>/api/claw</code>, <code>/admin</code>, <code>/logs</code>, and the OTA <code>/update</code> endpoint.</li>
           <li><strong>Modbus/TCP</strong> (<code>:502</code>): holding registers mapped to servo angles and commands, driven by the cloud master.</li>
           <li><strong>MQTT</strong> (<code>:1883</code>): no-auth broker plus a bridge forwarding <code>cell01/cmd</code> to the serial bus.</li>
-          <li><strong>Cloud controller</strong> (<code>:5003</code>): Flask REST + web UI + Modbus/TCP master, the only surface the operator and app talk to.</li>
+          <li><strong>Cloud controller</strong> (<code>:5002</code>): Flask REST + web UI + Modbus/TCP master, the only surface the operator and app talk to.</li>
         </ul>
       </div>
 
