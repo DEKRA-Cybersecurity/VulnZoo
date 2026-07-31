@@ -82,6 +82,17 @@ detect_host_wifi_ip() {
         | awk '{split($4, a, "/"); print a[1]; exit}'
 }
 
+# Fallback IP for the /etc/hosts map when there is no associated WiFi: the IPv4 of
+# the default-route interface (covers Ethernet-only hosts, e.g. the direct-Ethernet
+# lab). Mirrors the detect_host_ip helper in the owlcam / octobot cloudctl scripts.
+detect_host_ip() {
+    local iface
+    iface="$(ip -4 -o route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')"
+    if [ -n "$iface" ]; then
+        ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}'
+    fi
+}
+
 # Map api.careotter.lab + beta.api.careotter.lab → the given IP in /etc/hosts (sudo).
 # The portal posts the OTP to the absolute api.careotter.lab, so the browser/Burp and
 # tools must resolve the names. Idempotent: removes any prior entry for these names
@@ -92,8 +103,8 @@ add_hosts_entry() {
     local marker="# careotter-lab (managed by cloudctl)"
     local line="${ip}  api.careotter.lab beta.api.careotter.lab  ${marker}"
     if [ -z "$ip" ]; then
-        warn "No WiFi (wlan) IP detected — not touching /etc/hosts."
-        warn "Add manually:  <wifi-ip>  api.careotter.lab beta.api.careotter.lab"
+        warn "No host IP detected — not touching /etc/hosts."
+        warn "Add manually:  <host-ip>  api.careotter.lab beta.api.careotter.lab"
         return
     fi
     if grep -qxF "$line" /etc/hosts 2>/dev/null; then
@@ -181,16 +192,19 @@ action_start() {
         log "Beta host   http://beta.api.careotter.lab/"
     fi
 
-    # Write both names → this host's WiFi (wlan) IP in /etc/hosts (sudo) so the
-    # browser/Burp resolve them (the OTP flow posts to the absolute api.careotter.lab,
-    # and the attacker pivots to beta.api.careotter.lab). Detected fresh so it works
-    # even with --no-wifi. Skip with --no-hosts.
+    # Write both names → this host's IP (WiFi if associated, else the default-route
+    # interface) in /etc/hosts (sudo) so the browser/Burp resolve them (the OTP flow
+    # posts to the absolute api.careotter.lab, and the attacker pivots to
+    # beta.api.careotter.lab). Detected fresh so it works even with --no-wifi. Skip
+    # with --no-hosts.
     if [ "$push_hosts" -eq 1 ]; then
+        # Prefer the WiFi IP (same iface that carries the PSK push); fall back to the
+        # default-route IP so the map still works on an Ethernet-only host.
         local hosts_ip="${host_ip}"
-        [ -n "$hosts_ip" ] || hosts_ip="$(detect_host_wifi_ip "$(detect_wifi_iface || true)" || true)"
+        [ -n "$hosts_ip" ] || hosts_ip="$(detect_host_ip || true)"
         add_hosts_entry "$hosts_ip"
     else
-        log "--no-hosts: skipping /etc/hosts. Add manually: <wifi-ip>  api.careotter.lab beta.api.careotter.lab"
+        log "--no-hosts: skipping /etc/hosts. Add manually: <host-ip>  api.careotter.lab beta.api.careotter.lab"
     fi
 }
 
@@ -254,10 +268,11 @@ Usage: $0 {start|stop|restart|reset|status|logs} [options]
            The edge serves two name-based vhosts on :80 (and :5002): the
            production host api.careotter.lab (OTP rate-limited) and the forgotten
            beta.api.careotter.lab (NOT rate-limited in VULNERABLE mode = API9;
-           --secure restores it). On start it WRITES both names → this host's WiFi
-           (wlan) IP in /etc/hosts via sudo, so the browser/Burp and tools resolve
-           them (the OTP flow posts to the absolute api.careotter.lab, and the
-           attacker pivots to beta.api.careotter.lab). Use --no-hosts to skip that.
+           --secure restores it). On start it WRITES both names → this host's IP
+           (WiFi if associated, else the default-route interface) in /etc/hosts via
+           sudo, so the browser/Burp and tools resolve them (the OTP flow posts to
+           the absolute api.careotter.lab, and the attacker pivots to
+           beta.api.careotter.lab). Use --no-hosts to skip that.
 
   stop     docker compose down — stops the stack but KEEPS the careotter_data
            volume (the seeded DB survives).

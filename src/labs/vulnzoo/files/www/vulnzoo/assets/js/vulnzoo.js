@@ -123,10 +123,8 @@ function getDeviceName(type) {
         'routcoon': 'RoutCoon',
         'owlcam': 'OwlCam',
         'careotter': 'CareOtter',
-        'industrial': 'Industrial Controller',
-        'automotive': 'Automotive System', 
-        'medical': 'Medical Device',
-        'iot': 'IoT Device'
+        'octobot': 'OctoBot',
+        'canary': 'CANary'
     };
     return names[type] || type;
 }
@@ -254,14 +252,20 @@ function openDeviceInterface(deviceType) {
         updateStatus('Opening RoutCoon interface...');
         devicePort = '80';  // RoutCoon interface port
     } else if (deviceType === 'owlcam') {
+        deviceIP = 'api.owlcam.lab';
         updateStatus('Opening OwlCam interface...');
         devicePort = '5000';  // OwlCam interface port
     } else if (deviceType === 'careotter') {
+        deviceIP = 'api.careotter.lab';
         updateStatus('Opening CareOtter interface...');
         devicePort = '5002';  // CareOtter interface port
     } else if (deviceType === 'octobot') {
+        deviceIP = 'api.octobot.lab';
         updateStatus('Opening OctoBot interface...');
         devicePort = '5002';  // OctoBot interface port
+    } else if (deviceType === 'canary') {
+        updateStatus('Opening CANary interface...');
+        devicePort = '5002';  // CANary interface port
     }
 
     // Construct the device interface URL
@@ -286,10 +290,8 @@ function enableDeviceInterface(deviceType) {
         'routcoon': 'routcoon-interface-btn',
         'owlcam': 'owlcam-interface-btn',
         'careotter': 'careotter-interface-btn',
-        'industrial': 'industrial-interface-btn',
-        'automotive': 'automotive-interface-btn',
-        'medical': 'medical-interface-btn',
-        'iot': 'iot-interface-btn'
+        'octobot': 'octobot-interface-btn',
+        'canary': 'canary-interface-btn'
     };
     
     // Disable all first
@@ -320,10 +322,8 @@ function disableAllDeviceInterfaces() {
         'routcoon-interface-btn',
         'owlcam-interface-btn',
         'careotter-interface-btn',
-        'industrial-interface-btn', 
-        'automotive-interface-btn',
-        'medical-interface-btn',
-        'iot-interface-btn'
+        'octobot-interface-btn', 
+        'canary-interface-btn'
     ];
     
     allButtons.forEach(function(buttonId) {
