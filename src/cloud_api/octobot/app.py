@@ -108,6 +108,18 @@ def firmware_v0():
     return FirmwareService.save_and_push(request.files['file'], 'v1'), 200
 
 
+@app.route('/api/v0/firmware/version', methods=['GET'])
+def firmware_v0_version():
+    # [IoT:I4] [API5:2023] Deprecated, unauthenticated version endpoint (no session
+    # check): the v0 sibling of /api/v2/firmware/version. It discloses the firmware
+    # version marker to any caller enumerating the v0 namespace, confirming the
+    # unauthenticated downgrade path documented in M8 / IoT:I4.
+    version = FirmwareService.get_version()
+    if version is None:
+        return jsonify(error='version not found'), 404
+    return jsonify(version=version)
+
+
 @app.route('/api/v2/firmware/version', methods=['GET'])
 def firmware_v2_version():
     version = FirmwareService.get_version()
