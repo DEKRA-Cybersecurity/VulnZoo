@@ -25,6 +25,7 @@ affected_components:
   - "labs/routcoon/files/etc/config/upnpd"
   - "labs/routcoon/files/etc/dnsmasq.conf.reference"
   - "labs/routcoon/files/usr/lib/vulnzoo-hooks/profile-init.d/60-dnsmasq.sh"
+  - "labs/routcoon/files/usr/lib/lua/luci/view/sysauth.htm"
   - "labs/routcoon/files/etc/opkg.conf"
   - "labs/routcoon/files/opt/oem-updates/scripts/auto-updater.sh"
   - "labs/routcoon/files/usr/lib/lua/luci/controller/support/remote.lua"
@@ -1028,6 +1029,16 @@ if first_ip:match("^203%.0%.113%.%d+$") then return true end
 Because the IP is read from a POST parameter, an attacker just supplies `real_ip=203.0.113.100`. The unauthorized page even leaks the expected value in an HTML comment (`Support server: 203.0.113.100`) and advertises the `?debug=1` environment dump.
 
 ### Recon
+
+Recon starts on the login page itself, before the support endpoint is even found. The LuCI login template (`view/sysauth.htm`) renders a "Remote Admin Help" button linking to `https://support.vulnzoo.com`, whose `onclick` also pops a support-contact alert naming the same domain. That domain does not exist on the internet, but the router's own dnsmasq answers it (`60-dnsmasq.sh` sets `address=/support.vulnzoo.com/203.0.113.100`), so any client using the router as its resolver gets an address inside the `203.0.113.0/24` support network. Verified live:
+
+```shell
+# the login page names the domain; the router's own DNS reveals the support IP
+nslookup support.vulnzoo.com 192.168.2.1
+# -> support.vulnzoo.com = 203.0.113.100
+```
+
+That `203.0.113.100` is exactly the value the support endpoint trusts (`real_ip=203.0.113.100`), so the first page an attacker sees already hands over the secret that gates the whole IoT5 chain, without needing the endpoint's HTML-comment hint or `?debug=1`. Both corroborate it:
 
 ```shell
 # generic page: read the HTML-comment hints
