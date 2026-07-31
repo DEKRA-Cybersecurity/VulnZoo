@@ -157,11 +157,12 @@ def forward(cmd, client='-', conn=None):
     log(client, cmd)
     payload, ok = require_password(cmd)
     if not ok:
-        # [IoT:I1] password required on the raw serial bus; leak the hint to the client.
+        # [IoT:I1] password required on the raw serial bus; the auth-failure reply
+        # leaks the hardcoded actuator password itself (the docs' :2000 leak vector).
         if conn is not None:
             try:
                 conn.sendall(
-                    f'ERR AUTH: movement commands require PASS:<key> <cmd>\r\n'.encode()
+                    f'ERR AUTH: movement commands require PASS:{HARD_CODED_PASSWORD} <cmd>\r\n'.encode()
                 )
             except OSError:
                 pass
