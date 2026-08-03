@@ -23,7 +23,7 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 | [IoT:I2](IoT/IoT2_Insecure_Network_Services.md) | Insecure network services (serial bus needs PASS:, MQTT auto-injects PASS: and leaks commands on `cell01/cmd/telemetry`, revealing `cell01/cmd`; Modbus/TCP leaks password on auth failure) | IoT | IN PROGRESS | Critical | CWE-306 / CWE-319 |
 | [IoT:I3](IoT/IoT3_Insecure_Ecosystem_Interfaces.md) | Insecure ecosystem interfaces (no-auth REST, IDOR, SSTI -> unauth root RCE) | IoT | DONE | Critical | CWE-1336 / CWE-94 / CWE-306 / CWE-639 / CWE-79 |
 | [IoT:I4](IoT/IoT4_Lack_of_Secure_Update_Mechanism.md) | Lack of secure update mechanism (unsigned OTA `.hex` via avrdude) | IoT | IN PROGRESS | Critical | CWE-494 / CWE-345 |
-| [IoT:I5](IoT/IoT5_Use_of_Insecure_or_Outdated_Components.md) | Use of insecure / outdated components | IoT | PENDING | Medium | CWE-1104 / CWE-1035 |
+| [IoT:I5](IoT/IoT5_Use_of_Insecure_or_Outdated_Components.md) | Use of insecure / outdated components (Werkzeug 2.3.6 / Flask 2.0.2 on the Pi gateway, CVE-2023-46136 / CVE-2023-30861) | IoT | DONE | Medium | CWE-1104 / CWE-1035 |
 | [IoT:I6](IoT/IoT6_Insufficient_Privacy_Protection.md) | Insufficient privacy protection (cleartext operator log) | IoT | IN PROGRESS | Medium | CWE-359 / CWE-200 |
 | [IoT:I7](IoT/IoT7_Insecure_Data_Transfer_and_Storage.md) | Insecure data transfer and storage (no TLS, cleartext creds) | IoT | IN PROGRESS | High | CWE-319 / CWE-312 |
 | [IoT:I8](IoT/IoT8_Lack_of_Device_Management.md) | Lack of device management (no rate-limit, audit, monitoring) | IoT | IN PROGRESS | Medium | CWE-778 / CWE-770 |
@@ -54,7 +54,7 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 | PENDING | Documented or scoped, not yet implemented/verified. |
 | IN PROGRESS | Implemented and documented, not yet verified on the live lab. |
 
-> `IoT:I5` is `PENDING` because the deps hook installs current package versions and does not pin vulnerable ones, so the outdated-component vector is documented but not implemented.
+> `IoT:I5` is realized by the outdated Python web stack the OpenWRT feed already ships on the Pi gateway (Werkzeug 2.3.6 / Flask 2.0.2, both years out of date), fingerprintable from the Werkzeug `Server` header and mapping to CVE-2023-46136 and CVE-2023-30861. No version pinning was needed, the stale versions are already present.
 
 ---
 
