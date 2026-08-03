@@ -4,10 +4,10 @@
 LOG=/root/vulnzoo.log
 
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG"
 }
 
-log_message "firewall $(date)" >> "$LOG"
+log_message "firewall setup started"
 
 add_rule() {
 	local name="$1" port="$2"

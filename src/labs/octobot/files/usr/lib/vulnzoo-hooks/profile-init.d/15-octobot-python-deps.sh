@@ -5,16 +5,16 @@
 LOG=/root/vulnzoo.log
 
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG"
 }
-command -v python3 >/dev/null 2>&1 || { log "ERROR: python3 not found in image"; exit 0; }
+command -v python3 >/dev/null 2>&1 || { log_message "ERROR: python3 not found in image"; exit 0; }
 
 # import-name : module the corresponding service needs
 for mod in serial flask paho.mqtt.client; do
 	if python3 -c "import $mod" 2>/dev/null; then
-		log "dep OK: $mod"
+		log_message "dep OK: $mod"
 	else
-		log "MISSING dep: $mod (bake it into the base image, do not install at runtime)"
+		log_message "MISSING dep: $mod (bake it into the base image, do not install at runtime)"
 	fi
 done
 exit 0

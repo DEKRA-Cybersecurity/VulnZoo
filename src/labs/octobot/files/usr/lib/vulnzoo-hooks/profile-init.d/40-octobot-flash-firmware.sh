@@ -9,7 +9,7 @@ HW=$(uci -q get octobot.main.use_real_hardware)
 DEV=$(uci -q get octobot.main.serial_port)
 
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG"
 }
 
 [ "$HW" = "1" ] || { log_message "Flash skipped (simulation mode)"; exit 0; }
