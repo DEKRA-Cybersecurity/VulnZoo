@@ -42,7 +42,9 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 
 | ID | Title | Category | Status | Severity | CWE |
 |----|-------|----------|--------|----------|-----|
+| [M5](Mobile/M5_Insecure_Communication.md) | Insecure Communication (cleartext HTTP: operator creds + session cookie on the wire) | Mobile | IN PROGRESS | High | CWE-319 |
 | [M8](Mobile/M8_Security_Misconfiguration.md) | Security Misconfiguration (pre-login disclosure of `/api/v0/` firmware route) | Mobile | IN PROGRESS | Medium | CWE-200 / CWE-212 |
+| [M9](Mobile/M9_Insecure_Data_Storage.md) | Insecure Data Storage (backup-extractable plaintext session cookie) | Mobile | IN PROGRESS | Medium | CWE-312 / CWE-200 |
 
 ---
 
