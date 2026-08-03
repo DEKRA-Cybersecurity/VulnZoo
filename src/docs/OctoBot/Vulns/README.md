@@ -36,7 +36,7 @@ This directory follows MWP Layer 3 conventions. Vulnerabilities are organized by
 | ID | Title | Category | Status | Severity | CWE |
 |----|-------|----------|--------|----------|-----|
 | [API5:2023](API/API5_Broken_Function_Level_Authorization.md) | Broken Function Level Authorization (downgrade to unauthenticated v0 firmware endpoint) | API | IN PROGRESS | High | CWE-285 |
-| [API10:2023](API/API10_Unsafe_Consumption_of_APIs.md) | Unsafe Consumption of APIs — login input SQL injection | API | IN PROGRESS | High | CWE-89 |
+| [API10:2023](API/API10_Unsafe_Consumption_of_APIs.md) | Login input SQL injection (id kept; accurate class is SQLi / CWE-89, not Unsafe Consumption) | API | DONE | High | CWE-89 |
 
 ## Mobile Vulnerabilities
 
