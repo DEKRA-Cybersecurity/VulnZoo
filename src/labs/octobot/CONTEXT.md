@@ -17,7 +17,7 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
 | Modbus/TCP server | `opt/octobot/robot_modbus_server.py` | 502 | Holding registers -> `Sx:angle` (stdlib socket, no pymodbus); feedback 40011-40014 from `/tmp/octobot/angles`; auth-failure path leaks password into 40038-40053 |
 | MQTT bridge | `opt/octobot/robot_mqtt_bridge.py` | 1883 | Subscribes to `cell01/cmd` and forwards to the bus; auto-injects actuator password |
 | Firmware image | `opt/octobot/firmware/robot_arm.hex` | - | Build artifact (see `firmware/README.md`), flashed by hook |
-| UCI config | `etc/config/octobot` | - | Per-item `VULNERABLE`/`SECURE` toggle + `use_real_hardware` (default `0`) |
+| UCI config | `etc/config/octobot` | - | Ships `option mode 'vulnerable'` (a design placeholder, read by nothing) + `use_real_hardware` (default `0`) |
 | Cloud API (PC, not in overlay) | `src/cloud_api/octobot/` | 5002 | REST + web UI + Modbus master, single-operator login (SQLite) |
 
 ## Inputs
@@ -40,7 +40,7 @@ A 4-DOF robot arm (HU-M16 shield + Arduino UNO) is fronted by a Raspberry Pi gat
    mv octobot.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz
    ```
 3. **Deploy services (start order below).** Hooks run in numeric order on lab load.
-4. **Config toggle.** `uci get octobot.main.mode` selects `vulnerable` (default) or `secure`.
+4. **Config mode (placeholder).** `uci get octobot.main.mode` returns `vulnerable` by default, but no service, init script, or firewall hook reads it, so the value has no effect and the lab is unconditionally vulnerable. There is no working `secure` mode in this build.
 5. **Hardware presence.** With `use_real_hardware=0` or no `/dev/ttyACM*`/`/dev/ttyUSB*` present, the serial bus binds a simulated sink so the lab loads and all network paths respond on a bare Pi (platform requirement). The flash hook is skipped in that case. Plugging the arm in after the lab is up is auto-detected by `etc/hotplug.d/tty/20-octobot`, which re-runs preflight and restarts the serial bus.
 
 ## Service start order

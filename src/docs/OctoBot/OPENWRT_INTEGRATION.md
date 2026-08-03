@@ -211,7 +211,7 @@ A deploy hook (`##-flash-firmware.sh`) can run step 3 automatically when the lab
 
 ## 5. Pi Gateway: Network to Serial (deliberately vulnerable)
 
-The gateway is the OWASP IoT surface. Each network entry point maps to an OWASP IoT item and is gated behind a **per-item config toggle** (a `VULNERABLE` / `SECURE` flag in UCI `/etc/config/octobot`), so the lab can enable one flaw at a time and teach the before/after of its remediation. This matches the platform's `--vulnerable` / `--secure` convention used by the other labs.
+The gateway is the OWASP IoT surface. Each network entry point maps to an OWASP IoT item. The original design called for a **per-item config toggle** (a `VULNERABLE` / `SECURE` flag in UCI `/etc/config/octobot`) to teach the before/after of each remediation, matching the platform's `--vulnerable` / `--secure` convention. **That toggle is not implemented in the current build.** The overlay ships `option mode 'vulnerable'`, but no service, init script, or firewall hook reads it (verified against the overlay and a live Pi), so every entry point is unconditionally vulnerable and flipping `mode` to `secure` changes nothing. Wiring a real `secure` state is future work, see Section 10.
 
 The control paths and their tags (implemented under `labs/octobot/files/opt/octobot/`):
 
@@ -279,7 +279,7 @@ The Android client uses plain HTTP/REST to the cloud (Retrofit or `HttpURLConnec
 
 ## 7. OWASP IoT Top 10 -> OctoBot Implementation (vuln catalog)
 
-This table is the catalog that drives the lab. Stage 03 writes one doc per row under `docs/OctoBot/Vulns/IoT/`, each paired with its CWE and a `VULNERABLE`/`SECURE` toggle.
+This table is the catalog that drives the lab. Stage 03 writes one doc per row under `docs/OctoBot/Vulns/IoT/`, each paired with its CWE. The per-row `VULNERABLE`/`SECURE` toggle was part of the original design but is not wired in the current build (see Section 5), so every finding is always on.
 
 | ID | OWASP IoT risk | CWE | Implementation in this lab | How to test on your own lab |
 |---|---|---|---|---|
@@ -336,7 +336,7 @@ Each scenario uses the arm as a safe, visible victim process and maps to one OWA
 
 ## 10. Hardening / Remediation (the "after")
 
-The per-item toggle makes each fix teachable as a before/after. The hardening pass is the most valuable half of the lab.
+The per-item toggle was meant to make each fix teachable as a before/after, but it is not implemented (see Section 5), so today the hardening pass is applied manually per finding. The remediation table below still captures the intended controls.
 
 | Layer | Control |
 |---|---|
@@ -357,7 +357,7 @@ The per-item toggle makes each fix teachable as a before/after. The hardening pa
 - [ ] SD card image snapshotted for restore between sessions.
 - [ ] Servos on an external supply with **common GND**, never powered from USB.
 - [ ] Arm in a clear workspace (exploits move it for real), with a power cutoff within reach.
-- [ ] Record which toggle is active each session so no service is left open by mistake.
+- [ ] The `mode` toggle is not wired, so the lab is always in its fully vulnerable state, keep it isolated accordingly.
 
 ---
 
