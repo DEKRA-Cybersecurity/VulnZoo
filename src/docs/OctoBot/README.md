@@ -159,7 +159,7 @@ HTML routes redirect to `/login` when the session is missing; API routes under `
 
 ## Status
 
-MWP stages 01-04 complete: the lab is implemented under `src/labs/octobot/`, the cloud under `src/cloud_api/octobot/`, and the OWASP IoT catalog documented under `Vulns/IoT/`. Verified in simulation (gateway plus serial bus). Badges are `IN PROGRESS` pending an on-Pi lab-load verification (procd / opkg / uci / avrdude), which flips them to `DONE`. `IoT:I5` is `PENDING` (unimplemented), and the firmware `DEMO`/`PLAY` loop-service refactor is deferred (per-servo `Sx:angle` control works).
+MWP stages 01-04 complete: the lab is implemented under `src/labs/octobot/`, the cloud under `src/cloud_api/octobot/`, and the OWASP IoT catalog documented under `Vulns/IoT/`. Verified in simulation (gateway plus serial bus). Badges are `IN PROGRESS` pending an on-Pi lab-load verification (procd / opkg / uci / avrdude), which flips them to `DONE`. `IoT:I5` is realized by the outdated Werkzeug 2.3.6 / Flask 2.0.2 the feed already ships on the gateway (not by version pinning), and the firmware `DEMO`/`PLAY` loop-service refactor is deferred (per-servo `Sx:angle` control works).
 
 ## Lab Architecture
 
