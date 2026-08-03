@@ -65,10 +65,12 @@ Load via the Device Manager UI (`http://192.168.2.1:8080`, select `octobot`), or
 scp src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/octobot.tar.gz root@192.168.2.1:/usr/lib/vulnzoo-devices/
 ssh root@192.168.2.1
 tar -xzf /usr/lib/vulnzoo-devices/octobot.tar.gz -C /
-for h in /usr/lib/vulnzoo-hooks/profile-init.d/*-octobot-*.sh; do sh "$h"; done
+for h in /usr/lib/vulnzoo-hooks/profile-init.d/*.sh; do sh "$h"; done
 ```
 
-Hooks run in order: `05` detect tty and set `use_real_hardware`, `15` install deps, `40` conditional firmware flash, `50` start mosquitto plus the four `octobot-*` services, `70` open the LAN firewall.
+The glob is `*.sh` (not `*-octobot-*.sh`): the group/user hooks `10-add-groups.sh` and `11-add-users.sh` do not carry `octobot` in their names, so a `*-octobot-*` glob would skip them and leave `root` at the base-image password (no `root:dococtopus`, no `easyuser`). Running every hook in numeric order matches what the Device Manager UI does.
+
+Hooks run in order: `05` detect tty and set `use_real_hardware`, `10` create the `easyuser` group, `11` create users and set the `root`/`easyuser` passwords, `15` verify deps, `40` conditional firmware flash, `50` start mosquitto plus the four `octobot-*` services, `70` open the LAN firewall, `90` trim unused services.
 
 ### 3. Check services (on the Pi)
 
