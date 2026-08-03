@@ -38,7 +38,7 @@ A README at `/home/easyuser/README.txt` reminds the student that this account is
 
 ## Vulnerability surface
 
-The lab implements the OWASP IoT Top 10 (`IoT:I1`..`IoT:I10`), each behind a `VULNERABLE`/`SECURE` config toggle. See [`Vulns/README.md`](Vulns/README.md) for the catalog and status.
+The lab implements the OWASP IoT Top 10 (`IoT:I1`..`IoT:I10`). The overlay ships `option mode 'vulnerable'` in `/etc/config/octobot`, but that flag is a design placeholder: nothing reads it in the current build, so the vulnerabilities are unconditional and there is no working `secure` mode. See [`Vulns/README.md`](Vulns/README.md) for the catalog and status.
 
 ## Launch and verify
 

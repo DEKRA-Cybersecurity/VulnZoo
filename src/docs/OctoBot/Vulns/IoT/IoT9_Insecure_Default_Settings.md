@@ -34,7 +34,7 @@ add_rule modbus    "$(uci -q get octobot.main.modbus_port)"
 add_rule mqtt 1883
 ```
 
-Services bind `0.0.0.0`, and the shipped config defaults to the vulnerable mode with default credentials:
+Services bind `0.0.0.0`, and the shipped config carries `option mode 'vulnerable'` with default credentials. Nothing reads the `mode` value, so the device stays in this fully vulnerable state permanently (there is no `secure` mode to switch to):
 
 ```
 # labs/octobot/files/etc/config/octobot
@@ -51,7 +51,7 @@ Firmware static analysis of the dumped SD card reveals additional insecure defau
 
 ```bash
 # Default mode + permissive firewall
-uci get octobot.main.mode                 # -> vulnerable
+uci get octobot.main.mode                 # -> vulnerable (inert: no service reads it)
 uci show firewall | grep octobot          # -> ACCEPT rules for 8090/2000/502/1883 from lan
 ss -tlnp | grep -E '8090|2000|502'        # -> bound on 0.0.0.0
 
