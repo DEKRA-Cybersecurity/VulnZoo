@@ -2,9 +2,9 @@
 id: API10:2023
 title: "Unsafe Consumption of APIs — Login Input SQL Injection"
 category: API
-status: IN PROGRESS
+status: DONE
 severity: High
-owasp: "API10:2023 Unsafe Consumption of APIs"
+owasp: "API10:2023 Unsafe Consumption of APIs (id retained; the accurate classification is SQL injection / CWE-89, see the Classification note)"
 cwe: "CWE-89 (Improper Neutralization of Special Elements used in an SQL Command)"
 source_docs:
   - "src/cloud_api/octobot/app.py §/login"
@@ -12,7 +12,7 @@ source_docs:
 affected_components:
   - "cloud_api/octobot/services/auth_service.py"
   - "cloud_api/octobot/app.py"
-verified_date: ""
+verified_date: "2026-08-03"
 ---
 
 ## Why It Matters
@@ -20,6 +20,10 @@ verified_date: ""
 The OctoBot cloud console `/login` endpoint receives operator credentials through the public HTTP API and passes them straight into a raw SQL query. The application unsafely consumes untrusted input from its own client-facing API without proper validation or parameterization. A weak blacklist filter attempts to block SQL injection, but common tutorial payloads using `--`, `;`, `UNION`, and `OR` are rejected while SQLite-specific alternatives such as the string-concatenation operator `||` combined with `<>` or `IS NOT`, as well as `LIKE` wildcards, remain usable.
 
 An attacker who discovers the filter can log in as the operator without knowing the username or the password, gaining full access to the cloud console and the ability to send commands to the Pi through the authenticated `/api/servo`, `/api/command`, and `/api/v2/firmware` endpoints.
+
+## Classification note
+
+The precise classification of this finding is **SQL injection (CWE-89)**: untrusted client input is concatenated into a SQL query on the service's own `/login` endpoint. The `API10:2023 Unsafe Consumption of APIs` label kept in the frontmatter is a stretch, because that OWASP category covers a service trusting data returned by the third-party or upstream APIs it consumes, which is the opposite data-flow direction from a client attacking this endpoint. The 2023 OWASP API Security Top 10 folded away the standalone Injection category that existed as `API8:2019`, so there is no dedicated Injection slot to map to. The nearest 2023 API category is `API8:2023 Security Misconfiguration` (the weak blacklist filter is the misconfiguration), but the accurate root cause is CWE-89 injection. The id is retained only to avoid churning the cross-references in [API5:2023](API5_Broken_Function_Level_Authorization.md), [IoT:I4](../IoT/IoT4_Lack_of_Secure_Update_Mechanism.md), and [M8](../Mobile/M8_Security_Misconfiguration.md).
 
 ## Root Cause
 
