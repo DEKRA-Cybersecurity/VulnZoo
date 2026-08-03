@@ -3,7 +3,7 @@
 LOG=/root/vulnzoo.log
 
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [octobot] $1" >> "$LOG"
 }
 
 log_message "Starting OctoBot services"
