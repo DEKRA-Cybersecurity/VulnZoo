@@ -34,5 +34,8 @@ src/labs/octobot/files/opt/octobot/firmware/robot_arm.hex
 # Slideshows
 Slideshows_001.pptx
 VulnZoo_CareOtter.pptx
+USA26-VulnZoo.pptx
 
 src/labs/octobot/firmware_analysis
+
+stages/TARGET*
