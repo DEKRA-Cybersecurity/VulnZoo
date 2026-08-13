@@ -109,11 +109,14 @@ JWT_PATIENT=$(curl -s -X POST http://localhost:5002/api/auth/login/patient \
   -d '{"username":"john_doe","password":"johnny123"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-ffuf -u http://localhost:5002/api/config/FUZZ -w params.txt -X POST \
-  -H "Authorization: Bearer $JWT_PATIENT" -H "Content-Type: application/json" \
+ffuf -u http://localhost:5002/api/config/FUZZ \
+  -w /usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt \
+  -X POST -H "Authorization: Bearer $JWT_PATIENT" -H "Content-Type: application/json" \
   -d '{}' -mc all -fc 404
 # thresholds → 200   ·   preferences → 403
 ```
+
+Here `FUZZ` sits in the path, so this is content discovery of endpoint names, not query or body parameter fuzzing. `api-endpoints.txt` is a generic SecLists wordlist that finds standard route names but will not contain the lab-specific clinical routes such as `thresholds`. To reproduce the result above, seed a small custom `endpoints.txt` with the names inferred from the IGP command taxonomy (`thresholds`, `preferences`, `network`, `wifi`, and so on, see the convention inference below) and point `-w` at it, on its own or concatenated with the SecLists list.
 
 | Code (with a patient JWT) | Meaning |
 | ------------------------- | ------- |

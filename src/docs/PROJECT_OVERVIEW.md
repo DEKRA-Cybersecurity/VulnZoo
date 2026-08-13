@@ -41,6 +41,26 @@
 | cloud_api | C2 Server | 5000 | HTTP |
 | cloud_api | MQTT Broker | 1883 | MQTT |
 
+## Troubleshooting
+
+### SSH host key changes after `firstboot`
+
+After running `firstboot` (or a factory reset) on the Pi and rebooting, the next `ssh root@192.168.2.1` fails with `REMOTE HOST IDENTIFICATION HAS CHANGED` and refuses to connect. This is expected behaviour, not a man-in-the-middle attack.
+
+**Cause.** `firstboot` erases the OpenWRT overlay (`/overlay`). On OpenWRT `/etc` is an overlay mounted over the read-only Squashfs, and the dropbear SSH host keys live in `/etc/dropbear/` inside that overlay. The reset wipes them, so on the next boot dropbear generates brand new host keys. The new fingerprint no longer matches the one your client pinned in `~/.ssh/known_hosts`, and with strict host-key checking the client refuses the connection. Because the VulnZoo image does not ship persistent host keys, this repeats on every reset.
+
+**Option A (client side, recommended for frequent resets).** Tell your SSH client not to pin the lab host. Add to `~/.ssh/config`:
+
+```
+Host 192.168.2.1
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+```
+
+The client then accepts the Pi's current key without saving or comparing it, so the warning never appears again. As a one-off you can instead drop the stale entry with `ssh-keygen -R 192.168.2.1` after each reset.
+
+**Option B (image side, stable fingerprint for everyone).** Bake fixed dropbear host keys into the base image at `src/labs/vulnzoo/files/etc/dropbear/` (`dropbear_ed25519_host_key` and `dropbear_rsa_host_key`). Living in the read-only Squashfs they survive `firstboot`, so dropbear reuses them instead of regenerating and the fingerprint stays constant across resets. The trade-off is that every deployed Pi then shares the same host key, which is acceptable for a lab image but is a real key committed to the repository.
+
 ## Regulatory Context
 
 VulnZoo aligns with:

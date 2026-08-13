@@ -122,10 +122,10 @@ User accounts with role-based access control.
 
 On first startup, the API automatically creates:
 
-| Username | Password         | Role    |
-| -------- | ---------------- | ------- |
-| `admin`  | `CareOtter2026!` | `admin` |
-| `patient` | `johnny123` | `patient` |
+| Username    | Password         | Role        |
+| ----------- | ---------------- | ----------- |
+| `admin`     | `CareOtter2026!` | `admin`     |
+| `john_doe`  | `johnny123`      | `patient`   |
 | `caregiver` | `Caregiver2026!` | `caregiver` |
 
 > ⚠️ **Intentional vulnerability**: Passwords are stored with simple SHA-256 hashing (no salt, no bcrypt/Argon2), making them susceptible to rainbow table attacks if the database is exfiltrated.

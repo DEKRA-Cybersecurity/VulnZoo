@@ -4,6 +4,7 @@
 # Usage:
 #   ./cloudctl.sh start                 # build + up -d
 #   ./cloudctl.sh start --no-hosts      # skip writing /etc/hosts
+#   ./cloudctl.sh start --no-build      # reuse existing image (offline, no rebuild)
 #   ./cloudctl.sh stop                  # docker compose down (keeps data volume)
 #   ./cloudctl.sh restart               # stop + start (non-destructive)
 #   ./cloudctl.sh reset                 # docker compose down -v (drops the DB)
@@ -66,10 +67,12 @@ action_start() {
     docker compose version >/dev/null 2>&1 || die "docker compose plugin not installed"
 
     local push_hosts=1
+    local build_flag="--build"
     while [ $# -gt 0 ]; do
         case "$1" in
             --no-hosts) push_hosts=0 ;;
-            *) die "Unknown option for start: $1 (try: --no-hosts)" ;;
+            --no-build) build_flag="" ;;
+            *) die "Unknown option for start: $1 (try: --no-hosts, --no-build)" ;;
         esac
         shift
     done
@@ -78,8 +81,13 @@ action_start() {
     host_ip="$(detect_host_ip || true)"
     [ -n "$host_ip" ] && log "Detected host IP: $host_ip"
 
-    log "docker compose up --build -d"
-    HOST_IP="${host_ip}" docker compose up --build -d
+    if [ -n "$build_flag" ]; then
+        log "docker compose up --build -d"
+    else
+        log "docker compose up -d  (--no-build: reusing existing image, no registry pull)"
+    fi
+    # build_flag unquoted on purpose: empty must expand to no argument
+    HOST_IP="${host_ip}" docker compose up ${build_flag} -d
 
     docker compose ps
 
@@ -106,7 +114,15 @@ action_stop() {
 action_reset() {
     require docker
     local assume_yes=0
-    case "${1:-}" in -y|--yes) assume_yes=1 ;; esac
+    local passthru=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -y|--yes)   assume_yes=1 ;;
+            --no-build) passthru="--no-build" ;;
+            *) die "Unknown option for reset: $1 (try: -y, --no-build)" ;;
+        esac
+        shift
+    done
     if [ "$assume_yes" -ne 1 ] && [ -t 0 ]; then
         printf '\033[1;31m[cloudctl]\033[0m This DROPS the octobot_data volume (seeded operator account lost). Continue? [y/N] '
         local ans=""; read -r ans || true
@@ -114,7 +130,8 @@ action_reset() {
     fi
     log "docker compose down -v"
     docker compose down -v
-    action_restart
+    # passthru unquoted on purpose: empty must expand to no argument
+    action_restart $passthru
 }
 
 action_status() {
@@ -146,21 +163,24 @@ case "${1:-}" in
         cat >&2 <<EOF
 Usage: $0 {start|stop|restart|reset|status|logs} [options]
 
-  start [--no-hosts]
+  start [--no-hosts] [--no-build]
            Build the image and bring the OctoBot Cloud API up (detached).
            Detects the host's primary IP and exports HOST_IP. Writes
            api.octobot.lab → host IP in /etc/hosts via sudo so the browser,
            Burp and tools resolve the lab domain. Use --no-hosts to skip that.
+           Use --no-build to reuse the existing image without rebuilding
+           (offline-friendly: no registry pull, for the lab AP with no internet).
 
   stop     docker compose down — stops the stack but KEEPS the octobot_data
            volume (the seeded operator account survives).
 
   restart  stop + start; non-destructive (data preserved).
 
-  reset [-y]
+  reset [-y] [--no-build]
            docker compose down -v — tears down AND drops the octobot_data
            volume (seeded operator account lost; the stack re-seeds on next
            start). Prompts for confirmation unless -y/--yes is given.
+           Pass --no-build to re-create offline without rebuilding the image.
 
   status   docker compose ps.
 
