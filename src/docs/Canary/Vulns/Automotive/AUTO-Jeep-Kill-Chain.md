@@ -23,11 +23,11 @@ This is the attack that put automotive cybersecurity into regulation. In 2015 Mi
 
 CANary reproduces exactly that chain against a safe actuator (central locking). The Central Gateway (CGW) is shipped as a filtering gateway: the only thing it puts on CAN is the single whitelisted `LOCK_CMD` it derives from an authenticated `SetLock`. The legitimate lock interface is authenticated, so an attacker cannot simply call it. The compromise happens the way it happened in the real case, through an exposed management interface and an unsigned firmware update, not through the front door. The finding is a chain of three distinct weaknesses that a certification assessment maps to three separate R155 threat categories.
 
-| Phase | Real Jeep mechanism | CANary finding | CWE |
-|-------|---------------------|----------------|-----|
-| Initial access | Uconnect D-Bus command port (6667) exposed to the internet with no authentication | AUTO-01 exposed management interface | CWE-306 |
-| Escalation | Unsigned firmware rewrite of the V850 gateway over the update channel | AUTO-05 unsigned firmware update | CWE-347 / CWE-494 |
-| Physical action | Arbitrary CAN injection once the gateway no longer filters | AUTO-02 arbitrary CAN injection | CWE-306 / CWE-345 |
+| Phase           | Real Jeep mechanism                                                               | CANary finding                       | CWE               |
+| --------------- | --------------------------------------------------------------------------------- | ------------------------------------ | ----------------- |
+| Initial access  | Uconnect D-Bus command port (6667) exposed to the internet with no authentication | AUTO-01 exposed management interface | CWE-306           |
+| Escalation      | Unsigned firmware rewrite of the V850 gateway over the update channel             | AUTO-05 unsigned firmware update     | CWE-347 / CWE-494 |
+| Physical action | Arbitrary CAN injection once the gateway no longer filters                        | AUTO-02 arbitrary CAN injection      | CWE-306 / CWE-345 |
 
 ## The load-bearing invariant
 

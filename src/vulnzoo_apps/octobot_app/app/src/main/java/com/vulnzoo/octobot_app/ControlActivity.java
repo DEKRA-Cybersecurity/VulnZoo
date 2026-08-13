@@ -83,7 +83,7 @@ public class ControlActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.btnLogout)).setOnClickListener(v -> logout());
     }
 
-    @Override protected void onResume()  { super.onResume();  polling = true;  poll.post(pollTask); }
+    @Override protected void onResume()  { super.onResume();  WifiNet.bindToWifi(this);  polling = true;  poll.post(pollTask); }
     @Override protected void onPause()   { super.onPause();   polling = false; poll.removeCallbacks(pollTask); }
     @Override protected void onDestroy() { super.onDestroy(); exec.shutdownNow(); }
 

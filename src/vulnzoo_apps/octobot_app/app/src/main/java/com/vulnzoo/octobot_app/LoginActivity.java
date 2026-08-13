@@ -63,6 +63,10 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
+        // Route all HTTP over WiFi (the lab AP has no internet, so the default
+        // network is mobile data). Done before the startup firmware fetch below.
+        WifiNet.bindToWifi(this);
+
         etApiIp    = findViewById(R.id.etApiIp);
         etApiPort  = findViewById(R.id.etApiPort);
         etUsername = findViewById(R.id.etUsername);
@@ -96,6 +100,13 @@ public class LoginActivity extends AppCompatActivity {
 
         // Try to populate the firmware label from the saved/default server on startup.
         fetchFirmwareVersion(getServerString());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-bind in case WiFi was joined after the app was already open.
+        WifiNet.bindToWifi(this);
     }
 
     @Override
