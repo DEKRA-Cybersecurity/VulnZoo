@@ -11,7 +11,7 @@ A new router has been installed in your home or office, but the company has not 
 
 ## Hosts, ports and credentials
 
-The lab device is at **192.168.2.1** (canonical). Some vulnerability walkthroughs still show `192.168.1.1` from an earlier network layout, treat `192.168.2.1` as authoritative.
+The lab device is at **192.168.2.1** (canonical and authoritative).
 
 | Service | Port | Access |
 |---------|------|--------|

@@ -105,9 +105,9 @@ This may allow the password to be obtained through a brute force process. I gene
 > Unneeded or insecure network services running on the device itself, especially those exposed to the internet, that compromise the confidentiality, integrity/authenticity, or availability of information or allow unauthorized remote control ...
 ## Description
 ```shell
-$ nmap -p- 192.168.1.1
+$ nmap -p- 192.168.2.1
 Starting Nmap 7.94SVN ( https://nmap.org ) at 2025-07-18 11:43 CEST
-Nmap scan report for 192.168.1.1
+Nmap scan report for 192.168.2.1
 Host is up (0.0086s latency).
 Not shown: 65527 closed tcp ports (conn-refused)
 PORT     STATE    SERVICE
@@ -122,9 +122,9 @@ PORT     STATE    SERVICE
 ```
 ### 2.1 SSH (Secure Shell) port 22
 ```shell
-$ nmap -p22 -sC -sV 192.168.1.1
+$ nmap -p22 -sC -sV 192.168.2.1
 Starting Nmap 7.94SVN ( https://nmap.org ) at 2025-07-18 11:45 CEST
-Nmap scan report for 192.168.1.1
+Nmap scan report for 192.168.2.1
 Host is up (0.00072s latency).
 
 PORT   STATE SERVICE VERSION
@@ -330,7 +330,7 @@ We can easily check this out by scanning port 21 and running *"ftp-anon.nse"* sc
 ```shell
 ❯ nmap --script=ftp-anon -sV -p21 192.168.2.1
 Starting Nmap 7.94SVN ( https://nmap.org ) at 2025-07-28 09:13 CEST
-Nmap scan report for 192.168.1.1
+Nmap scan report for 192.168.2.1
 Host is up (0.00075s latency).
 
 PORT   STATE SERVICE VERSION
@@ -347,10 +347,10 @@ Service Info: Device: webcam; CPE: cpe:/h:dlink:dcs-932l
 Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
 Nmap done: 1 IP address (1 host up) scanned in 0.60 seconds
 
-❯ ftp 192.168.1.1
-Connected to 192.168.1.1.
+❯ ftp 192.168.2.1
+Connected to 192.168.2.1.
 220 Operation successful
-Name (192.168.1.1:xxx): anonymous
+Name (192.168.2.1:xxx): anonymous
 230 Operation successful
 Remote system type is UNIX.
 Using binary mode to transfer files.
