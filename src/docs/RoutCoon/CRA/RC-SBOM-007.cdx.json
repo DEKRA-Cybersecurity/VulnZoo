@@ -1,0 +1,240 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:6f0c1d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-08-21T00:00:00Z",
+    "authors": [
+      { "name": "RoutCoon Networks - Product Security" }
+    ],
+    "manufacture": {
+      "name": "RoutCoon Networks",
+      "contact": [ { "email": "contact@routcoon-oem.local" } ]
+    },
+    "supplier": {
+      "name": "RoutCoon Networks",
+      "contact": [ { "email": "contact@routcoon-oem.local" } ]
+    },
+    "component": {
+      "type": "device",
+      "bom-ref": "routcoon-router",
+      "name": "RoutCoon Home/Office WiFi Router",
+      "version": "1.0",
+      "description": "Intentionally vulnerable OpenWrt-based training router. SBOM covers top-level and security-relevant components per prEN 40000-1-2 clause 7.5c.",
+      "supplier": { "name": "RoutCoon Networks" }
+    },
+    "properties": [
+      { "name": "openwrt:feed-baseline", "value": "24.10.3" },
+      { "name": "routcoon:target", "value": "bcm27xx/bcm2709 DEVICE_rpi-2 (runs on Pi 3B/3B+)" },
+      { "name": "routcoon:sbom-scope", "value": "top-level and security-relevant; full package manifest maintained at build time" },
+      { "name": "routcoon:base-heritage", "value": "OWASP IoTGoat" }
+    ]
+  },
+  "components": [
+    {
+      "type": "operating-system",
+      "bom-ref": "openwrt-24.10.3",
+      "name": "OpenWrt",
+      "version": "24.10.3",
+      "description": "Base firmware distribution (r28739-d9340319c6)",
+      "licenses": [ { "expression": "GPL-2.0-only" } ],
+      "purl": "pkg:openwrt/openwrt@24.10.3"
+    },
+    {
+      "type": "operating-system",
+      "bom-ref": "linux-kernel-6.6",
+      "name": "Linux kernel",
+      "version": "6.6.104",
+      "licenses": [ { "expression": "GPL-2.0-only" } ],
+      "purl": "pkg:generic/linux@6.6.104"
+    },
+    {
+      "type": "application",
+      "bom-ref": "busybox-1.36.1",
+      "name": "busybox",
+      "version": "1.36.1",
+      "description": "Userland utilities. Provides telnetd, ftpd, tcpsvd, core utilities.",
+      "licenses": [ { "expression": "GPL-2.0-only" } ],
+      "purl": "pkg:openwrt/busybox@1.36.1"
+    },
+    {
+      "type": "application",
+      "bom-ref": "uhttpd",
+      "name": "uhttpd",
+      "description": "HTTP server for the web admin. Includes mod-ubus and mod-ucode.",
+      "licenses": [ { "expression": "ISC" } ],
+      "purl": "pkg:openwrt/uhttpd",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "luci",
+      "name": "luci",
+      "description": "Web administration UI and internal API. Bundle: luci-base, luci-light, mod-admin-full, mod-network, mod-status, mod-system, lua-runtime, lib-base/ip/jsonc/nixio, theme-bootstrap, app-firewall, app-package-manager, proto-ipv6/ppp.",
+      "licenses": [ { "expression": "Apache-2.0" } ],
+      "purl": "pkg:openwrt/luci",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "dropbear",
+      "name": "dropbear",
+      "description": "SSH server (port 22).",
+      "licenses": [ { "expression": "MIT" } ],
+      "purl": "pkg:openwrt/dropbear",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "dnsmasq",
+      "name": "dnsmasq",
+      "description": "DHCP and DNS for LAN (192.168.2.0/24) and WiFi (192.168.3.0/24).",
+      "licenses": [ { "expression": "GPL-2.0-only" } ],
+      "purl": "pkg:openwrt/dnsmasq",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "samba4-4.18.8",
+      "name": "samba4-server",
+      "version": "4.18.8",
+      "description": "SMB file sharing (port 445). Includes samba4-libs.",
+      "licenses": [ { "expression": "GPL-3.0-only" } ],
+      "purl": "pkg:openwrt/samba4-server@4.18.8"
+    },
+    {
+      "type": "application",
+      "bom-ref": "miniupnpd-nftables",
+      "name": "miniupnpd-nftables",
+      "description": "UPnP IGD service.",
+      "licenses": [ { "expression": "BSD-3-Clause" } ],
+      "purl": "pkg:openwrt/miniupnpd-nftables",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "wpad-basic-mbedtls",
+      "name": "wpad-basic-mbedtls",
+      "description": "WiFi AP authenticator and supplicant (hostapd-based).",
+      "licenses": [ { "expression": "BSD-3-Clause" } ],
+      "purl": "pkg:openwrt/wpad-basic-mbedtls",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "hostapd-common",
+      "name": "hostapd-common",
+      "description": "Shared hostapd configuration and helpers.",
+      "licenses": [ { "expression": "BSD-3-Clause" } ],
+      "purl": "pkg:openwrt/hostapd-common",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "net-snmp",
+      "name": "net-snmp",
+      "description": "SNMP agent (snmpd), v1/v2c with default communities public/private.",
+      "licenses": [ { "license": { "name": "Net-SNMP License (BSD-like)" } } ],
+      "purl": "pkg:openwrt/net-snmp",
+      "properties": [
+        { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" },
+        { "name": "routcoon:status", "value": "declared - documented as running service, not currently selected in .config" }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "curl",
+      "name": "curl",
+      "description": "HTTP client used by device tooling.",
+      "licenses": [ { "expression": "curl" } ],
+      "purl": "pkg:openwrt/curl",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "wget-ssl",
+      "name": "wget-ssl",
+      "description": "HTTP(S) client.",
+      "licenses": [ { "expression": "GPL-3.0-only" } ],
+      "purl": "pkg:openwrt/wget-ssl",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "libopenssl",
+      "name": "libopenssl",
+      "description": "TLS and crypto primitives.",
+      "licenses": [ { "expression": "Apache-2.0" } ],
+      "purl": "pkg:openwrt/libopenssl",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "libustream-mbedtls",
+      "name": "libustream-mbedtls",
+      "description": "TLS stream layer.",
+      "licenses": [ { "expression": "Apache-2.0" } ],
+      "purl": "pkg:openwrt/libustream-mbedtls",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "mbedtls",
+      "name": "mbedtls",
+      "description": "TLS backend for WiFi and ustream.",
+      "licenses": [ { "expression": "Apache-2.0" } ],
+      "purl": "pkg:openwrt/mbedtls",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "kmod-brcmfmac",
+      "name": "kmod-brcmfmac",
+      "description": "Broadcom FullMAC WiFi kernel driver.",
+      "licenses": [ { "expression": "GPL-2.0-only" } ],
+      "purl": "pkg:openwrt/kmod-brcmfmac",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "firmware",
+      "bom-ref": "brcmfmac-firmware",
+      "name": "brcmfmac radio firmware",
+      "description": "Broadcom BCM43430/BCM43455 WiFi firmware and NVRAM blob.",
+      "licenses": [ { "license": { "name": "Broadcom proprietary (redistributable)" } } ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "wireless-regdb",
+      "name": "wireless-regdb",
+      "description": "Wireless regulatory database.",
+      "licenses": [ { "license": { "name": "ISC-style" } } ],
+      "purl": "pkg:openwrt/wireless-regdb",
+      "properties": [ { "name": "openwrt:resolution", "value": "feed:24.10.3 build-time" } ]
+    },
+    {
+      "type": "device",
+      "bom-ref": "hw-soc-bcm2837",
+      "name": "Broadcom BCM2837 SoC",
+      "description": "Application processor (Raspberry Pi 3B/3B+), ARM Cortex-A7 class target."
+    },
+    {
+      "type": "device",
+      "bom-ref": "hw-wifi-bcm43455",
+      "name": "Broadcom BCM43430/BCM43455 WiFi radio",
+      "description": "Onboard 2.4GHz WiFi radio, driven by kmod-brcmfmac."
+    },
+    {
+      "type": "device",
+      "bom-ref": "hw-microsd",
+      "name": "microSD card",
+      "description": "Removable storage holding the unencrypted root filesystem."
+    },
+    {
+      "type": "device",
+      "bom-ref": "hw-uart",
+      "name": "UART debug header",
+      "description": "Exposed serial console interface."
+    }
+  ]
+}
