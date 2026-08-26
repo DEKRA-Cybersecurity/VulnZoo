@@ -1,0 +1,5 @@
+# Rendered PDF package (generated on demand by render-cra.sh)
+build/
+
+# LibreOffice lock files
+.~lock.*#
