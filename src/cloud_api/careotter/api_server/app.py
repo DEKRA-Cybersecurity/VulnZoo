@@ -28,6 +28,8 @@ import secrets
 import hmac
 import base64
 import hashlib
+import posixpath
+from urllib.parse import unquote
 from collections import deque
 import requests as http_requests
 from flask import Flask, jsonify, request, render_template, redirect, url_for, make_response, g, send_from_directory
@@ -103,6 +105,28 @@ app  = Flask(__name__)
 # admin/debug/init paths with EXACT-match rules, so a trailing slash slips past the
 # deny while still reaching the handler — a proxy↔app path-interpretation conflict.
 app.url_map.strict_slashes = False
+
+# API8 (second interpretation conflict) — Web Cache Deception origin sink.
+# The origin re-derives the real route from the RAW request URI: it drops the ';'
+# matrix suffix, percent-decodes (%2f -> /) and collapses '..'. So a static-looking
+# GET /static/..%2f/api/user/profile;x.css resolves to the dynamic /api/user/profile
+# handler while the nginx edge still caches it as a ".css" asset (proxy/nginx.vuln.conf).
+# Always-on, mirroring strict_slashes above — the toggle lives in the nginx cache
+# policy, not here. gunicorn exposes the raw line as RAW_URI; the werkzeug dev
+# server has no RAW_URI, so fall back to REQUEST_URI / PATH_INFO.
+class OriginPathNormalizer:
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        raw = environ.get('RAW_URI') or environ.get('REQUEST_URI') or environ.get('PATH_INFO', '')
+        path = raw.split('?', 1)[0].split(';', 1)[0]   # ';' delimiter: drop matrix params
+        if path:
+            environ['PATH_INFO'] = posixpath.normpath(unquote(path))   # decode %2f, collapse '..'
+        return self.wsgi_app(environ, start_response)
+
+app.wsgi_app = OriginPathNormalizer(app.wsgi_app)
+
 vuln = Config.VULNERABLE
 
 # Service instances (stateless — thread-safe for Flask dev server)
@@ -1321,17 +1345,26 @@ def _delete_avatar_if_local(stored: str) -> None:
 
 
 @app.route('/api/user/profile', methods=['GET'])
-@token_required
 def get_user_profile():
-    """Return the authenticated user's profile (no password hash)."""
-    current = g.current_user
-    username = current.get('sub') or current.get('username', '')
+    """Return the authenticated user's profile (no password hash). Accepts the
+    session cookie OR a Bearer token (via _decode_and_validate) — the same session
+    the portal uses — so both the /profile page fetch (Bearer from localStorage) and
+    a cookie-bearing top-level browser navigation authenticate. That cookie
+    acceptance is what makes this endpoint the reachable API8 Web Cache Deception
+    target (see proxy/nginx.vuln.conf and the OriginPathNormalizer). Correctly marked
+    no-store; the leak is the edge caching it anyway."""
+    payload = _decode_and_validate()   # Bearer header OR careotter_token cookie; None if absent/invalid
+    if not payload:
+        return jsonify({'error': 'Authorization token required'}), 401
+    username = payload.get('sub') or payload.get('username', '')
     if not db:
         return jsonify({'error': 'Database unavailable'}), 503
     profile = db.get_user_profile(username)
     if not profile:
         return jsonify({'error': 'User not found'}), 404
-    return jsonify({'profile': profile}), 200
+    resp = make_response(jsonify({'profile': profile}), 200)
+    resp.headers['Cache-Control'] = 'no-store, private'
+    return resp
 
 
 @app.route('/api/user/profile/password', methods=['POST'])
