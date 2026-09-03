@@ -28,8 +28,8 @@
          -> The device accepts without validation
 │  │  ├─ DeviceService          │─────┼──►│  TCP :9999  │  │  BLE peripheral  │ │
 │  │  │   └─ IGPClient           │     │  └─────────────┘  └────────┬─────────┘ │
-│  │  ├─ VitalsService          │     │         ▲                   │           │
-│  │  │   └─ HTTP :8081 direct   │◄────┼─────────┘                   │           │
+│  │  ├─ vitals: POST ingest    │     │         ▲                   │           │
+│  │  │   └─ device push (10s)  │◄────┼─────────┘                   │           │
     ├──► 0x02 AUTHENTICATE payload="OtterMobile2026"
     │     -> authenticated = 1 (global for the ENTIRE process)
 │  │       ├─ devices (MAC)      │     │                    │  HTTP :8081      │ │
@@ -65,7 +65,7 @@ All listen on `0.0.0.0` (all interfaces), so they are reachable over both Ethern
 
 │   or Sim     │                 │  :8081           │
 
-                                          │ HTTP /vitals ( every 10s )
+                                          │ POST /api/device/vitals ( every 10s )
 
                                    │ vitals_snapshot (frozen every 10s)
 - **`sensor_loop` thread**: reads from the I2C bus (real or simulated) every 100ms. In simulated mode it generates random values around 72 BPM / 98% SpO2.
@@ -161,8 +161,8 @@ sensor_service.py :8081/vitals  ──(urllib)──►  ble_server.py latest_vi
 │  │  ├─ JWTService (HS256)     │     │  │  (C binary) │  │  (dbus-fast)     │ │
 │  │  ├─ DeviceService          │─────┼──►│  TCP :9999  │  │  BLE peripheral  │ │
 │  │  │   └─ IGPClient           │     │  └─────────────┘  └────────┬─────────┘ │
-│  │  ├─ VitalsService          │     │         ▲                   │           │
-│  │  │   └─ HTTP :8081 direct   │◄────┼─────────┘                   │           │
+│  │  ├─ vitals: POST ingest    │     │         ▲                   │           │
+│  │  │   └─ device push (10s)  │◄────┼─────────┘                   │           │
 │  │  └─ DatabaseService (SQLite)│     │                    ┌────────▼─────────┐ │
 │  │       ├─ users (SHA-256)    │     │                    │ sensor_service.py│ │
 │  │       ├─ devices (MAC)      │     │                    │  HTTP :8081      │ │
@@ -338,9 +338,9 @@ Flask app.py ──┬──► @token_required (decoradores.py)
                │
                ├──► DeviceService ──► IGPClient ──► TCP 192.168.2.1:9999
                │
-               ├──► VitalsService ──► HTTP 192.168.2.1:8081/vitals
-               │
                └──► DatabaseService ──► SQLite (/app/data/careotter.db)
+                         ▲
+                         └── vitals written by POST /api/device/vitals (device push)
 ```
 
 ### 3.2 Authentication in the Cloud API
@@ -408,21 +408,18 @@ Body: {"username": "admin", "password": "CareOtter2026!"}
 
 See `CareOtter.md` → *Lab Scope and Phases* for the formal boundary definition.
 
-### 3.5 Vitals collector (background thread)
+### 3.5 Vitals ingestion (device push)
 
 ```python
-def _vitals_collector():
-    while True:
-        if not Config.DEVICE_IP:
-            sleep(10); continue
-        result = vitals.get_current()   # HTTP GET /vitals
-        if result['success']:
-            db.store_vitals(data, device_mac=DEVICE_MAC)
-            sleep_until(next_snapshot_boundary)  # aligns with the sensor snapshot
+@app.route('/api/device/vitals', methods=['POST'])
+def device_push_vitals():
+    # X-Device-MAC + X-Device-Hash (hardcoded factory secret)
+    data['timestamp'] = time.time()
+    db.store_vitals(data, device_mac=mac)
 ```
 
-- Runs as `daemon=True` inside the same Flask process.
-- If `DEVICE_IP` changes (after `/admin/device/register`), the collector automatically starts polling the new WiFi IP instead of Ethernet.
+- The Cloud API does not reach out to the device for vitals. The Pi's `cloud_uploader.py` reads the local sensor every 10s and POSTs to `/api/device/vitals`.
+- The cloud address is set by the administrator over BLE (`cloud_set` on 0xFF11 writes `cloud_endpoint` in `config.json`), so after provisioning the uploader pushes over WiFi to the IP the admin entered in the app, not the Ethernet default.
 
 ---
 

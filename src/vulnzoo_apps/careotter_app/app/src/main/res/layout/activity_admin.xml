@@ -649,6 +649,76 @@
                         android:fontFamily="monospace" />
                 </LinearLayout>
 
+                <!-- BLE Cloud Endpoint (provisioning cloud_set on 0xFF11) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_background"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp"
+                    android:elevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="10dp">
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BLE Cloud Endpoint" android:textSize="14sp" android:textStyle="bold" android:textColor="#0F172A" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Cloud API IP the device pushes vitals to (scan and pick a device above first)" android:textSize="12sp" android:textColor="#64748B" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="BLE"
+                            android:textSize="9sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:background="@drawable/pill_blue"
+                            android:paddingStart="7dp"
+                            android:paddingEnd="7dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp" />
+                    </LinearLayout>
+
+                    <EditText
+                        android:id="@+id/etBleCloudIp"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:hint="Cloud IP (e.g. 172.16.206.50)"
+                        android:inputType="text"
+                        android:textSize="13sp"
+                        android:textColor="#0F172A"
+                        android:background="@drawable/input_background"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:layout_marginBottom="10dp" />
+
+                    <Button
+                        android:id="@+id/btnBleCloudSet"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:text="Set Cloud IP via BLE"
+                        android:textSize="12sp"
+                        android:backgroundTint="#7C3AED"
+                        android:textColor="#FFFFFF"
+                        android:enabled="false"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/tvBleCloudStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:fontFamily="monospace" />
+                </LinearLayout>
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

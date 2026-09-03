@@ -47,6 +47,22 @@ else
     log_message "opkg not available; skipping package removal"
 fi
 
+# SMB + network-discovery daemons: baked into the shared base image and enabled
+# by default, but CareOtter (a bedside monitor) shares nothing over SMB. The
+# intended insecure file-service vector is careotter-ftp, not SMB. Two SMB stacks
+# even run at once (samba4 smbd/nmbd + kernel ksmbd), and wsdd2/avahi only exist
+# to advertise those shares. Stop and disable them for the CareOtter profile
+# (do NOT opkg remove: other labs / the base image may use them).
+for svc in samba4 ksmbd wsdd2 avahi-daemon; do
+    if [ -x /etc/init.d/$svc ]; then
+        log_message "Stopping and disabling lab-foreign service: $svc"
+        /etc/init.d/$svc stop >/dev/null 2>&1
+        /etc/init.d/$svc disable >/dev/null 2>&1
+    else
+        log_message "Service $svc not present; nothing to stop/disable"
+    fi
+done
+
 # Future cleanups go here: stop/disable/remove other lab-foreign services or
 # packages that end up in the shared image but are not used by CareOtter.
 

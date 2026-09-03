@@ -227,8 +227,8 @@ Authorization: Bearer <JWT>
 | GET | `/initialize_iot` | — | **Out of scope** — lab playability fallback only. Auto-creates default users, uses Ethernet fallback (`192.168.2.1`), and optionally pushes WiFi credentials to the Pi via IGP if `WIFI_SSID`/`WIFI_PSK` env vars are set. Not part of attack chains. |
 | GET | `/api/device/info` | 0x01 SYS_INFO | Kernel version and architecture |
 | GET | `/api/device/status` | 0x05 VERIFY_STATUS | Module diagnostics (vulnerable to format string) |
-| GET | `/api/vitals` | HTTP :8081 | Current BPM/SpO2 from sensor |
-| GET | `/api/vitals/history` | HTTP :8081 | Vitals history buffer |
+| GET | `/api/vitals` | SQLite | Latest BPM/SpO2 (pushed by the device to `/api/device/vitals`) |
+| GET | `/api/vitals/history` | SQLite | Stored vitals history |
 | POST | `/api/auth/login/patient` | — | Patient login → JWT |
 | POST | `/api/auth/login/caregiver` | — | Caregiver login → JWT |
 
@@ -322,7 +322,7 @@ curl http://localhost:5002/initialize_iot
 {"error": "System already initialized. Use /admin/device/register for signature-based registration."}
 ```
 
-**Purpose (playability only):** Ensures the lab remains playable if the attacker never discovers the BLE provisioning vector. Creates default accounts and falls back to Ethernet polling (`192.168.2.1`). This is **not a vulnerability** to be tested or reported; it exists solely to prevent a dead-end lab state.
+**Purpose (playability only):** Ensures the lab remains playable if the attacker never discovers the BLE provisioning vector. Creates default accounts and falls back to the Ethernet device address (`192.168.2.1`). This is **not a vulnerability** to be tested or reported; it exists solely to prevent a dead-end lab state.
 
 ##### Seeded Devices (3) — what `/initialize_iot` writes to SQLite
 
@@ -397,8 +397,8 @@ curl -X POST http://localhost:5002/admin/device/register \
 1. The Cloud API verifies the hardcoded factory signature.
 2. Creates (or updates) the patient and admin users in SQLite with the supplied passwords.
 3. Registers the device MAC linked to the patient.
-4. Stores `device_ip` as the vitals polling target.
-5. Switches the vitals collector from idle/Ethernet to WiFi polling.
+4. Stores `device_ip` (the device's WiFi address) for the admin/IGP surface.
+5. From here the device pushes its vitals over WiFi to `POST /api/device/vitals`.
 
 **Vulnerability:** The signature is hardcoded and identical across all devices. An attacker who intercepts this POST (by owning the `cloud_url` via BLE `cloud_set`) captures the signature and can replay it to register a rogue device or overwrite the real admin credentials.
 
