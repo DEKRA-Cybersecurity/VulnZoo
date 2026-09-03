@@ -263,15 +263,6 @@ def _refresh_device_ip_from_sensor(host: str = None, attempts: int = 8, delay: f
     logger.warning(f"[set_wifi] wlan0 IP did not converge after {attempts} polls ({attempts*delay:.0f}s)")
     return None
 
-# ── Shared vitals cache (PUSH architecture) ──────────────────────────────────
-# In the new push model the Pi sends vitals to POST /api/device/vitals.
-# The latest reading is read directly from SQLite via db.get_latest_vitals().
-# This dict is kept only for backward compatibility of any code that might
-# reference it; it is no longer populated by a background collector.
-_latest_vitals: dict = {}
-_latest_vitals_lock = threading.Lock()
-
-
 # ── Per-device IGP resolution helper ──────────────────────────────────────────
 
 def _get_device_for_current_user() -> tuple[str | None, int | None, dict | None]:
@@ -1883,16 +1874,6 @@ def device_push_vitals():
     global DEVICE_MAC
     DEVICE_MAC = mac
 
-    # Also update in-memory cache for any legacy consumers
-    with _latest_vitals_lock:
-        _latest_vitals.update({
-            'bpm': data.get('bpm'),
-            'spo2': data.get('spo2'),
-            'timestamp': data['timestamp'],
-            'source': data.get('source', 'unknown'),
-            'device_mac': mac,
-        })
-
     return jsonify({'status': 'ok', 'device_mac': mac}), 200
 
 
@@ -2453,8 +2434,8 @@ def device_register():
     """Receive device registration from the bedside monitor after BLE provisioning.
 
     The Pi sends its factory signature, MAC, configured patient/admin accounts,
-    and its own WiFi IP. On success the Cloud API learns the device IP and
-    starts polling vitals over WiFi instead of Ethernet.
+    and its own WiFi IP. On success the Cloud API learns the device IP, and the
+    device pushes its vitals over WiFi via POST /api/device/vitals.
 
     VULNERABILITY: signature is hardcoded and identical across all devices.
     An attacker who intercepts this POST (e.g. by owning the cloud URL via
@@ -2646,9 +2627,8 @@ def init_app() -> None:
         return
     _app_initialized = True
 
-    # NOTE: Background collectors (_vitals_collector, _alerts_collector) have been
-    # removed. In the push architecture the Pi sends data via POST /api/device/vitals
-    # and POST /api/device/alerts, driven by cloud_uploader.py on the device.
+    # Vitals and alerts arrive via POST /api/device/vitals and
+    # POST /api/device/alerts, pushed by cloud_uploader.py on the device.
 
     # ── Auto-initialize in vulnerable lab mode ──────────────────────────────────
     # When VULNERABLE=1 and the database has no users, automatically run

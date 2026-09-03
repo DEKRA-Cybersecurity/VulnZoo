@@ -142,13 +142,6 @@ class IGPClient:
         payload = f"{ssid}|{psk}".encode('utf-8')
         return self.send_command(0x06, payload)
 
-    def get_vitals(self) -> bytes:
-        """
-        0x07 GET_VITALS — current BPM/SpO2 from the sensor service (no auth).
-        The device proxies the sensor HTTP response at :8081/vitals.
-        """
-        return self.send_command(0x07)
-
     def set_threshold(self, tlv_payload: bytes) -> bytes:
         """
         0x08 SET_THRESHOLD — clinical alert thresholds in TLV format.

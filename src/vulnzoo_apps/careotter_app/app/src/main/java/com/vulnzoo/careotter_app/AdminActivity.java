@@ -73,6 +73,9 @@ public class AdminActivity extends AppCompatActivity {
     private TextView     tvBleWifiStatus;
     private TextView     tvBleSelected;
     private LinearLayout llBleDevices;
+    private EditText     etBleCloudIp;
+    private Button       btnBleCloudSet;
+    private TextView     tvBleCloudStatus;
     private String       selectedBleAddress = null;
     private String       selectedBleName    = null;
 
@@ -150,6 +153,9 @@ public class AdminActivity extends AppCompatActivity {
         tvBleWifiStatus = findViewById(R.id.tvBleWifiStatus);
         tvBleSelected   = findViewById(R.id.tvBleSelected);
         llBleDevices    = findViewById(R.id.llBleDevices);
+        etBleCloudIp    = findViewById(R.id.etBleCloudIp);
+        btnBleCloudSet  = findViewById(R.id.btnBleCloudSet);
+        tvBleCloudStatus = findViewById(R.id.tvBleCloudStatus);
         wifiProvisioner = new BleWifiProvisioner(this);
 
         // Pre-request BLE permissions in onCreate (same as MainActivity does
@@ -264,6 +270,24 @@ public class AdminActivity extends AppCompatActivity {
                 return;
             }
             startBleProvisioning(selectedBleAddress, ssid, psk);
+        });
+
+        btnBleCloudSet.setOnClickListener(v -> {
+            if (selectedBleAddress == null) {
+                Toast.makeText(this, "Pick a device from the scan list first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String raw = etBleCloudIp.getText().toString().trim();
+            if (raw.isEmpty()) {
+                Toast.makeText(this, "Cloud IP is required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            // Build the full endpoint. Accept a bare IP, ip:port, or a full URL.
+            String url;
+            if (raw.startsWith("http://") || raw.startsWith("https://")) url = raw;
+            else if (raw.contains(":"))                                  url = "http://" + raw;
+            else                                                          url = "http://" + raw + ":5002";
+            startBleCloudProvisioning(selectedBleAddress, url);
         });
 
         btnUnderflow.setOnClickListener(v ->
@@ -382,8 +406,33 @@ public class AdminActivity extends AppCompatActivity {
                 btnBleScan.setEnabled(true);
                 btnBleStopScan.setEnabled(false);
                 btnBleWifiSet.setEnabled(selectedBleAddress != null);
+                btnBleCloudSet.setEnabled(selectedBleAddress != null);
                 Toast.makeText(AdminActivity.this,
                         success ? "WiFi set via BLE" : "BLE provisioning failed: " + message,
+                        Toast.LENGTH_LONG).show();
+            });
+        }
+    };
+
+    /** BLE callback for the cloud_set flow — routes status to the Cloud card. */
+    private final BleWifiProvisioner.Callback bleCloudCallback = new BleWifiProvisioner.Callback() {
+        @Override public void onLog(String message) {
+            uiHandler.post(() -> appendOutput(message));
+        }
+        @Override public void onDeviceFound(String name, String address, int rssi) { /* no scan here */ }
+        @Override public void onScanStopped(String reason) { /* no scan here */ }
+        @Override public void onStatus(String message) {
+            uiHandler.post(() -> tvBleCloudStatus.setText(message));
+        }
+        @Override public void onComplete(boolean success, String message) {
+            uiHandler.post(() -> {
+                tvBleCloudStatus.setText(message);
+                appendOutput("[BLE-Cloud] " + (success ? "OK" : "FAIL") + " — " + message);
+                btnBleScan.setEnabled(true);
+                btnBleWifiSet.setEnabled(selectedBleAddress != null);
+                btnBleCloudSet.setEnabled(selectedBleAddress != null);
+                Toast.makeText(AdminActivity.this,
+                        success ? "Cloud IP set via BLE" : "Cloud provisioning failed: " + message,
                         Toast.LENGTH_LONG).show();
             });
         }
@@ -396,6 +445,7 @@ public class AdminActivity extends AppCompatActivity {
         tvBleSelected.setText("No device selected");
         tvBleSelected.setTextColor(0xFF94A3B8);
         btnBleWifiSet.setEnabled(false);
+        btnBleCloudSet.setEnabled(false);
         btnBleScan.setEnabled(false);
         btnBleStopScan.setEnabled(true);
         tvBleWifiStatus.setText("Scanning… tap a device to pick it");
@@ -407,8 +457,18 @@ public class AdminActivity extends AppCompatActivity {
         appendOutput("[BLE] === Provisioning " + address + " ===");
         tvBleWifiStatus.setText("Connecting to " + address + "…");
         btnBleWifiSet.setEnabled(false);
+        btnBleCloudSet.setEnabled(false);
         btnBleScan.setEnabled(false);
         wifiProvisioner.provision(address, ssid, psk, bleCallback);
+    }
+
+    private void startBleCloudProvisioning(String address, String cloudUrl) {
+        appendOutput("[BLE] === Cloud endpoint " + cloudUrl + " -> " + address + " ===");
+        tvBleCloudStatus.setText("Connecting to " + address + "…");
+        btnBleWifiSet.setEnabled(false);
+        btnBleCloudSet.setEnabled(false);
+        btnBleScan.setEnabled(false);
+        wifiProvisioner.provisionCloud(address, cloudUrl, bleCloudCallback);
     }
 
     /** Add a tappable row to the device list. Each tap selects that MAC. */
@@ -432,6 +492,7 @@ public class AdminActivity extends AppCompatActivity {
             tvBleSelected.setText("Selected: " + label);
             tvBleSelected.setTextColor(0xFF16A34A);
             btnBleWifiSet.setEnabled(true);
+            btnBleCloudSet.setEnabled(true);
             appendOutput("[BLE] Selected " + address);
         });
         llBleDevices.addView(row);

@@ -588,7 +588,18 @@ The `Callback` interface emits five distinct events:
 │ [        Set WiFi via BLE         ]         │  ← disabled until a device picked
 │ Scanning… tap a device to pick it           │  ← tvBleWifiStatus
 └─────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│ BLE Cloud Endpoint                  [BLE]   │
+│ Cloud API IP the device pushes vitals to    │
+│                                             │
+│ [ Cloud IP (e.g. 172.16.206.50)        ]    │  ← etBleCloudIp
+│ [      Set Cloud IP via BLE       ]         │  ← disabled until a device picked
+│                                             │  ← tvBleCloudStatus
+└─────────────────────────────────────────────┘
 ```
+
+The **BLE Cloud Endpoint** card reuses the same scanned/selected device. The administrator enters the Cloud API IP (a bare IP becomes `http://<ip>:5002`, or an `ip:port` / full URL is respected) and taps **Set Cloud IP via BLE**. The app runs the same PIN auth on 0xFF12 and writes `{"cmd":"cloud_set","url":"http://<ip>:5002"}` to 0xFF11. On the device, `cloud_set` writes `cloud_endpoint` into `/opt/medical-sensor/config.json`, so the vitals uploader pushes to the admin-provided IP over WiFi. No IP report is expected back (unlike `wifi_set`), so the flow completes on the config-write ACK.
 
 #### Hardening Applied to the BLE State Machine
 
@@ -644,11 +655,28 @@ Expected sequence on a successful provisioning:
 [BLE] Services discovered status=0
 [BLE] PIN write enqueued=true
 [BLE] onCharacteristicWrite 0000ff12-… status=0
+[BLE] CCCD write enqueued=true
+[BLE] onDescriptorWrite chr=0000ff11-… status=0
 [BLE] Writing WiFi config: {"cmd":"wifi_set","ssid":"…","psk":"***"}
 [BLE] WiFi write enqueued=true
 [BLE] onCharacteristicWrite 0000ff11-… status=0
-[BLE-WiFi] OK — WiFi configured: SSID=…
+[BLE] wifi_set result: status=ok ip=192.168.1.57
+[BLE-WiFi] OK — WiFi configured: SSID=…, IP=192.168.1.57
+```
+
+On a failed join the last two lines instead read, e.g.:
+
+```
+[BLE] wifi_set result: status=error ip=0.0.0.0 reason=could not authenticate to 'HomeNet' (wrong password or encryption mismatch)
+[BLE-WiFi] FAIL — WiFi failed: could not authenticate to 'HomeNet' (wrong password or encryption mismatch)
 ```
 
 The PSK is masked as `***` in the log line; the actual write to GATT
 0xFF11 still carries the plaintext PSK (P5 — see `IoT:I7`).
+
+After the config write, the app subscribes to `0xFF11` notifications and the device replies with the wifi_set outcome. Association plus DHCP after `wifi reload` routinely takes several seconds, so the device polls phy0-sta0 for up to ~15s before deciding, then notifies:
+
+- Success: `{"result":"wifi_set","status":"ok","ip":"172.16.206.208"}` — the app shows `WiFi configured: SSID=…, IP=…`.
+- Failure: `{"result":"wifi_set","status":"error","reason":"…"}` — the app surfaces the failure through `onComplete(false, …)` so the administrator sees WHY. The device classifies the reason best-effort: `uci commit`/`wifi reload` error, network not found (SSID out of range or wrong), authentication failed (wrong password), or associated but no DHCP lease.
+
+The app waits `IP_REPORT_TIMEOUT_MS` (20s, longer than the device poll). Because the device now always reports `ok` or `error`, a timeout means no result arrived (BLE link lost or `ble_server` not responding), which the app reports as a failure with `WiFi state unknown`, not a silent success.

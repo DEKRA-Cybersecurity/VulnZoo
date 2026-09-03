@@ -56,7 +56,7 @@ def _sensor_http_get(url: str, timeout: float = 2.0):
 # Cloud API address embedded in BLE advertising ManufacturerData (binary, 10 bytes):
 #   [0:4]  Cloud API IPv4  big-endian  (e.g. 192.168.1.50)
 #   [4:6]  Cloud API port  big-endian  (e.g. 5002)
-#   [6:10] Device WiFi IP  big-endian  (wlan0, read at runtime)
+#   [6:10] Device WiFi IP  big-endian  (phy0-sta0, read at runtime)
 #
 # VULNERABILITY: passive BLE scan (no pairing, no auth) reveals both the
 # cloud management endpoint and the device's WiFi address — information disclosure.
@@ -106,17 +106,22 @@ def _fetch_api_wifi_ip(api_base_url: str) -> tuple:
     return "0.0.0.0", parsed.port or 5002
 
 
-def _get_wlan0_ip() -> str:
-    """Return the current IPv4 address of wlan0, or '0.0.0.0' on failure."""
+def _get_wifi_ip() -> str:
+    """Return the IPv4 of the WiFi station interface, or '0.0.0.0' on failure.
+    OpenWRT 24.10 (mac80211) names the client interface phy0-sta0 after joining
+    a network; wlan0 is kept as a fallback for older / AP-mode setups."""
     SIOCGIFADDR = 0x8915
-    iface = b"wlan0\x00" * 1
-    try:
+    for name in ("phy0-sta0", "wlan0"):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        res = fcntl.ioctl(s.fileno(), SIOCGIFADDR, iface.ljust(40, b"\x00"))
-        s.close()
-        return socket.inet_ntoa(res[20:24])
-    except Exception:
-        return os.getenv("DEVICE_WIFI_IP", "0.0.0.0")
+        try:
+            res = fcntl.ioctl(s.fileno(), SIOCGIFADDR,
+                              (name.encode() + b"\x00").ljust(40, b"\x00"))
+            return socket.inet_ntoa(res[20:24])
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return os.getenv("DEVICE_WIFI_IP", "0.0.0.0")
 
 
 def _build_mfr_payload(api_url: str) -> bytes:
@@ -125,7 +130,7 @@ def _build_mfr_payload(api_url: str) -> bytes:
     Layout (big-endian):
         [0:4]  Cloud API WiFi IPv4 (fetched from /api/health over Ethernet)
         [4:6]  Cloud API port
-        [6:10] Device wlan0 IPv4
+        [6:10] Device phy0-sta0 IPv4
 
     If api_url is empty (device not yet provisioned), returns all zeros
     so the Android app knows no Cloud backend is configured yet.
@@ -134,7 +139,7 @@ def _build_mfr_payload(api_url: str) -> bytes:
         api_wifi_ip, api_port = _fetch_api_wifi_ip(api_url)
     else:
         api_wifi_ip, api_port = "0.0.0.0", 0
-    dev_ip = _get_wlan0_ip()
+    dev_ip = _get_wifi_ip()
     try:
         api_ip_bytes = socket.inet_aton(api_wifi_ip)
     except OSError:
@@ -398,7 +403,7 @@ async def _send_registration_to_cloud():
             "username": _provisioning_state.get("admin_username", ""),
             "password": _provisioning_state.get("admin_password", ""),
         },
-        "device_ip": _get_wlan0_ip(),
+        "device_ip": _get_wifi_ip(),
     }
 
     register_url = f"{url.rstrip('/')}/admin/device/register"
@@ -454,6 +459,71 @@ def _notify_characteristic(path: str, value_bytes: bytes):
         _system_bus.send(msg)
     except Exception as e:
         print(f"[BLE] _notify_characteristic error: {e}")
+
+
+def _set_config_cloud_endpoint(url: str):
+    """Write the vitals uploader's cloud_endpoint (in config.json) to the URL the
+    administrator provisioned over BLE (cloud_set). The uploader re-reads config
+    each cycle, so the next push goes to this address over WiFi. No-op on empty."""
+    if not url:
+        return
+    try:
+        with open(SENSOR_CONFIG_PATH, "r") as f:
+            cfg = json.load(f)
+        old = cfg.get("cloud_endpoint", "")
+        cfg["cloud_endpoint"] = url
+        with open(SENSOR_CONFIG_PATH, "w") as f:
+            json.dump(cfg, f, indent=4)
+        print(f"[BLE] cloud_endpoint set from provisioning: {old} -> {url}")
+    except Exception as e:
+        print(f"[BLE] Failed to set cloud_endpoint: {e}")
+
+
+def _diagnose_wifi_failure(ssid: str) -> str:
+    """Best-effort reason why phy0-sta0 got no DHCP lease after a wifi_set, so the
+    provisioner app can tell the administrator WHY the WiFi configuration failed."""
+    iface = "phy0-sta0"
+    link = os.popen(f"iw dev {iface} link 2>/dev/null").read()
+    if "Connected to" in link:
+        return "associated to the network but no DHCP lease (no IP offered)"
+    # Not associated: is the target SSID even in range?
+    scan = os.popen(f"iwinfo {iface} scan 2>/dev/null").read()
+    if ssid and f'ESSID: "{ssid}"' in scan:
+        return f"could not authenticate to '{ssid}' (wrong password or encryption mismatch)"
+    if ssid:
+        return f"network '{ssid}' not found (out of range or wrong SSID)"
+    return "no SSID was provided"
+
+
+def _emit_wifi_result(status: str, ip: str = "0.0.0.0", reason: str = ""):
+    """Notify the provisioner app of the wifi_set outcome on the 0xFF11 char.
+    status is 'ok' or 'error'; 'reason' carries the human-readable failure cause."""
+    payload = {"result": "wifi_set", "status": status, "ip": ip}
+    if reason:
+        payload["reason"] = reason
+    _notify_characteristic(APP_PATH + "/service5/char0", json.dumps(payload).encode())
+    print(f"[BLE] wifi_set result: status={status} ip={ip}"
+          + (f" reason='{reason}'" if reason else ""))
+
+
+async def _notify_wifi_result(ssid: str, apply_failed: bool = False):
+    """After a wifi_set, report the outcome back to the provisioner app: success
+    with the leased IP, or an error with a reason. Association + DHCP take several
+    seconds after 'wifi reload', so poll phy0-sta0 before deciding it failed."""
+    if apply_failed:
+        _emit_wifi_result("error",
+                          reason="failed to apply WiFi settings (uci commit / wifi reload error)")
+        return
+    ip = "0.0.0.0"
+    for _ in range(15):          # up to ~15s: 1s association warm-up + DHCP
+        await asyncio.sleep(1)
+        ip = _get_wifi_ip()
+        if ip != "0.0.0.0":
+            break
+    if ip != "0.0.0.0":
+        _emit_wifi_result("ok", ip=ip)
+    else:
+        _emit_wifi_result("error", reason=_diagnose_wifi_failure(ssid))
 
 
 def _refresh_vitals_cache():
@@ -1012,11 +1082,18 @@ class ProvisioningConfigChrc(ServiceInterface):
                 f"uci set wireless.@wifi-iface[0].key='{psk}' && "
                 f"uci commit wireless && wifi reload"
             )
-            os.system(shell_cmd)
+            rc = os.system(shell_cmd)
             _provisioning_state["wifi_ssid"] = ssid
             _provisioning_state["wifi_psk"] = psk
             _save_provisioning_state()
-            print(f"[BLE] Provisioning WiFi configured: {ssid}")
+            apply_failed = os.waitstatus_to_exitcode(rc) != 0
+            if apply_failed:
+                print(f"[BLE] Provisioning WiFi apply FAILED (rc={rc}) for {ssid}")
+            else:
+                print(f"[BLE] Provisioning WiFi configured: {ssid}")
+            # Report the outcome (leased IP on success, or a failure reason) back to
+            # the provisioner app as a 0xFF11 notification (deferred: DHCP needs a moment).
+            asyncio.create_task(_notify_wifi_result(ssid, apply_failed))
 
         elif action == "wifi_get":
             # Nothing to do — ReadValue already leaks everything
@@ -1027,6 +1104,9 @@ class ProvisioningConfigChrc(ServiceInterface):
             # VULNERABILITY P6: no URL validation → SSRF potential
             _provisioning_state["cloud_url"] = url
             _save_provisioning_state()
+            # Point the vitals uploader at the admin-provisioned cloud address so it
+            # pushes over WiFi to the IP the administrator set (not the LAN default).
+            _set_config_cloud_endpoint(url)
             print(f"[BLE] Provisioning Cloud URL configured: {url}")
             # Trigger async registration so the cloud learns our WiFi IP and accounts
             asyncio.create_task(_send_registration_to_cloud())

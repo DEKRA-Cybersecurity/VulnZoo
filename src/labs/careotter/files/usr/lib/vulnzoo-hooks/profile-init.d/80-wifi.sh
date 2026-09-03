@@ -31,5 +31,12 @@ uci commit wireless
 uci commit network
 uci commit firewall
 
+# Unload foreign out-of-tree Realtek USB-WiFi drivers before bringing WiFi up.
+# The shared image bundles them but no Realtek device is attached here; their
+# netdevice-rename notifier (rtl8812au rtw_proc.c:1225) oopses when the onboard
+# brcmfmac is renamed wlan0 -> phy0-sta0 by 'wifi up', and with panic_on_oops=1
+# that panics/reboots the board. rmmod is a no-op if a driver is in use or absent.
+for _m in rtl8812au rtl8192cu rtl8xxxu; do rmmod "$_m" 2>/dev/null; done
+
 wifi down
 wifi up

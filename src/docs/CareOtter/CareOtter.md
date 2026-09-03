@@ -289,7 +289,7 @@ The **Factory Provisioning Service** (`0xFF10`) is a secondary GATT channel **no
 > 3. Patient account (`patient_set`)
 > 4. Administrator account (`admin_set`)
 >
-> The monitor then sends its **factory signature** (`9C0C306DEF2A`) to the Cloud API via `POST /admin/device/register`, along with the configured accounts and its own WiFi IP. The Cloud API verifies the signature, creates the users in its database, and starts polling vitals over **WiFi** (not Ethernet). Once configured, the patient takes the monitor home. The provisioning channel, however, remains accessible indefinitely.
+> The monitor then sends its **factory signature** (`9C0C306DEF2A`) to the Cloud API via `POST /admin/device/register`, along with the configured accounts and its own WiFi IP. The Cloud API verifies the signature and creates the users in its database, and from then on the monitor pushes its vitals to the Cloud API over **WiFi** (not Ethernet) via `POST /api/device/vitals`. Once configured, the patient takes the monitor home. The provisioning channel, however, remains accessible indefinitely.
 
 **GATT Service:**
 

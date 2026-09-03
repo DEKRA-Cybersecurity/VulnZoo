@@ -82,7 +82,7 @@
 | `/api/auth/login` | POST | — | No | Login with username+password → JWT |
 | `/api/device/status` | GET | 0x05 VERIFY_STATUS | No | Module diagnostics (format string proxy) |
 | `/api/vitals` | GET | — | No | Latest BPM/SpO2 from SQLite (pushed by device) |
-| `/api/vitals/history` | GET | — | No | SQLite history (previously polled from device buffer) |
+| `/api/vitals/history` | GET | — | No | SQLite history |
 | `/api/vitals/db/history` | GET | — | No | SQLite history (device_mac, patient filter) |
 | `/api/vitals/db/stats` | GET | — | No | Aggregated stats from SQLite |
 | `/api/network` | GET | 0x03 GET_NETWORK | JWT | WiFi config (exposes PSK in vuln=1) |
@@ -335,7 +335,6 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | CareOtter API | `:5002` | Flask gateway HTTP→IGP |
 | IGP Client | `core/igp_client.py` | Binary protocol implementation |
 | Device Service | `services/device_service.py` | Business logic layer |
-| Vitals Service | `services/vitals_service.py` | Medical sensor HTTP client |
 | Database Service | `services/database_service.py` | SQLite persistence (vitals, users, devices) |
 
 ## Vulnerability Chains
@@ -421,7 +420,7 @@ See [`docs/CareOtter/IoT/CareOtter_IoT.md`](../../docs/CareOtter/IoT/CareOtter_I
 | API3:2023 | Broken Object Property Level Authorization | `/api/network` | `raw` field exposes WiFi config with PSK |
 | API5:2023 | Broken Function Level Authorization | `/api/services/restart` | JWT only, no role/ownership checks |
 | API6:2023 | Unrestricted Access to Business Flows | `/api/config/preferences` | No rate limiting on TLV config writes |
-| API7:2023 | Server Side Request Forgery | *(legacy — `/api/vitals` no longer proxies)* |
+| API7:2023 | Server Side Request Forgery | `/api/device/diagnostics` | Naive host parser fooled by embedded credentials (`http://<own-device-ip>@127.0.0.1:5002/…`) reaches a loopback-only internal admin endpoint (see `DiagnosticsService`) |
 | API8:2023 | Security Misconfiguration | Global | Debug mode, verbose error messages, Werkzeug dev server (mitigated by Gunicorn in container) |
 | API9:2023 | Improper Inventory Management | `/api/auth/password-reset/verify` (beta vhost `beta.api.careotter.lab`) | The secure host `api.careotter.lab` has BOTH an edge rate-limit and an app-level per-account attempt cap. The forgotten `beta.api.careotter.lab` runs the same API with NEITHER (precarious), so the 6-digit reset code is brute-forceable by pivoting to it → takeover. Secure mode decommissions beta (404) |
 
