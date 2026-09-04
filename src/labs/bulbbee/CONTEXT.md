@@ -2,7 +2,7 @@
 
 **Stage Purpose**: Deploy a consumer WiFi smart light (WS2812 LED ring on a Raspberry Pi 3B+) as the VulnZoo reference for a **CRA default-category** product with digital elements, one that falls outside every Annex III / Annex IV vertical and therefore inherits only the baseline essential requirements and the self-assessment (Module A) conformity route.
 
-> **Status**: lab in initial bring-up. This contract describes the *planned* BulbBee product. The development backlog is [`../../../stages/TARGET_BULBBEE.md`](../../../stages/TARGET_BULBBEE.md), which drives the MWP pipeline that fills in the artifacts below. Nothing under `files/` is populated until stage `04_integrate` promotes it.
+> **Status**: implemented. The functional bring-up (BULB-A0/A1) and the device findings BULB-01..07 are in `files/` and verified offline (over-the-air / on-Pi steps blocked in the authoring environment), the cloud (BULB-CLD) and CRA dossier (BULB-CRA) and secure toggle (BULB-SEC) are DONE, and the Android app (BULB-APP) source is in `../../vulnzoo_apps/bulbbee_app/`. Development backlog and per-target status: [`../../../stages/TARGET_BULBBEE.md`](../../../stages/TARGET_BULBBEE.md). Per-finding docs: [`../../docs/BulbBee/Vulns/`](../../docs/BulbBee/).
 
 ## Why this lab
 

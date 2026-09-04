@@ -1,0 +1,25 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "metadata": {
+    "timestamp": "2026-09-04T00:00:00Z",
+    "component": {
+      "type": "device",
+      "name": "BulbBee",
+      "version": "BB-100",
+      "description": "Consumer WS2812 smart light (VulnZoo, intentionally vulnerable). Generated from the image package list, confirm versions on the built image before pinning."
+    },
+    "properties": [
+      {"name": "cra:category", "value": "default"},
+      {"name": "cra:conformity", "value": "Module A (internal control), self-declared"}
+    ]
+  },
+  "components": [
+    {"type": "operating-system", "name": "openwrt", "version": "24.10", "description": "base platform"},
+    {"type": "application", "name": "busybox", "version": "1.36.x", "description": "userland (confirm on image)"},
+    {"type": "library", "name": "python3", "version": "3.11+", "description": "runtime for the lighting/BLE services"},
+    {"type": "library", "name": "python3-dbus-fast", "version": "declared", "description": "BLE GATT over BlueZ D-Bus (CONFIG_PACKAGE_python3-dbus-fast=y), confirm version on image"},
+    {"type": "application", "name": "bluez", "version": "declared", "description": "BLE stack (bluetoothd)"},
+    {"type": "firmware", "name": "bulbbee-firmware", "version": "1.0", "description": "the lighting_service, ble_light, update_agent components (this project)"}
+  ]
+}

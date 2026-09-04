@@ -1315,3 +1315,283 @@ Needs a Pi with a BLE adapter and a BlueZ system bus, so most criteria will be r
 ## Stage cleanup
 
 Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-01 - Unauthenticated BLE onboarding (2026-09-04)
+
+First BulbBee finding (Wave 1), the onboarding weakness on the BULB-A1 BLE channel. Full pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate (this stage)`. Kept atomic: only the weak/missing authentication, command injection excluded, plaintext-PSK read referenced as the BULB-05 chain. Spec: `stages/01_spec/output/bulbbee-01-spec.md`.
+
+## Promoted code (Stage 02 -> src/, all edits)
+
+| Artifact | Change |
+|----------|--------|
+| `src/labs/bulbbee/files/opt/bulbbee/ble_light.py` | added Provisioning service `0xFF40` + Auth `0xFF41` + Config `0xFF42`, `_prov_auth`/`_prov_apply`/`_prov_read`/`_wifi_set_argv` pure helpers, main() wiring. Hardcoded PIN, no lockout, no bonding, `wifi_set` via clean uci argv (no shell) |
+| `src/labs/bulbbee/files/opt/bulbbee/config.json` | `+prov_pin: "8080"` |
+| `src/labs/bulbbee/files/etc/config/bulbbee` | `+option prov_pin '8080'` |
+
+No new files, no exec-bit changes.
+
+## Promoted doc (Stage 03 -> src/)
+
+| Artifact | Destination |
+|----------|-------------|
+| Finding doc | `src/docs/BulbBee/Vulns/IoT/BULB-01-unauthenticated-ble-onboarding.md` |
+
+## Index update (the promotion-contract badge)
+
+`src/docs/BulbBee/Vulns/README.md`: BULB-01 row `PENDING -> IN PROGRESS`, linked to the finding doc, CWE column expanded to CWE-798/1392/307/306, the EN 303 645 5.1 coverage row flipped to IN PROGRESS, and the legend "every finding row is PENDING" line corrected (BULB-01 IN PROGRESS, the rest PENDING). Output copy re-synced. 05_verify earns DONE.
+
+## Repackaged overlay
+
+`bulbbee.tar.gz` rebuilt from `src/labs/bulbbee/files`. Verified: no `.pyc`, `ble_light.py` + `etc/config/bulbbee` present, `py_compile` from `src` OK.
+
+## Verification (authoring env)
+
+- `py_compile` on the promoted `ble_light.py` -> OK.
+- Offline self-check (from 02): the provisioning logic is factored into pure functions, so it passes with or without `dbus_fast` (this host has it). Asserted: PIN-gated read, 20 wrong PINs no lockout, hardcoded PIN authenticates, `wifi_set` stores the attacker SSID/PSK, PSK readable in cleartext.
+
+## Remaining before BULB-01 is DONE (05_verify)
+
+Needs a real BLE central (a second radio / the app / the Pi), recorded blocked otherwise:
+1. Connect (no bonding), discover `0xFF40`, unlock with `8080` (and on a second unit).
+2. 20 wrong PINs then correct still unlocks (no lockout).
+3. `wifi_set` reconfigures the station WiFi (uci / logread), read `0xFF42` returns the PSK in cleartext.
+
+## Deferred
+
+Open-AP fallback (documented, not coded) and the secure-mode branch (BULB-SEC).
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-02 - Unauthenticated control surface (2026-09-04)
+
+Wave-1 finding, doc-only. The unauthenticated control/read surfaces already ship (HTTP `:8082` from BULB-A0, BLE Control `0xFF31` / State `0xFF32` no-bonding from BULB-A1), so `02_implement` was N/A and there is no overlay or tarball change. Pipeline `01_spec -> 03_document -> 04_integrate`. Kept atomic: the missing authentication only, the disclosed secrets are BULB-05, the cleartext transport is BULB-03, the hardcoded PIN is BULB-01. Spec: `stages/01_spec/output/bulbbee-02-spec.md`.
+
+## Promoted doc (Stage 03 -> src/)
+
+| Artifact | Destination |
+|----------|-------------|
+| Finding doc | `src/docs/BulbBee/Vulns/IoT/BULB-02-unauthenticated-control-surface.md` |
+
+## Index update
+
+`src/docs/BulbBee/Vulns/README.md`: BULB-02 row `PENDING -> IN PROGRESS`, linked to the doc, CWE column `CWE-306 / CWE-284`, the EN 303 645 5.6 coverage row flipped to IN PROGRESS (BULB-02 done, BULB-06 still pending), and the legend line updated (BULB-01 and BULB-02 IN PROGRESS). Output copy re-synced.
+
+## No overlay change
+
+`02_implement` N/A, so `src/labs/bulbbee/files` and `bulbbee.tar.gz` are unchanged, no rebuild.
+
+## Verification (authoring env)
+
+- The HTTP no-auth control (`/set`, `/scene`, `/config`) is reachable on the promoted `:8082` service (exercised in the BULB-A0 and BULB-A1 checks). The BLE no-bonding property is by the plain `ControlChrc` flags. Full over-the-air repro is the 05_verify step, blocked without a real central.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-03 - Cleartext, replayable control channel (2026-09-04)
+
+Wave-1 finding, doc-only (`02_implement` N/A, the cleartext BLE and HTTP surfaces already ship, the MQTT/cloud half is BULB-CLD). Pipeline `01_spec -> 03_document -> 04_integrate`. Atomic: transport confidentiality + replay only. Spec: `stages/01_spec/output/bulbbee-03-spec.md`.
+
+## Promoted doc + index
+
+- `src/docs/BulbBee/Vulns/IoT/BULB-03-cleartext-replayable-channel.md`.
+- `Vulns/README.md`: BULB-03 row `PENDING -> IN PROGRESS` (linked), EN 303 645 5.5 coverage flipped, legend updated (BULB-01/02/03 IN PROGRESS). Output re-synced. No overlay/tar change.
+
+## Verification (authoring env)
+
+HTTP capture-replay reproduced offline against the promoted `:8082`: a captured raw `POST /scene` replayed twice returns `200` and re-applies each time (no nonce / anti-replay). BLE cleartext confirmed by the plain `ControlChrc` flags. Over-the-air BLE sniff/replay blocked without a radio.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-04 - Unsigned OTA update (2026-09-04)
+
+Wave-1 finding, code. Pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate`. Full unauthenticated-RCE path (chains BULB-02). Spec: `stages/01_spec/output/bulbbee-04-spec.md`.
+
+## Promoted code (Stage 02 -> src/)
+
+| Artifact | Change |
+|----------|--------|
+| `src/labs/bulbbee/files/opt/bulbbee/update_agent.py` (new, 0644) | `apply_update(url)` downloads and `sh`-runs the bytes with no signature/origin/version check |
+| `src/labs/bulbbee/files/opt/bulbbee/lighting_service.py` (edited) | unauthenticated `POST /update {"url"}` trigger calling `apply_update` |
+
+## Promoted doc + index
+
+- `src/docs/BulbBee/Vulns/IoT/BULB-04-unsigned-ota-update.md`.
+- `Vulns/README.md`: BULB-04 row `PENDING -> IN PROGRESS` (linked), EN 303 645 5.3 + 5.7 coverage flipped, legend updated (BULB-01..04 IN PROGRESS). Output re-synced.
+
+## Repackaged overlay
+
+`bulbbee.tar.gz` rebuilt, `update_agent.py` present, no `.pyc`. `py_compile` from `src` OK.
+
+## Verification (authoring env)
+
+Reproduced offline end-to-end: a local HTTP server served an unsigned `#!/bin/sh` payload, an unauthenticated `POST /update` to the promoted `:8082` returned `applied` and the payload executed (marker written). `update_agent.py --selfcheck` also fetches+executes an unsigned payload. On the Pi it runs as root, that on-Pi run is the only remainder for DONE (no BLE/hardware needed).
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-05 - Secrets in world-readable plaintext config (2026-09-04)
+
+Wave-1 finding, doc-only (`02_implement` N/A, the secrets are already stored in cleartext by BULB-A0/BULB-01). Pipeline `01_spec -> 03_document -> 04_integrate`. Spec: `stages/01_spec/output/bulbbee-05-spec.md`.
+
+## Promoted doc + index
+
+- `src/docs/BulbBee/Vulns/IoT/BULB-05-plaintext-secret-storage.md`.
+- `Vulns/README.md`: BULB-05 row `PENDING -> IN PROGRESS` (linked), EN 303 645 5.4 coverage flipped, legend updated (BULB-01..05 IN PROGRESS). Output re-synced. No overlay/tar change.
+
+## Verification (authoring env)
+
+Offline against the promoted overlay: after `wifi_set`/`pair_set`, `provisioning.json` holds `wifi_psk` and `pair_token` in cleartext with mode `0664` (world-readable, no restrictive chmod), and the BLE Config read returns the PSK in cleartext. Chains BULB-02 (unauthenticated read) and BULB-01 (onboarding writes the secrets).
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-06 - Insecure default settings / exposed debug surface (2026-09-04)
+
+Wave-2 finding, code. Pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate`. Spec: `stages/01_spec/output/bulbbee-06-spec.md`.
+
+## Promoted code + doc
+
+- `lighting_service.py`: `GET /debug` handler gated by `cfg.debug` (defaults on), dumps config + provisioning secrets + state + env. `config.json`: `debug: true`.
+- `src/docs/BulbBee/Vulns/IoT/BULB-06-insecure-default-debug.md`.
+- `Vulns/README.md`: BULB-06 row `PENDING -> IN PROGRESS` (linked, CWE-1188/489), 5.6 coverage note updated, legend (BULB-01..06 IN PROGRESS). Output re-synced. `bulbbee.tar.gz` rebuilt (no `.pyc`, `py_compile` OK).
+
+## Verification (authoring env)
+
+Offline against the promoted `:8082`: `GET /debug` with the real config loaded returned `prov_pin` and the provisioning `wifi_psk`/`pair_token`, and returned 404 with `debug=false`. On-Pi run is the only remainder.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-07 - Scene-payload denial of service (2026-09-04)
+
+Wave-2 finding, code. Pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate`. Closes the device-finding waves (BULB-01..07). Spec: `stages/01_spec/output/bulbbee-07-spec.md`.
+
+## Promoted code + doc
+
+- `lighting_service.py`: a `custom` scene in `set_scene` builds `[color]*count` with no bound on `count` (CWE-400/1284/190), the `/scene` handler passes `count`/`color`.
+- `src/docs/BulbBee/Vulns/IoT/BULB-07-scene-payload-dos.md`.
+- `Vulns/README.md`: BULB-07 row `PENDING -> IN PROGRESS` (linked), 5.9 + 5.13 coverage flipped, legend updated (BULB-01..07 IN PROGRESS). Output re-synced. `bulbbee.tar.gz` rebuilt (no `.pyc`, `py_compile` OK).
+
+## Verification (authoring env)
+
+Offline against the promoted `:8082`: `POST /scene {custom, count:2,000,000}` and `count:20,000,000` accepted with no cap (scene=custom), normal scenes unaffected. The full memory-exhaustion DoS (`count=10^9`) is documented, not executed on the host.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-CRA - CRA default-category manufacturer dossier (2026-09-04)
+
+Wave-3 target, the lab's reason to exist. Doc-only (`02_implement` N/A, SBOM generated). Pipeline `01_spec -> 03_document -> 04_integrate -> 05_verify`. **DONE** (no on-device dependency). Spec: `stages/01_spec/output/bulbbee-cra-spec.md`.
+
+## Promoted (Stage 03 -> src/docs/BulbBee/CRA/)
+
+6 files: `00-CRA-Documentation-Plan.md`, `BB-DOC-001-EU-Declaration-of-Conformity.md`, `BB-ERM-002-essential-requirements-mapping.md`, `BB-SBOM-003.cdx.json`, `BB-UM-004-user-information.md`, `99-Assessor-Gap-Key.md`. Cross-linked from `docs/BulbBee/README.md` Documents section. CRA memory pointer updated (BulbBee joins RoutCoon).
+
+## Framing
+
+Default category (Module A, self-declared DoC, no notified body, presumption via ETSI EN 303 645). The dossier self-declares conformity that the device contradicts, BB-ERM-002 maps all eight Annex I Part I themes + Part II to BULB-01..07, and `99-Assessor-Gap-Key.md` is the trainer answer key. Explicit default-vs-important contrast against RoutCoon's 14-doc prEN 40000-1-2 dossier.
+
+## Verification
+
+Consistency-checked: every BULB-01..07 appears in the ERM and the gap key, the SBOM parses as CycloneDX JSON, the default-vs-important contrast is present, and the load-bearing findings (BULB-01, BULB-04) reproduce in their own 05_verify. No on-device dependency, so certified DONE.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-CLD - Thin cloud API (BOLA + weak/none JWT) (2026-09-04)
+
+Wave-4 target, new cloud. Pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify`. **DONE** (fully verified offline, no device dependency). Spec: `stages/01_spec/output/bulbbee-cld-spec.md`.
+
+## Promoted (Stage 02/03 -> src/)
+
+- `src/cloud_api/bulbbee/` (new): `api_server/app.py` (Flask), `requirements.txt` (flask, pyjwt), `Dockerfile`, `docker-compose.yml` (`:5004`), `CONTEXT.md`.
+- `src/docs/BulbBee/Vulns/API/BULB-CLD-cloud-api-bola-weak-jwt.md`.
+- `Vulns/README.md`: BULB-CLD row added (DONE, linked), BULB-CRA flipped to DONE, legend updated. `_config/promotion-map.md` bulbbee cloud column now `src/cloud_api/bulbbee/`. Not part of the device overlay, no tarball change.
+
+## Vulnerabilities
+
+- API1 (BOLA): per-bulb control authorizes by valid-token only, never ownership.
+- API2 (broken auth): `decode_token` honours `alg:none` (keyless forge) and a weak hardcoded HS256 secret.
+
+## Verification (authoring env)
+
+Flask test client (flask + pyjwt present): alice's token controls bob's `bulb-2` (BOLA), a forged `alg:none role:admin` token reaches `/api/admin/bulbs`, a wrong-secret HS256 token is rejected. Fully reproduced, `docker compose up --build` is only packaging.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-SEC - Secure-mode toggle (2026-09-04)
+
+Ongoing target, code. Pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify`. **DONE** (neutralizations verified offline, no hardware dependency). Spec: `stages/01_spec/output/bulbbee-sec-spec.md`.
+
+## Promoted code + doc
+
+- `lighting_service.py`: secure branch, `X-Auth-Token` gate on `/set`/`/scene`/`/config`/`/update` (BULB-02), `/config` redacts secrets (BULB-05), `/debug` forced off (BULB-06), `custom` scene `count` clamped (BULB-07), `/update` passes `secure`/`key`.
+- `update_agent.py`: `apply_update(secure, key)` verifies an HMAC signature line in secure mode, rejects unsigned (BULB-04).
+- `ble_light.py`: `SECURE` flag, `_prov_auth` refuses the default PIN + locks out after 5 (BULB-01), `_prov_read` omits the PSK + `_save_prov_state` chmods 0600 (BULB-05).
+- `config.json`: `secure:false` default, `auth_token`, `update_key`.
+- `Vulns/README.md`: a "Secure mode (BULB-SEC)" section (the neutralization table). Output re-synced. `bulbbee.tar.gz` rebuilt (no `.pyc`, `py_compile` OK).
+
+## Verification (authoring env)
+
+secure=1 neutralizes BULB-01/02/04/05/06/07 (9 offline checks pass), and secure=0 (default) still reproduces the vulns (regression: `ble_light`/`update_agent` self-checks). BULB-03 transport encryption is documented, not code-gated. Fully offline-verified, DONE.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BULB-APP - Android control app (2026-09-04)
+
+Wave-4 target, the last. New Android app source. Pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify`. **IN PROGRESS** (source + M1/M9 findings inspection-verified, Android build + on-device BLE blocked). Spec: `stages/01_spec/output/bulbbee-app-spec.md`.
+
+## Promoted (Stage 02/03 -> src/)
+
+- `src/vulnzoo_apps/bulbbee_app/` (new): `MainActivity.java` (BLE client of `0xFF30`/`0xFF31`/`0xFF32` + provisioning `0xFF40`, with the two findings), `AndroidManifest.xml`, `app/build.gradle.kts`, `settings.gradle.kts`, `README.md`. Modeled on `careotter_app`.
+- `src/docs/BulbBee/Vulns/Mobile/BULB-APP-hardcoded-pin-and-plaintext-storage.md`.
+- `Vulns/README.md`: BULB-APP row added (IN PROGRESS, linked), legend updated. Registered in `vulnzoo_apps/CONTEXT.md`.
+
+## Vulnerabilities
+
+- M1 / CWE-798: factory pairing PIN `8080` hardcoded in `MainActivity.java` (extractable from the APK, client side of BULB-01).
+- M9 / CWE-312: WiFi PSK + cloud token in plaintext SharedPreferences + Logcat (client side of BULB-05).
+
+## Verification (authoring env)
+
+Findings inspection-verified in the promoted source (`grep` for the hardcoded PIN and the plaintext SharedPreferences/Log calls, source well-formed). The Android build (`gradlew assembleDebug`, needs a full new-app scaffold) and the on-device BLE control (needs a device) are blocked, recorded in the verification log. Honest terminal state for this environment: IN PROGRESS.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.

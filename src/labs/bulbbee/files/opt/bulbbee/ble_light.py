@@ -75,10 +75,18 @@ _CFG = _load_config()
 HTTP_PORT = int(_CFG.get("http_port", 8082))
 BLE_NAME = str(_CFG.get("ble_name", "BulbBee"))
 BLE_INTERVAL = int(os.environ.get("BLE_INTERVAL", _CFG.get("ble_interval", 1)))
+# BULB-01: hardcoded factory pairing PIN, identical across every device.
+PROV_PIN = str(_CFG.get("prov_pin", "8080"))
+# BULB-SEC: secure-mode toggle (neutralizes the provisioning + storage findings).
+SECURE = bool(_CFG.get("secure"))
 
 LIGHT_SERVICE_UUID = "0000ff30-0000-1000-8000-00805f9b34fb"
 CONTROL_CHAR_UUID = "0000ff31-0000-1000-8000-00805f9b34fb"
 STATE_CHAR_UUID = "0000ff32-0000-1000-8000-00805f9b34fb"
+# BULB-01: provisioning service (discoverable on connect but not advertised)
+PROV_SERVICE_UUID = "0000ff40-0000-1000-8000-00805f9b34fb"
+PROV_AUTH_UUID = "0000ff41-0000-1000-8000-00805f9b34fb"
+PROV_CONFIG_UUID = "0000ff42-0000-1000-8000-00805f9b34fb"
 
 APP_PATH = "/org/bulbbee/app"
 BUS_NAME = "org.bluez"
@@ -86,14 +94,30 @@ ADAPTER_PATH = "/org/bluez/hci0"
 SERVICE0 = APP_PATH + "/service0"
 CONTROL_PATH = SERVICE0 + "/char0"
 STATE_PATH = SERVICE0 + "/char1"
+SERVICE1 = APP_PATH + "/service1"
+PROV_AUTH_PATH = SERVICE1 + "/char0"
+PROV_CONFIG_PATH = SERVICE1 + "/char1"
 AD_PATH = "/org/bulbbee/advertisement0"
 HEARTBEAT_FILE = "/tmp/bulbbee/ble_advertising_heartbeat"
+PROV_STATE_FILE = "/tmp/bulbbee/provisioning.json"
 
 _system_bus = None
 _ad_bus = None
 _ad_is_registered = False
 _ad_reregister_lock = None
 notifying_state = False
+
+# BULB-01: provisioning state. authenticated never auto-clears, pin_attempts
+# never locks out (no rate limiting), wifi_psk is stored in cleartext (read
+# back by BULB-05).
+_prov_state = {
+    "authenticated": False,
+    "pin_attempts": 0,
+    "wifi_ssid": "",
+    "wifi_psk": "",
+    "cloud_url": "",
+    "pair_token": "",
+}
 
 
 def _log(msg):
@@ -138,6 +162,111 @@ def _apply_command(command: dict):
             _post(path, payload)
         except Exception as e:
             _log("command forward to %s failed (%s)" % (path, e))
+
+
+# ── BULB-01: provisioning (unauthenticated onboarding) ──
+
+def _load_prov_state():
+    try:
+        with open(PROV_STATE_FILE) as f:
+            saved = json.load(f)
+        for k in ("wifi_ssid", "wifi_psk", "cloud_url", "pair_token"):
+            if k in saved:
+                _prov_state[k] = saved[k]
+    except (OSError, ValueError):
+        pass
+
+
+def _save_prov_state():
+    try:
+        os.makedirs(os.path.dirname(PROV_STATE_FILE), exist_ok=True)
+        with open(PROV_STATE_FILE, "w") as f:
+            json.dump({k: _prov_state[k] for k in
+                       ("wifi_ssid", "wifi_psk", "cloud_url", "pair_token")}, f)
+        if SECURE:                                  # BULB-05 fix: restrictive mode
+            os.chmod(PROV_STATE_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def _wifi_set_argv(ssid: str, psk: str):
+    """Pure: the uci argv sequence to point the station WiFi at (ssid, psk).
+    A clean argv list, NOT a shell string, so BULB-01 is only the weak-auth
+    finding, not command injection (that would be a separate finding)."""
+    return [
+        ["uci", "set", "wireless.@wifi-iface[0].ssid=%s" % ssid],
+        ["uci", "set", "wireless.@wifi-iface[0].key=%s" % psk],
+        ["uci", "commit", "wireless"],
+        ["wifi", "reload"],
+    ]
+
+
+def _do_wifi_set(ssid: str, psk: str):
+    import subprocess
+    for argv in _wifi_set_argv(ssid, psk):
+        try:
+            subprocess.run(argv, capture_output=True, timeout=15, check=False)
+        except (OSError, subprocess.SubprocessError) as e:
+            _log("wifi_set step %r failed (%s)" % (argv[:2], e))
+
+
+def _prov_auth(pin: str) -> bool:
+    """Check the factory PIN. Default (vulnerable): no lockout, the counter only
+    climbs, the hardcoded PIN always works (BULB-01). Secure (BULB-SEC): lock out
+    after 5 attempts and refuse the shared default PIN."""
+    if SECURE:
+        if _prov_state["pin_attempts"] >= 5:        # BULB-01 fix: lockout
+            _log("Provisioning AUTH locked out")
+            return False
+        if pin == "8080":                           # BULB-01 fix: refuse the shared default
+            _prov_state["pin_attempts"] += 1
+            _log("Provisioning AUTH refused (default PIN not allowed in secure mode)")
+            return False
+    if pin == PROV_PIN:
+        _prov_state["authenticated"] = True
+        _prov_state["pin_attempts"] = 0
+        _log("Provisioning AUTH success")
+    else:
+        _prov_state["pin_attempts"] += 1
+        _log("Provisioning AUTH failed (attempts=%d)" % _prov_state["pin_attempts"])
+    return _prov_state["authenticated"]
+
+
+def _prov_apply(cmd: dict):
+    """Handle a provisioning command, gated only by the (hardcoded) PIN."""
+    if not _prov_state["authenticated"]:
+        _log("Provisioning command rejected — PIN not verified")
+        return
+    action = cmd.get("cmd")
+    if action == "wifi_set":
+        ssid = str(cmd.get("ssid", ""))
+        psk = str(cmd.get("psk", ""))
+        _prov_state["wifi_ssid"] = ssid
+        _prov_state["wifi_psk"] = psk
+        _save_prov_state()
+        _do_wifi_set(ssid, psk)
+        _log("Provisioning wifi_set: %s" % ssid)
+    elif action == "pair_set":
+        _prov_state["pair_token"] = str(cmd.get("token", ""))
+        _prov_state["cloud_url"] = str(cmd.get("cloud_url", ""))
+        _save_prov_state()
+        _log("Provisioning pair_set")
+    else:
+        _log("Provisioning: unknown cmd %r" % action)
+
+
+def _prov_read() -> dict:
+    """Read the provisioning state. PIN-gated, then returns the WiFi PSK in
+    cleartext (that plaintext read is finding BULB-05)."""
+    if not _prov_state["authenticated"]:
+        return {"error": "PIN_REQUIRED"}
+    if SECURE:                                       # BULB-05 fix: never return the PSK
+        return {"wifi_ssid": _prov_state["wifi_ssid"], "cloud_url": _prov_state["cloud_url"]}
+    return {
+        "wifi_ssid": _prov_state["wifi_ssid"],
+        "wifi_psk": _prov_state["wifi_psk"],
+        "cloud_url": _prov_state["cloud_url"],
+    }
 
 
 # ── notifications (hand-emitted PropertiesChanged, as in CareOtter) ──
@@ -321,6 +450,103 @@ class StateChrc(ServiceInterface):
         return [interface, changed, invalidated]
 
 
+class ProvisioningAuthChrc(ServiceInterface):
+    """BULB-01: factory pairing PIN (0xFF41).
+
+    Weaknesses: the PIN is hardcoded and identical across devices, there is no
+    rate limiting or lockout (the counter never locks), and the link is not
+    bonded, so the PIN is the only gate and it is trivially brute-forced or
+    extracted from the app.
+    """
+
+    def __init__(self):
+        super().__init__("org.bluez.GattCharacteristic1")
+        self.uuid = PROV_AUTH_UUID
+        self.flags = ["read", "write"]
+
+    @dbus_property(access=PropertyAccess.READ)
+    def UUID(self) -> "s":
+        return self.uuid
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Service(self) -> "o":
+        return SERVICE1
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Flags(self) -> "as":
+        return self.flags
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Value(self) -> "ay":
+        return json.dumps({"locked": False}).encode()
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        return json.dumps({"attempts": _prov_state["pin_attempts"],
+                           "locked": False}).encode()
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        _prov_auth(bytes(value).decode("utf-8", errors="ignore").strip())
+
+
+class ProvisioningConfigChrc(ServiceInterface):
+    """BULB-01: provisioning commands (0xFF42), gated only by the hardcoded PIN.
+
+    wifi_set reconfigures the station WiFi (a clean uci write, no shell), so an
+    attacker in range re-provisions the bulb onto their network. ReadValue
+    returns the stored WiFi PSK in cleartext once the PIN gate is passed (that
+    plaintext read is finding BULB-05, referenced here as the chain).
+    """
+
+    def __init__(self):
+        super().__init__("org.bluez.GattCharacteristic1")
+        self.uuid = PROV_CONFIG_UUID
+        self.flags = ["read", "write", "notify"]
+
+    @dbus_property(access=PropertyAccess.READ)
+    def UUID(self) -> "s":
+        return self.uuid
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Service(self) -> "o":
+        return SERVICE1
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Flags(self) -> "as":
+        return self.flags
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Value(self) -> "ay":
+        return json.dumps({"provisioned": bool(_prov_state["wifi_ssid"])}).encode()
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        return json.dumps(_prov_read()).encode()
+
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        try:
+            cmd = json.loads(bytes(value).decode("utf-8", errors="ignore"))
+        except (ValueError, UnicodeDecodeError):
+            _log("Provisioning: invalid JSON")
+            return
+        _prov_apply(cmd)
+
+    @method()
+    def StartNotify(self):
+        pass
+
+    @method()
+    def StopNotify(self):
+        pass
+
+    @signal()
+    def PropertiesChanged(self, interface: "s", changed: "a{sv}",
+                          invalidated: "as") -> "sa{sv}as":
+        return [interface, changed, invalidated]
+
+
 class GattService(ServiceInterface):
     def __init__(self, uuid: str, primary: bool = True):
         super().__init__("org.bluez.GattService1")
@@ -460,18 +686,27 @@ async def main():
         _log("Error connecting to D-Bus: %s" % e)
         sys.exit(1)
 
+    _load_prov_state()
     light_service = GattService(LIGHT_SERVICE_UUID)
     control_chrc = ControlChrc()
     state_chrc = StateChrc()
+    prov_service = GattService(PROV_SERVICE_UUID, primary=False)  # not advertised
+    prov_auth_chrc = ProvisioningAuthChrc()
+    prov_config_chrc = ProvisioningConfigChrc()
     obj_manager = ObjectManager()
 
     bus.export(APP_PATH, obj_manager)
     bus.export(SERVICE0, light_service)
     bus.export(CONTROL_PATH, control_chrc)
     bus.export(STATE_PATH, state_chrc)
+    bus.export(SERVICE1, prov_service)
+    bus.export(PROV_AUTH_PATH, prov_auth_chrc)
+    bus.export(PROV_CONFIG_PATH, prov_config_chrc)
 
     light_service.add_characteristic(CONTROL_PATH)
     light_service.add_characteristic(STATE_PATH)
+    prov_service.add_characteristic(PROV_AUTH_PATH)
+    prov_service.add_characteristic(PROV_CONFIG_PATH)
 
     def _add_svc(path, svc):
         obj_manager.add_object(path, {"org.bluez.GattService1": {
@@ -482,13 +717,16 @@ async def main():
     def _add_chrc(path, chrc):
         obj_manager.add_object(path, {"org.bluez.GattCharacteristic1": {
             "UUID": Variant("s", chrc.uuid),
-            "Service": Variant("o", SERVICE0),
+            "Service": Variant("o", chrc.Service),
             "Flags": Variant("as", chrc.flags),
-            "Value": Variant("ay", _get_state_bytes())}})
+            "Value": Variant("ay", chrc.Value)}})
 
     _add_svc(SERVICE0, light_service)
     _add_chrc(CONTROL_PATH, control_chrc)
     _add_chrc(STATE_PATH, state_chrc)
+    _add_svc(SERVICE1, prov_service)
+    _add_chrc(PROV_AUTH_PATH, prov_auth_chrc)
+    _add_chrc(PROV_CONFIG_PATH, prov_config_chrc)
 
     ad = Advertisement()
     bus.export(AD_PATH, ad)
@@ -513,7 +751,22 @@ def _demo():
     both = _plan_calls({"power": True, "scene": "solid"})
     assert both == [("/set", {"power": True}), ("/scene", {"scene": "solid"})]
     assert _plan_calls({}) == []
-    print("ble_light self-check OK (_plan_calls)")
+
+    # BULB-01: wifi_set argv is a clean list (no shell), and the PIN gate has no lockout
+    argv = _wifi_set_argv("evil-ap", "p@ss")
+    assert argv[0] == ["uci", "set", "wireless.@wifi-iface[0].ssid=evil-ap"]
+    assert ["wifi", "reload"] in argv
+    _prov_state.update({"authenticated": False, "pin_attempts": 0,
+                        "wifi_ssid": "", "wifi_psk": "", "cloud_url": "", "pair_token": ""})
+    assert _prov_read() == {"error": "PIN_REQUIRED"}          # gated before auth
+    for _ in range(20):
+        assert _prov_auth("0000") is False                   # 20 wrong PINs
+    assert _prov_state["pin_attempts"] == 20                  # counter climbs, never locks
+    assert _prov_auth(PROV_PIN) is True                      # correct PIN still accepted
+    _prov_apply({"cmd": "wifi_set", "ssid": "evil-ap", "psk": "p@ss"})
+    assert _prov_state["wifi_ssid"] == "evil-ap" and _prov_state["wifi_psk"] == "p@ss"
+    assert _prov_read()["wifi_psk"] == "p@ss"                # BULB-05 chain: PSK in cleartext
+    print("ble_light self-check OK (_plan_calls + BULB-01 provisioning)")
 
 
 if __name__ == "__main__":
