@@ -11,6 +11,7 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 | `owlcam` | `OwlCam/` | IP camera surveillance |
 | `octobot` | `OctoBot/` | Industrial (robotic arm, ICS) |
 | `canary` | `Canary/` | Automotive (CAN gateway + SOME/IP) |
+| `bulbbee` | `BulbBee/` | Consumer smart light (WS2812, CRA default category) |
 
 ## Service ports
 
@@ -32,6 +33,8 @@ Lab/code names are lowercase; doc folders are TitleCase and **not** 1:1.
 | octobot | Cloud API (PC) | 5003 | HTTP |
 | canary | SOME/IP CentralLockingService | 30509 | UDP |
 | canary | CAN bus (can0/can1) | - | CAN |
+| bulbbee | Lighting control API | 8082 | HTTP |
+| bulbbee | Cloud API (PC, later wave) | 5004 | HTTP |
 
 ## Key terms
 

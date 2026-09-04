@@ -1170,3 +1170,148 @@ banner == CONTEXT == IoT5 == `24.10.3` now; the build note is present; the proje
 ## Stage cleanup
 
 01_spec (banner/`.config`/doc version reconciliation) performed inline. This log is the durable record. **The RoutCoon backlog (waves 1-6 + RC-E1) is complete.**
+
+---
+
+# BULB-A0 - BulbBee functional bring-up (new lab, 2026-09-04)
+
+First target of the new BulbBee lab (`stages/TARGET_BULBBEE.md`, wave 0). Full pipeline: `01_spec -> 02_implement -> 03_document -> 04_integrate (this stage)`. BULB-A0 carries no intentional vulnerability, it is the honest functional product the later findings (BULB-01..07) attack. BulbBee is the VulnZoo reference for a CRA default-category product (consumer WS2812 smart light).
+Spec: `stages/01_spec/output/bulbbee-a0-spec.md`. Manifest: `stages/02_implement/output/manifest.md`.
+
+## Promoted code (Stage 02 -> src/)
+
+| Artifact | Destination | Mode |
+|----------|-------------|------|
+| Lighting service | `src/labs/bulbbee/files/opt/bulbbee/lighting_service.py` | 0644 |
+| WS2812 driver (SPI encoder + sim) | `src/labs/bulbbee/files/opt/bulbbee/ws2812.py` | 0644 |
+| Service config | `src/labs/bulbbee/files/opt/bulbbee/config.json` | 0644 |
+| Init script (procd) | `src/labs/bulbbee/files/etc/init.d/bulbbee-light` | 0755 |
+| UCI config (incl. `secure '0'`) | `src/labs/bulbbee/files/etc/config/bulbbee` | 0644 |
+| Enable hook | `src/labs/bulbbee/files/usr/lib/vulnzoo-hooks/profile-init.d/45-bulbbee-light.sh` | 0755 |
+
+Executable bits preserved on the init script and hook (the OWL-A1 lesson: a `0644` init/hook never auto-starts on flash). The `__pycache__` produced by the authoring self-checks was removed from `src/` and excluded from the tarball. The Layer 2 lab contract `src/labs/bulbbee/CONTEXT.md` already existed (authored during planning).
+
+## Promoted docs (Stage 03 -> src/)
+
+| Artifact | Destination |
+|----------|-------------|
+| Landing page | `src/docs/BulbBee/README.md` |
+| Setup / run guide | `src/docs/BulbBee/LAB_SETUP.md` |
+| Vulnerability roadmap (CRA / EN 303 645 map) | `src/docs/BulbBee/Vulns/README.md` |
+
+No vuln finding doc (A0 is bring-up). The roadmap lists BULB-01..07 + BULB-CRA, all `PENDING`.
+
+## Registration (MWP discoverability + Device Manager UI)
+
+| File | Change |
+|------|--------|
+| `src/AGENTS.md` | workspace map labs list (`+ bulbbee`), device -> doc-folder map row (`bulbbee` -> `docs/BulbBee/`) |
+| `shared/glossary.md` | device map row (`bulbbee` -> `BulbBee/`, consumer smart light) + service-port rows (`8082` control API, `5004` cloud reserved) |
+| `_config/promotion-map.md` | device -> product paths row for `bulbbee` |
+| `www/vulnzoo/pages/devices.html` | `device-card` `data-device="bulbbee"` (after careotter, before the CANary WIP card) |
+| `www/vulnzoo/assets/js/vulnzoo.js` | name map `'bulbbee':'BulbBee'`, `openDeviceInterface` branch (port `8082`), `enableDeviceInterface` button map |
+| `www/vulnzoo/pages/bulbbee.html` | new per-device page, cloned from `careotter.html` and rewritten for BulbBee |
+| `www/vulnzoo/assets/images/bulbbee.png` | placeholder card image (320x320 solid amber, 750 B, replace with real art later) |
+
+## Repackaged overlay
+
+`src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/bulbbee.tar.gz` built from `src/labs/bulbbee/files` (`tar -czf ... opt etc usr`). Contents verified: `opt etc usr` only, no `__pycache__`, no `.pyc`, no docs. Init script and hook are `0755` inside the tar. The Device Manager enumerates `/usr/lib/vulnzoo-devices/*.tar.gz` generically, so `bulbbee` is loadable with no per-device backend entry.
+
+## Verification (authoring env, simulation)
+
+- `python3 -m py_compile` on `ws2812.py` and `lighting_service.py` from their `src/` paths -> OK.
+- `python3 ws2812.py` -> `ws2812 self-check OK` (bit-encoding LUT `0x00 -> 92 49 24`, `0xFF -> DB 6D B6`, sim frame buffer).
+- HTTP smoke against a live `ThreadingHTTPServer`: `/health` 200, `/state` returns `simulated=true` + 16-pixel `frame`, `/scene rainbow` animates the frame off zero, `/set brightness=200` applied, unknown scene -> 400.
+- `sh -n` on the init script and hook -> OK. `config.json` and the tarball verified.
+
+## Remaining before BULB-A0 is DONE (05_verify)
+
+1. On-Pi (or on-hardware) verification: load `bulbbee` via the Device Manager, confirm the hook runs, `bulbbee-light` starts under procd, and `curl :8082/{health,state,scene}` behaves per the spec's 7 acceptance criteria.
+2. SPI enablement (`dtparam=spi=on`, `/dev/spidev0.0`) for real-hardware LED driving, else the WS2812-on-a-real-ring criterion is recorded `blocked`. The service degrades to simulation cleanly if the node is absent.
+3. Replace the placeholder `bulbbee.png` with real art.
+4. Base image: confirm `/dev/spidev0.0` is exposed on the flashed image (`kmod-spi-dev` + `spi0` overlay). A future iteration can add an overlay hook like canary's.
+
+Doc index badge stays at Phase-0 `PENDING` until 05_verify certifies on the Pi. The vulnerability roadmap (BULB-01..07, BULB-CRA) stays `PENDING`.
+
+## Stage cleanup
+
+Stage `output/` folders left in place this run (the pipeline for BulbBee is mid-flight, later targets reuse the scaffolding). This log is the durable record of the promotion.
+
+---
+
+# BulbBee - Plan revision: BLE is the app control channel (2026-09-04)
+
+Direct edit to the plan and docs (not a stages promotion), on the user's clarification that the Raspberry-Pi-to-controller (Android app) communication is **BLE**, mirroring CareOtter. No overlay code changed, so `bulbbee.tar.gz` is unchanged and no rebuild was needed. BULB-A0 (HTTP + WS2812) stays valid, BLE is additive and PENDING.
+
+## Model
+
+The controller is an Android app that talks to the Pi over BLE (a GATT server on the Pi, modeled on CareOtter's `ble_server.py`, BlueZ/D-Bus). BLE is the primary control and onboarding channel. The HTTP `:8082` API shipped in BULB-A0 is reframed as the secondary LAN control/diagnostics surface. The cloud (Wave 4) is remote sync. SPI to the ring is unchanged.
+
+## Changes
+
+| File | Change |
+|------|--------|
+| `stages/TARGET_BULBBEE.md` | new "Communication model" section, App-control-channel + BLE rows in Product coordinates, **new Wave-0 target BULB-A1** (BLE GATT control service) in the waves list, master table, and a full stage breakdown, and BLE threaded into BULB-01 (BLE provisioning primary), BULB-02 (BLE+HTTP surface), BULB-03 (BLE no-encryption primary), BULB-05 (BLE config read), BULB-APP (BLE controller, depends on BULB-A1 not the cloud) |
+| `src/labs/bulbbee/CONTEXT.md` | scenario, architecture diagram (BLE server + app-over-BLE), new BLE GATT component (#1) with renumber, onboarding reframed BLE-first, "Transports and ports" table with a BLE row, intended-vulns table, BlueZ/D-Bus dependency, BLE verification-checklist items |
+| `src/docs/BulbBee/README.md` | intro, quick-facts App-control-channel row, architecture ASCII, "Control channels (BLE primary, HTTP secondary)" section, roadmap paragraph, BULB-A1 groundwork note |
+| `src/docs/BulbBee/LAB_SETUP.md` | "What you are building", role mapping (BLE server + app-over-BLE), BOM (onboard Bluetooth), "where the attacks go next" |
+| `src/docs/BulbBee/Vulns/README.md` | planned-vulns table (surfaces/titles for 01/02/03/05/07), notes (BULB-A1 groundwork, BLE chains), EN 303 645 coverage (5.1/5.5/5.6) |
+| `www/vulnzoo/pages/bulbbee.html` | environment description, device interface, prerequisites (Bluetooth), device-architecture (BLE control server + app-over-BLE) |
+
+`stages/03_document/output/BulbBee/` copies re-synced with the `src/docs/BulbBee/` versions. No `files/` overlay edit, so the packaged `bulbbee.tar.gz` is untouched.
+
+## Follow-on
+
+BULB-A1 (the BLE GATT control service, modeled on CareOtter) is now the next groundwork target after BULB-A0, ahead of the Wave-1 findings that live on that channel (BULB-01/02/03).
+
+---
+
+# BULB-A1 - BLE GATT control service (2026-09-04)
+
+Wave-0 groundwork, the Android app's BLE channel to the Pi. Full pipeline `01_spec -> 02_implement -> 03_document -> 04_integrate (this stage)`. No intentional weakness (the weaknesses on this channel are BULB-01/02/03). Spec: `stages/01_spec/output/bulbbee-a1-spec.md`. Manifest: `stages/02_implement/output/manifest.md` (BULB-A1 section).
+
+## Promoted code (Stage 02 -> src/)
+
+| Artifact | Destination | Mode |
+|----------|-------------|------|
+| BLE GATT server | `src/labs/bulbbee/files/opt/bulbbee/ble_light.py` | 0644 |
+| Init (procd, START=96) | `src/labs/bulbbee/files/etc/init.d/bulbbee-ble` | 0755 |
+| Enable hook | `src/labs/bulbbee/files/usr/lib/vulnzoo-hooks/profile-init.d/50-bulbbee-ble.sh` | 0755 |
+| Service config (edited) | `src/labs/bulbbee/files/opt/bulbbee/config.json` (+`ble_name`, +`ble_interval`) | 0644 |
+
+`ble_light.py` is a dbus-fast GATT server (Lighting Control `0xFF30` with Control `0xFF31` write + State `0xFF32` read/notify), a front-end over the `:8082` lighting service so there is one writer to the ring, with CareOtter-style advertising self-healing. Exec bits preserved on the init and hook. No `__pycache__` in `src/` or the tarball.
+
+## Promoted docs (Stage 03 -> src/)
+
+| Artifact | Destination |
+|----------|-------------|
+| Landing page (BLE GATT section) | `src/docs/BulbBee/README.md` |
+| Setup guide (Part 6, BLE walkthrough + troubleshooting) | `src/docs/BulbBee/LAB_SETUP.md` |
+
+`src/labs/bulbbee/CONTEXT.md` reconciled in 03_document (spec open item 6.1): the BLE component no longer lists a provisioning service, that is BULB-01's onboarding weakness. README BULB-A1 status set to IN PROGRESS (the promotion-contract badge, 05_verify earns DONE).
+
+## Repackaged overlay
+
+`src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/bulbbee.tar.gz` rebuilt from `src/labs/bulbbee/files` (`opt etc usr`). Now carries both services (`lighting_service.py` + `ble_light.py`), both init scripts (`bulbbee-light`, `bulbbee-ble`, both 0755), both hooks (`45-`, `50-`, both 0755), and the updated `config.json`. Verified: no `.pyc`, exec bits intact.
+
+## Dependency
+
+`dbus_fast` is already selected in the base image: `src/labs/vulnzoo/.config` has `CONFIG_PACKAGE_python3-dbus-fast=y` (and CareOtter's `15-python-deps.sh` runtime-checks `dbus_fast`). No `.config` change needed.
+
+## Verification (authoring env)
+
+- `python3 -m py_compile src/labs/bulbbee/files/opt/bulbbee/ble_light.py` -> OK.
+- Offline logic (from 02, re-confirmed): `_plan_calls` self-check and the Control->HTTP forward against a mock `:8082` pass. `dbus_fast` is not installed in the authoring env (it is on the image), the guarded import keeps the module importable for these checks.
+- `sh -n` on `bulbbee-ble` and `50-bulbbee-ble.sh` pass. `config.json` parses with `ble_name`/`ble_interval`.
+
+## Remaining before BULB-A1 is DONE (05_verify)
+
+Needs a Pi with a BLE adapter and a BlueZ system bus, so most criteria will be recorded blocked in the authoring env:
+1. `bulbbee-ble` starts under procd after `bulbbee-light`, warns (not crash-loops) with no `hci0`.
+2. Advertises as `BulbBee` with `0xFF30`, a central connects and discovers Control/State.
+3. A Control write `{"scene":"rainbow"}` drives the ring/sim (reflected in `GET /state`), State read/notify works.
+4. The L1 advertising heartbeat is fresh.
+
+## Stage cleanup
+
+Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
