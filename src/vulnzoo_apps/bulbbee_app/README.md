@@ -7,6 +7,12 @@ Minimal companion controller for the BulbBee smart light. It is a BLE client of 
 - **M1 / CWE-798**: the factory pairing PIN `8080` is hardcoded in `MainActivity.java`, extractable from the APK and identical on every unit (client side of BULB-01).
 - **M9 / CWE-312**: the home WiFi PSK and cloud token are stored in plaintext `SharedPreferences` and logged to Logcat (client side of BULB-05).
 
-**Status:** source skeleton. The security findings are static (verified by inspection). Building an APK needs the standard Android scaffold (gradle wrapper, `gradle/libs.versions.toml` version catalog, resources), model it on `../careotter_app/`. The build (`gradlew assembleDebug`) and on-device BLE control are the remaining steps and need the Android toolchain and a device.
+**Status:** builds. `./gradlew :app:assembleDebug` (AGP 9.2.1, Gradle 9.4.1, JDK 21) produces `app/build/outputs/apk/debug/app-debug.apk`. The M1/M9 findings are verified by inspection and present in the APK (`unzip -p ... classes.dex | strings | grep 8080`). On-device BLE control needs an Android device with the BulbBee peripheral in range.
+
+Build:
+
+```sh
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew :app:assembleDebug
+```
 
 Finding doc: [`../../docs/BulbBee/Vulns/Mobile/BULB-APP-hardcoded-pin-and-plaintext-storage.md`](../../docs/BulbBee/).

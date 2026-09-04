@@ -1595,3 +1595,42 @@ Findings inspection-verified in the promoted source (`grep` for the hardcoded PI
 ## Stage cleanup
 
 Stage `output/` left in place (BulbBee pipeline mid-flight). This log is the durable record.
+
+---
+
+# BulbBee - system cleanup hook (2026-09-04)
+
+Direct overlay addition (operational, not a master-table finding), the CareOtter `90-*-cleanup.sh` pattern applied to BulbBee. Basis: `netstat` on a freshly loaded BulbBee image.
+
+## Change
+
+`src/labs/bulbbee/files/usr/lib/vulnzoo-hooks/profile-init.d/90-bulbbee-cleanup.sh` (0755, gated on `VULNZOO_DEVICE=bulbbee`, runs after 45/50). It stops+disables the lab-foreign services and `opkg remove`s their packages:
+
+- **Trim** (not used by BulbBee): samba4 (smbd/nmbd, `:139/:137/:138`), ksmbd (`:445`), wsdd2 (`:5355/:3702`), avahi-daemon (`:5353`), mosquitto (`:1883`, MQTT unused, it is a later BULB-CLD/BULB-03 wave). Packages: `mosquitto-*`, `samba4-*`, `ksmbd-server`, `wsdd2`, `avahi-*` (best-effort, Squashfs-baked files survive but the overlay records the removal).
+- **Keep**: dnsmasq (`:53/:67` LAN DHCP+DNS), dropbear (`:22` SSH), uhttpd (`:8080` Device Manager), the lighting service (`:8082`), BLE (BlueZ).
+
+`bulbbee.tar.gz` rebuilt with the new hook (0755 preserved). Verified: `sh -n` clean, gate is a no-op for a non-bulbbee device, the hook is `0755` inside the tarball. The opkg removals run only on the live Pi.
+
+## Stage cleanup
+
+Stage `output/` left in place. This log is the durable record.
+
+---
+
+# BULB-APP - fix the Gradle build (2026-09-04)
+
+The app opened in Android Studio failed to configure: `Unresolved reference 'libs'` and `alias(...)` not applicable in `app/build.gradle.kts`. Root cause: the version catalog was missing (the app referenced `libs.plugins.android.application` / `libs.appcompat` / `libs.material` but there was no `gradle/libs.versions.toml`), and the AS-generated wrapper (Gradle 9.3.0) was below AGP 9.2.1's minimum (9.4.1).
+
+## Fix
+
+- Added `src/vulnzoo_apps/bulbbee_app/gradle/libs.versions.toml` (copied from careotter_app: agp 9.2.1, appcompat, material, plus the `android-application` plugin alias).
+- Bumped `gradle/wrapper/gradle-wrapper.properties` to `gradle-9.4.1-bin.zip` (AGP 9.2.1 requires >= 9.4.1).
+- Added parity files from careotter_app so a commit is clean and AS is happy: root `build.gradle.kts` (`alias(libs.plugins.android.application) apply false`), `gradle.properties` (`android.useAndroidX=true`), `gradle/gradle-daemon-jvm.properties` (toolchain 21), and `.gitignore` + `app/.gitignore` (exclude `build/`, `.gradle`, `.idea`, `local.properties`).
+
+## Verification
+
+`JAVA_HOME=.../java-21-openjdk-amd64 ./gradlew :app:assembleDebug` -> BUILD SUCCESSFUL, `app/build/outputs/apk/debug/app-debug.apk` (~11.5 MB). The M1/M9 findings are in the APK. On-device BLE control still needs a device. Transient `build/`, `app/build/`, `.gradle/` cleaned (gitignored). BULB-APP build is no longer blocked.
+
+## Stage cleanup
+
+This log is the durable record.
