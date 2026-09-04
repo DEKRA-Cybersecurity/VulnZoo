@@ -1,0 +1,14 @@
+{
+  "use_real_hardware": false,
+  "led_count": 16,
+  "brightness": 128,
+  "gamma": 2.2,
+  "spi_hz": 2400000,
+  "color_order": "GRB",
+  "http_port": 8082,
+  "refresh_hz": 30,
+  "spi_device": "/dev/spidev0.0",
+  "state_file": "/tmp/bulbbee/state.json",
+  "ble_name": "BulbBee",
+  "ble_interval": 1
+}

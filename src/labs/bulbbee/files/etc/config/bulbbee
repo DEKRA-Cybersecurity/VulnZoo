@@ -1,0 +1,5 @@
+config bulbbee 'main'
+	option led_count '16'
+	option spi_hz '2400000'
+	option http_port '8082'
+	option secure '0'

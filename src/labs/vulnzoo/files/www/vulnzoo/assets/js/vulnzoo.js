@@ -124,7 +124,8 @@ function getDeviceName(type) {
         'owlcam': 'OwlCam',
         'careotter': 'CareOtter',
         'octobot': 'OctoBot',
-        'canary': 'CANary'
+        'canary': 'CANary',
+        'bulbbee': 'BulbBee'
     };
     return names[type] || type;
 }
@@ -268,6 +269,9 @@ function openDeviceInterface(deviceType) {
     } else if (deviceType === 'canary') {
         updateStatus('Opening CANary interface...');
         devicePort = '5002';  // CANary interface port
+    } else if (deviceType === 'bulbbee') {
+        updateStatus('Opening BulbBee interface...');
+        devicePort = '8082';  // BulbBee local control API port
     }
 
     // Construct the device interface URL
@@ -293,7 +297,8 @@ function enableDeviceInterface(deviceType) {
         'owlcam': 'owlcam-interface-btn',
         'careotter': 'careotter-interface-btn',
         'octobot': 'octobot-interface-btn',
-        'canary': 'canary-interface-btn'
+        'canary': 'canary-interface-btn',
+        'bulbbee': 'bulbbee-interface-btn'
     };
     
     // Disable all first

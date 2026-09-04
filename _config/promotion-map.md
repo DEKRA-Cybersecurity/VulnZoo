@@ -38,6 +38,7 @@ mv <device>.tar.gz ../../vulnzoo/files/usr/lib/vulnzoo-devices/<device>.tar.gz
 | `owlcam` | `src/labs/owlcam/` | `src/cloud_api/owlcam/` | `src/docs/OwlCam/` |
 | `octobot` | `src/labs/octobot/` | `src/cloud_api/octobot/` | `src/docs/OctoBot/` |
 | `canary` | `src/labs/canary/` | - (phase 0: none) | `src/docs/Canary/` |
+| `bulbbee` | `src/labs/bulbbee/` | - (BULB-A0: none, `:5004` later wave) | `src/docs/BulbBee/` |
 
 ## Post-promotion checks
 1. Lab still loads — see `src/labs/<device>/CONTEXT.md`.
