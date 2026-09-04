@@ -1,0 +1,7 @@
+services:
+  bulbbee-cloud:
+    build: ./api_server
+    container_name: bulbbee-cloud
+    ports:
+      - "5004:5004"
+    restart: unless-stopped

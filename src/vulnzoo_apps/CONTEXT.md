@@ -2,6 +2,8 @@ You are working on VulnZoo, a medical IoT hacking lab. The Android project struc
 
 vulnzoo_apps/
 ├── careotter_app/     ← PATIENT MONITORING app (BLE only)
+├── owlcam_app/ · octobot_app/   ← other device companion apps
+├── bulbbee_app/       ← BulbBee smart-light BLE controller (target BULB-APP, M1/M9)
 └── careotter_admin/   ← DEVICE ADMIN app (IGP :9999 only)
 
 ## Current situation

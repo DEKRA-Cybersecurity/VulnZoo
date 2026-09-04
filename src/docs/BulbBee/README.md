@@ -1,10 +1,10 @@
 # BulbBee - Consumer Smart-Light Lab
 
-> **Layer 3 device landing page.** Phase 0 (functional bring-up, target BULB-A0) is promoted to `src/` and certified in simulation (05_verify), pending on-Pi certification (deploy, procd, real WS2812 driving). No intentional vulnerabilities are present yet, they are a documented roadmap (see [`Vulns/README.md`](Vulns/README.md)). Hardware mode (a real WS2812 ring) is brought up per [`LAB_SETUP.md`](LAB_SETUP.md). The vulnerabilities, when they land, are intentional.
+> **Layer 3 device landing page.** The functional bring-up (BULB-A0/A1) is promoted to `src/` and certified in simulation. The intentional vulnerabilities are implemented and documented (see [`Vulns/README.md`](Vulns/README.md)): the device findings BULB-01..07, the cloud API (BULB-CLD) and the CRA default-category dossier (BULB-CRA), with a `secure` toggle (BULB-SEC) for the hardened comparison and an Android controller (BULB-APP). Device findings are verified offline, their over-the-air / on-Pi steps are recorded blocked in this environment. The vulnerabilities are intentional, do not harden them (use the `secure` toggle to compare).
 
 BulbBee is the VulnZoo consumer smart-light lab. It reproduces a budget WiFi smart light on a Raspberry Pi running OpenWRT, driving an addressable WS2812 RGB LED ring. The controller is an Android app that talks to the device over BLE (a GATT server on the Pi, modeled on CareOtter), and a local HTTP control API on the LAN is a secondary control and diagnostics surface for setting color, brightness and scenes. It exists to fill a specific gap in the ecosystem: a product that the EU Cyber Resilience Act places in its **default category**, the roughly 90% of products with digital elements that fall in no vertical of Annex III or Annex IV and therefore inherit only the baseline. The lab is framed as the sample a tester receives for a CRA conformity assessment of a self-declared product, and the student plays the assessor.
 
-Phase 0 stands up the functional environment only: the ring lights up and the control API answers on the network. The intentional weaknesses and their CRA / ETSI EN 303 645 mapping come in later waves.
+The functional bring-up stands up the ring, the control API, and the BLE channel. The intentional weaknesses (BULB-01..07), the cloud (BULB-CLD), the Android app (BULB-APP), the CRA dossier (BULB-CRA) and the secure-mode toggle (BULB-SEC) are implemented, with their OWASP IoT / ETSI EN 303 645 / CRA Annex I mapping in [`Vulns/README.md`](Vulns/README.md).
 
 ## Quick facts
 
@@ -27,7 +27,7 @@ Every other VulnZoo lab models a device type the CRA treats specially. RoutCoon 
 - **Baseline standard**: **ETSI EN 303 645** is the natural presumption-of-conformity anchor for a consumer IoT device, so each BulbBee finding maps to an EN 303 645 provision as well as to an OWASP IoT Top 10 entry and a CRA Annex I requirement.
 - **Teaching value**: the same claim-versus-device gap the RoutCoon dossier teaches, on the lighter default route, plus an explicit default-versus-important contrast against RoutCoon.
 
-The manufacturer dossier that carries this framing is target BULB-CRA in the roadmap.
+The manufacturer dossier that carries this framing is under [`CRA/`](CRA/) (target BULB-CRA, done).
 
 ## Architecture
 
@@ -113,15 +113,16 @@ curl -X POST http://192.168.2.1:8082/set   -d '{"brightness":200,"color":[10,20,
 
 ## Roadmap
 
-The intentional weaknesses (unauthenticated BLE onboarding and open setup AP, unauthenticated control surface over BLE and HTTP, cleartext replayable BLE/HTTP channel, unsigned OTA, plaintext secrets, insecure defaults, scene-payload DoS), their OWASP IoT / ETSI EN 303 645 / CRA Annex I mapping, and the default-category CRA dossier live in [`Vulns/README.md`](Vulns/README.md). Phase 0 is the functional bring-up with no finding. The BLE control channel (BULB-A1), the Android app's path to the device, is implemented and promoted to `src/`, IN PROGRESS pending on-Pi certification.
+The intentional weaknesses (unauthenticated BLE onboarding and open setup AP, unauthenticated control surface over BLE and HTTP, cleartext replayable BLE/HTTP channel, unsigned OTA, plaintext secrets, insecure defaults, scene-payload DoS), their OWASP IoT / ETSI EN 303 645 / CRA Annex I mapping, the cloud API and Android app findings, the default-category CRA dossier, and the `secure` comparison toggle all live in [`Vulns/README.md`](Vulns/README.md) and [`CRA/`](CRA/).
 
 ## Documents
 
 - [`LAB_SETUP.md`](LAB_SETUP.md) - student setup and run guide (WS2812 wiring, SPI enablement, load, verify, simulation).
 - [`Vulns/README.md`](Vulns/README.md) - vulnerability roadmap and CRA / ETSI EN 303 645 mapping.
 - [`../../labs/bulbbee/CONTEXT.md`](../../labs/bulbbee/CONTEXT.md) - Layer 2 lab contract.
+- [`CRA/`](CRA/) - the BulbBee CRA **default-category** manufacturer dossier (Module A, self-declared DoC + Annex I mapping + assessor gap key).
 - [`../RoutCoon/CRA/`](../RoutCoon/CRA/) - the important-product dossier BulbBee contrasts against.
 
 ## Status
 
-Phase 0 (BULB-A0) is IN PROGRESS: implemented, documented, promoted to `src/labs/bulbbee/`, and certified in simulation by 05_verify (WS2812 bit-encoding, control API `:8082`, scenes, state persistence). On-Pi certification is pending (Device Manager deploy, procd supervision, and real WS2812 driving over SPI, recorded blocked in `stages/05_verify/output/bulbbee-a0-verification.md`). The vulnerability catalogue is a documented roadmap, all PENDING.
+The functional bring-up (BULB-A0/A1) is promoted and certified in simulation, on-Pi certification pending. The vulnerability catalogue is implemented: BULB-01..07 (device) and BULB-APP (mobile) are IN PROGRESS (verified offline, over-the-air / on-Pi / build steps blocked in this environment), and BULB-CRA (dossier), BULB-CLD (cloud) and BULB-SEC (secure toggle) are DONE (verified offline, no device dependency). See [`Vulns/README.md`](Vulns/README.md) for the per-finding status and `stages/05_verify/output/` for the evidence.

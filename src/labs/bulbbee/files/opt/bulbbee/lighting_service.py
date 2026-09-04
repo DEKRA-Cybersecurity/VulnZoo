@@ -120,7 +120,20 @@ class Controller:
             self._save_state()
         self._render_once()
 
-    def set_scene(self, name):
+    def set_scene(self, name, count=None, color=None):
+        if name == "custom":
+            # BULB-07: unbounded LED count, no validation -> uncontrolled allocation.
+            # The list of `n` pixels is built here before the driver truncates to
+            # led_count, so a huge `count` exhausts memory in this request thread.
+            n = int(count if count is not None else self.led_count)
+            if self.cfg.get("secure"):
+                n = min(n, self.led_count)   # BULB-07 fix: clamp the count in secure mode
+            col = tuple(color) if color else tuple(self.state["color"])
+            self.dev.show([col] * n)
+            with self.lock:
+                self.state["scene"] = "custom"
+                self._save_state()
+            return
         if name not in ("solid", "off") and name not in ANIMATED:
             raise ValueError("unknown scene: %s" % name)
         with self.lock:
@@ -193,6 +206,12 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         return json.loads(raw.decode())
 
+    def _secure(self):
+        return bool(self.controller.cfg.get("secure"))
+
+    def _authed(self):
+        return self.headers.get("X-Auth-Token", "") == str(self.controller.cfg.get("auth_token", ""))
+
     def do_GET(self):
         c = self.controller
         if self.path == "/health":
@@ -200,7 +219,31 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/state":
             self._send(200, c.get_state())
         elif self.path == "/config":
-            self._send(200, c.cfg)
+            if self._secure() and not self._authed():
+                self._send(401, {"error": "unauthorized"})
+            else:
+                cfg = dict(c.cfg)
+                if self._secure():   # BULB-05/BULB-02 fix: redact secrets in secure mode
+                    for k in ("prov_pin", "auth_token", "update_key"):
+                        cfg.pop(k, None)
+                self._send(200, cfg)
+        elif self.path == "/debug":
+            # BULB-06: diagnostic surface shipped enabled by default. Secure mode forces it off.
+            if not c.cfg.get("debug", True) or self._secure():
+                self._send(404, {"error": "not found"})
+            else:
+                prov = {}
+                try:
+                    with open("/tmp/bulbbee/provisioning.json") as f:
+                        prov = json.load(f)
+                except (OSError, ValueError):
+                    pass
+                self._send(200, {
+                    "config": c.cfg,                 # includes prov_pin
+                    "provisioning": prov,            # includes wifi_psk, pair_token
+                    "state": c.get_state(),
+                    "env": {k: os.environ.get(k) for k in ("PATH", "HOME", "BULBBEE_CONFIG")},
+                })
         else:
             self._send(404, {"error": "not found"})
 
@@ -211,6 +254,10 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._send(400, {"error": "invalid json"})
             return
+        if self._secure() and not self._authed():
+            # BULB-02 fix: authenticated control in secure mode
+            self._send(401, {"error": "unauthorized"})
+            return
         try:
             if self.path == "/set":
                 c.set_state(power=data.get("power"),
@@ -218,8 +265,18 @@ class Handler(BaseHTTPRequestHandler):
                             color=data.get("color"))
                 self._send(200, c.get_state())
             elif self.path == "/scene":
-                c.set_scene(data.get("scene", ""))
+                c.set_scene(data.get("scene", ""), count=data.get("count"), color=data.get("color"))
                 self._send(200, c.get_state())
+            elif self.path == "/update":
+                # BULB-04: unauthenticated trigger for an unsigned OTA update
+                import update_agent
+                try:
+                    update_agent.apply_update(data.get("url", ""),
+                                              secure=self._secure(),
+                                              key=str(c.cfg.get("update_key", "")))
+                    self._send(200, {"status": "applied", "url": data.get("url", "")})
+                except Exception as e:
+                    self._send(502, {"error": str(e)})
             else:
                 self._send(404, {"error": "not found"})
         except ValueError as e:

@@ -10,5 +10,10 @@
   "spi_device": "/dev/spidev0.0",
   "state_file": "/tmp/bulbbee/state.json",
   "ble_name": "BulbBee",
-  "ble_interval": 1
+  "ble_interval": 1,
+  "prov_pin": "8080",
+  "debug": true,
+  "secure": false,
+  "auth_token": "bulbbee-secure-token",
+  "update_key": "bulbbee-update-key"
 }
