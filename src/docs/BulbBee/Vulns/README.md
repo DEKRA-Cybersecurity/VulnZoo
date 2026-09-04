@@ -89,7 +89,7 @@ BULB-03 (transport confidentiality) is documented, not code-gated, its secure st
 | IN PROGRESS | Implemented and documented, not yet verified on the live lab. |
 | PENDING | Documented or scoped, not yet implemented or verified. |
 
-Phase 0 (BULB-A0, BULB-A1) is the functional bring-up and carries no intentional weakness. BULB-01 through BULB-07 (the device findings) are `IN PROGRESS` (logic/offline-verified, over-the-air / on-Pi verification pending). BULB-CRA (dossier), BULB-CLD (cloud API) and BULB-SEC (secure-mode toggle) are `DONE` (verified offline, no device dependency). BULB-APP (mobile) is `IN PROGRESS`: the source and M1/M9 findings are present and inspection-verified, the Android build and on-device BLE control are the remaining steps.
+Phase 0 (BULB-A0, BULB-A1) is the functional bring-up and carries no intentional weakness. BULB-01 through BULB-07 (the device findings) are `IN PROGRESS` (logic/offline-verified, over-the-air / on-Pi verification pending). BULB-CRA (dossier), BULB-CLD (cloud API) and BULB-SEC (secure-mode toggle) are `DONE` (verified offline, no device dependency). BULB-APP (mobile) is `IN PROGRESS`: the app builds cleanly (`assembleDebug`, AGP 9.2.1 / Gradle 9.4.1) and the M1/M9 findings are present and inspection-verified, only on-device BLE control (needs a phone + the peripheral) remains.
 
 ---
 

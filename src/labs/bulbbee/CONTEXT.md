@@ -139,6 +139,7 @@ Then add the `bulbbee` row to [`../../../shared/glossary.md`](../../../shared/gl
 - [ ] BULB-05: WiFi PSK and cloud token are readable in cleartext
 - [ ] BULB-07: the crafted scene payload stops the service from serving
 - [ ] Secure mode (`bulbbee.@bulbbee[0].secure=1`) neutralizes each of the above
+- [ ] Cleanup (`90-bulbbee-cleanup.sh`): samba4 / ksmbd / wsdd2 / avahi-daemon / mosquitto stopped and opkg-removed, only dnsmasq (`:53/:67`), dropbear (`:22`), uhttpd (`:8080` Device Manager), the lighting service (`:8082`) and BLE remain
 
 ## Dependencies
 
