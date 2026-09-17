@@ -84,7 +84,7 @@ Plain HTTP, JSON in and out, the same lighting state as the BLE channel.
 
 The ring is driven from `ws2812.py` over SPI at `/dev/spidev0.0`, with GPIO10 (SPI0 MOSI) carrying the WS2812 DIN line. Each WS2812 data bit is encoded as three SPI bits at an SPI clock of about 2.4 MHz, so a `1` becomes `110` and a `0` becomes `100`, giving the roughly 1.25 microsecond WS2812 bit period. One color byte becomes three SPI bytes and one LED (24 bits, GRB) becomes nine SPI bytes, packed into a single SPI write per refresh. This uses only `fcntl.ioctl` to set the SPI clock and `os.write` to push frames, no `python3-spidev` and no `rpi_ws281x` PWM/DMA path.
 
-When `use_real_hardware` is false in `config.json` or `/dev/spidev0.0` is absent, the driver keeps the frame buffer in memory and writes it to `state.json` instead, so the service, the API and every later target run headless with no ring attached. Calibration knobs (`led_count`, `brightness`, `gamma`, `spi_hz`, `color_order`) live in `config.json` because a real ring's timing and perceived color drift from the on-paper values and need per-unit tuning.
+When `/dev/spidev0.0` is absent (SPI off or no ring), or `use_real_hardware` is set to false in `config.json` (it ships true), the driver keeps the frame buffer in memory and writes it to `state.json` instead, so the service, the API and every later target run headless with no ring attached. Calibration knobs (`led_count`, `brightness`, `gamma`, `spi_hz`, `color_order`) live in `config.json` because a real ring's timing and perceived color drift from the on-paper values and need per-unit tuning.
 
 ## Launch and verify
 

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BulbBee</string>
+
+    <string name="tagline">Smart light controller</string>
+
+    <string name="connect">Scan and connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_scanning">Scanning for BulbBee…</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected to BulbBee</string>
+
+    <string name="light_control">Light Control</string>
+    <string name="power">Power</string>
+    <string name="brightness">Brightness</string>
+    <string name="color">Color</string>
+    <string name="scenes">Scenes</string>
+    <string name="scene_solid">Solid</string>
+    <string name="scene_rainbow">Rainbow</string>
+    <string name="scene_breathe">Breathe</string>
+    <string name="scene_off">Off</string>
+    <string name="state_label">State</string>
+
+    <string name="wifi_setup">WiFi Setup</string>
+    <string name="pairing_pin">Pairing PIN</string>
+    <string name="wifi_ssid">WiFi Network (SSID)</string>
+    <string name="wifi_password">WiFi Password</string>
+    <string name="provision">Provision device</string>
+    <string name="prov_idle">Enter the factory PIN and your WiFi credentials.</string>
+</resources>

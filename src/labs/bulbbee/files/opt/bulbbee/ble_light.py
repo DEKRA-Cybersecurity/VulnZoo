@@ -189,15 +189,20 @@ def _save_prov_state():
         pass
 
 
+WIFI_HOOK = "/usr/lib/vulnzoo-hooks/profile-init.d/40-bulbbee-wifi.sh"
+
+
 def _wifi_set_argv(ssid: str, psk: str):
-    """Pure: the uci argv sequence to point the station WiFi at (ssid, psk).
-    A clean argv list, NOT a shell string, so BULB-01 is only the weak-auth
-    finding, not command injection (that would be a separate finding)."""
+    """Pure: the uci argv sequence to persist the provisioned station creds in
+    the bulbbee_wifi config. A clean argv list, NOT a shell string, so BULB-01
+    stays weak-auth only, not command injection. The 40-bulbbee-wifi.sh hook
+    turns these creds into the live STA config (radio + wwan + firewall) on
+    every boot/load, so the join survives reboots and lab reloads."""
     return [
-        ["uci", "set", "wireless.@wifi-iface[0].ssid=%s" % ssid],
-        ["uci", "set", "wireless.@wifi-iface[0].key=%s" % psk],
-        ["uci", "commit", "wireless"],
-        ["wifi", "reload"],
+        ["uci", "set", "bulbbee_wifi.sta=creds"],
+        ["uci", "set", "bulbbee_wifi.sta.ssid=%s" % ssid],
+        ["uci", "set", "bulbbee_wifi.sta.psk=%s" % psk],
+        ["uci", "commit", "bulbbee_wifi"],
     ]
 
 
@@ -208,6 +213,13 @@ def _do_wifi_set(ssid: str, psk: str):
             subprocess.run(argv, capture_output=True, timeout=15, check=False)
         except (OSError, subprocess.SubprocessError) as e:
             _log("wifi_set step %r failed (%s)" % (argv[:2], e))
+    # Apply the join now via the idempotent hook (it also runs on every boot).
+    try:
+        subprocess.run([WIFI_HOOK], capture_output=True, timeout=30, check=False,
+                       env=dict(os.environ, VULNZOO_DEVICE="bulbbee"))
+        _log("wifi hook applied for %s" % ssid)
+    except (OSError, subprocess.SubprocessError) as e:
+        _log("wifi hook failed (%s)" % e)
 
 
 def _prov_auth(pin: str) -> bool:
@@ -754,8 +766,8 @@ def _demo():
 
     # BULB-01: wifi_set argv is a clean list (no shell), and the PIN gate has no lockout
     argv = _wifi_set_argv("evil-ap", "p@ss")
-    assert argv[0] == ["uci", "set", "wireless.@wifi-iface[0].ssid=evil-ap"]
-    assert ["wifi", "reload"] in argv
+    assert argv[1] == ["uci", "set", "bulbbee_wifi.sta.ssid=evil-ap"]
+    assert ["uci", "commit", "bulbbee_wifi"] in argv
     _prov_state.update({"authenticated": False, "pin_attempts": 0,
                         "wifi_ssid": "", "wifi_psk": "", "cloud_url": "", "pair_token": ""})
     assert _prov_read() == {"error": "PIN_REQUIRED"}          # gated before auth

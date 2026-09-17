@@ -12,6 +12,7 @@ source_docs:
   - "stages/01_spec/output/bulbbee-app-spec.md"
 affected_components:
   - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/MainActivity.java"
+  - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/BleController.java"
 verified_date: "2026-09-04"
 ---
 
@@ -68,6 +69,6 @@ The PIN `8080` is present in the APK, and after onboarding the WiFi PSK and clou
 
 ## Verification Checklist
 
-- [ ] `PAIRING_PIN = "8080"` is present in the app source / APK (M1).
-- [ ] the WiFi PSK and cloud token are written to plain SharedPreferences and Logcat (M9).
-- [ ] (blocked here) the app builds and drives the device over BLE, needs the Android toolchain and a device.
+- [x] `PAIRING_PIN = "8080"` is present in the app source / APK (M1). Verified in the debug APK: `strings classes3.dex | grep 8080`.
+- [x] the WiFi PSK and cloud token are written to plain SharedPreferences and Logcat (M9), in `MainActivity.storeCredentials`.
+- [ ] end-to-end BLE drive on a device is still pending hardware. The app builds (`assembleDebug` produces an APK) and implements BLE scan/connect, ring control (Control `0xFF31`, State notify `0xFF32`) and WiFi provisioning (Auth `0xFF41`, Config `0xFF42`) in `BleController`.

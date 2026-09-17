@@ -1,5 +1,5 @@
 {
-  "use_real_hardware": false,
+  "use_real_hardware": true,
   "led_count": 16,
   "brightness": 128,
   "gamma": 2.2,

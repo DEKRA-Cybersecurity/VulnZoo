@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="honey">#F5B301</color>
+    <color name="honey_dark">#C88A00</color>
+    <color name="bee_black">#1B1A17</color>
+    <color name="cream">#FFF8E7</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

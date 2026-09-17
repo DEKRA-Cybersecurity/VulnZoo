@@ -55,7 +55,7 @@ Add that line to `/boot/config.txt` (the RPi firmware boot config on the OpenWRT
 ls -l /dev/spidev0.0
 ```
 
-If `/dev/spidev0.0` is absent, the lighting service still starts and runs in simulation, only the physical ring stays dark. Enabling SPI is a manual one-time step in Phase 0. A later iteration can add an overlay hook that writes this automatically on first load, the way the canary lab writes its CAN overlays.
+If `/dev/spidev0.0` is absent, the lighting service still starts and runs in simulation, only the physical ring stays dark. The `99-bulbbee-spi.sh` profile-init hook automates this step, the way the canary lab writes its CAN overlays: on the first load for the bulbbee device it writes `dtparam=spi=on` to `/boot/config.txt` and reboots once so the firmware exposes `/dev/spidev*`. The hook is idempotent and reboots only the run that actually adds the line (and only after verifying the write landed), so a read-only boot partition or a missing SPI kmod cannot turn it into a boot loop. Set `bulbbee.main.spi_reboot=0` to have the hook write the config but leave the reboot to you, or do the manual edit above if you prefer to enable SPI by hand. Enabling SPI only creates the device nodes. The shipped `config.json` already sets `use_real_hardware=true`, so once `/dev/spidev0.0` exists the driver uses the ring on the next boot (Part 5).
 
 ## Part 3 - Load the bulbbee lab
 
@@ -89,10 +89,10 @@ curl http://192.168.2.1:8082/state          # power/brightness/color/scene as be
 
 | Mode | When | Behavior |
 |---|---|---|
-| Hardware | `use_real_hardware=true` and `/dev/spidev0.0` present | drives the WS2812 ring over SPI |
-| Simulation | `use_real_hardware=false`, or the spidev node is absent | keeps the frame buffer in memory and in `state.json`, API unchanged |
+| Hardware | `use_real_hardware=true` (the shipped default) and `/dev/spidev0.0` present | drives the WS2812 ring over SPI |
+| Simulation | `/dev/spidev0.0` absent (SPI off or no ring), or `use_real_hardware=false` | keeps the frame buffer in memory and in `state.json`, API unchanged |
 
-Set the mode in `/opt/bulbbee/config.json`. Every control-API exercise in the later waves works identically in simulation, only the physical light and the SPI signal need the ring.
+`config.json` ships with `use_real_hardware=true`, so hardware vs simulation is decided by whether `/dev/spidev0.0` exists: with SPI enabled the ring is driven, on a bare Pi the driver degrades to simulation cleanly. The value is baked in as `true` rather than flipped at runtime because the base cold-boot re-extraction restores `config.json` from the tarball on every reboot, so a runtime flip would be overwritten (the canary lab hits the same reset). Set `use_real_hardware=false` to force simulation even with a ring attached. Every control-API exercise in the later waves works identically in simulation, only the physical light and the SPI signal need the ring.
 
 ## Part 6 - Drive it over BLE (the Android app channel)
 

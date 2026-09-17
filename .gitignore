@@ -39,3 +39,6 @@ USA26-VulnZoo.pptx
 src/labs/octobot/firmware_analysis
 
 stages/TARGET*
+
+# Local image analysis workspace (extracted rootfs, .img files) - never commit
+/images_analysis/
