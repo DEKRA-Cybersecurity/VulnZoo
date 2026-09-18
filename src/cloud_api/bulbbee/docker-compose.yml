@@ -5,3 +5,16 @@ services:
     ports:
       - "5004:5004"
     restart: unless-stopped
+
+  # BULB-A3: cloud emulator broker. The device opens an outbound MQTT tunnel to
+  # it (:1883 plaintext by default, :8883 TLS in secure mode) and app commands
+  # are relayed by publishing to bulbbee/<device_id>/cmd.
+  bulbbee-broker:
+    image: eclipse-mosquitto:2
+    container_name: bulbbee-broker
+    ports:
+      - "1883:1883"
+      - "8883:8883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped

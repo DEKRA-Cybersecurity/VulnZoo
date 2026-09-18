@@ -23,9 +23,15 @@ The BulbBee cloud lets the app control bulbs remotely and sync scenes. It seeds 
 
 ## Build / run
 
+The stack is two services: the Flask REST API (`bulbbee-cloud`, `:5004`) and the MQTT broker the device tunnel connects to (`bulbbee-broker`, `:1883`/`:8883`, BULB-A3).
+
 ```bash
 cd src/cloud_api/bulbbee
-docker compose up --build      # serves the API on :5004
+./cloudctl.sh start            # build + up -d (API :5004 + broker :1883/:8883), prints the cloud_host hint
+./cloudctl.sh pub <id> '{"scene":"rainbow"}'   # drive the bulb over the tunnel
+./cloudctl.sh stop | restart | reset | status | logs [service]
+# or raw:
+docker compose up --build      # serves the API on :5004 and the broker on :1883/:8883
 ```
 
 ## Verification checklist

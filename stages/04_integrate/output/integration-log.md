@@ -1634,3 +1634,167 @@ The app opened in Android Studio failed to configure: `Unresolved reference 'lib
 ## Stage cleanup
 
 This log is the durable record.
+
+---
+
+# Integration Log - bulbbee BULB-A0 (physical base + local CLI)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Promoted:
+- NEW `src/labs/bulbbee/files/usr/bin/bulbctl` (0755): local CLI, thin `curl` client of `:8082`, never opens `/dev/spidev0.0` (lighting_service stays the single ring writer). From `02_implement/output/code/labs/bulbbee/files/usr/bin/bulbctl`.
+- Doc: `bulbctl` usage added to `src/docs/BulbBee/LAB_SETUP.md` Part 4.
+- Repackaged `src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/bulbbee.tar.gz` (bulbctl included).
+Reused unchanged: `ws2812.py`, `99-bulbbee-spi.sh` (SPI enable + pinned core_freq), `lighting_service.py`. `config.json` `led_count` kept at 16 (fitted ring), not hardcoded to the blueprint's 12.
+Verified (05_verify): all 6 acceptance criteria pass live on the Pi. Badge -> DONE. See `05_verify/output/bulbbee-a0-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-A1 (control daemon: single state owner + backend adapter)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Promoted:
+- NEW `src/labs/bulbbee/files/opt/bulbbee/bulb_client.py` (0644): shared plane adapter. `BulbClient.apply(command)` splits a lighting command dict into the daemon's `/set` + `/scene` calls (`/set` first), `BulbClient.state()` reads `/state`. Stdlib only (`json`, `urllib.request`), never opens `/dev/spidev0.0`. From `02_implement/output/code/labs/bulbbee/files/opt/bulbbee/bulb_client.py`.
+- Doc: single-state-owner + plane-adapter contract added to `src/labs/bulbbee/CONTEXT.md` component 2.
+- Repackaged `src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/bulbbee.tar.gz` (bulb_client.py included).
+Reused unchanged: `lighting_service.py` (the single state owner / ring writer). `ble_light.py` keeps its inline forwarder, not refactored onto the adapter (working, provisioning depends on it; ponytail: no risky refactor).
+Verified (05_verify): `py_compile` clean, `--selfcheck` OK (command-split cases pass locally). The HTTP round-trip in `apply()`/`state()` is the same `:8082` path certified live in BULB-A0. Device re-run pending only for completeness (Pi unreachable at package time). Badge -> DONE [logic verified]. See `05_verify/output/bulbbee-a1-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-A2 (BLE provisioning + control: robust pairing)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Promoted (modified in place, non-destructive):
+- `src/labs/bulbbee/files/opt/bulbbee/ble_light.py`: net-new robust-pairing baseline, all gated on `SECURE`.
+  - `class Agent(org.bluez.Agent1)` + `register_agent(bus)`: registers a KeyboardDisplay agent as the default agent, so pairing negotiates LE Secure Connections + Passkey Entry / Numeric Comparison instead of Just Works. Fresh random 6-digit passkey per pairing (`_gen_passkey`).
+  - `setup_adapter`: `set_pairable(bool(SECURE))` (default keeps `set_pairable(False)`).
+  - Provisioning chars `0xFF41`/`0xFF42`: `_prov_flags([...], SECURE)` -> `encrypt-authenticated-read/write` under secure, so BlueZ refuses them on an unpaired / Just Works link. Default keeps plain `read`/`write`.
+  - `main()`: exports + registers the agent only `if SECURE`.
+- Doc: robust-pairing baseline added to `src/labs/bulbbee/CONTEXT.md` component 1.
+- Repackaged `src/labs/vulnzoo/files/usr/lib/vulnzoo-devices/bulbbee.tar.gz` (11 BULB-A2 markers present).
+Default (shipped, `secure=false`) path is unchanged: no agent, no pairing, plain characteristics — the BULB-01 no-bonding substrate the Phase-4 findings degrade. No intentional vuln hardened.
+Verified (05_verify): `py_compile` clean, `--selfcheck` OK (`_prov_flags` both branches, `_gen_passkey` range, unchanged BULB-01 checks). Live LE SC + Passkey pairing on the Pi with a BLE central: PENDING (Pi down at package time). Badge -> DONE [logic verified]. See `05_verify/output/bulbbee-a2-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-A3 (cloud plane: outbound tunnel + emulator + session token)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Decisions (sensible defaults): emulator broker in `cloud_api/bulbbee/` (Docker, project convention); device tunnel client on the Pi. Transport = MQTT, plaintext :1883 default (BULB-03 substrate), TLS :8883 secure. Token default = serial-derived (BULB-04 substrate), secure = random per-device HMAC secret.
+
+Promoted:
+- NEW `src/labs/bulbbee/files/opt/bulbbee/session_token.py` (0644): `issue`/`confirm`, HMAC-SHA256 over base64url JSON. Default key from serial + hardcoded vendor salt (forgeable, BULB-04). Secure key = random per-device secret at `/opt/bulbbee/.session_secret` (0600), rotatable.
+- NEW `src/labs/bulbbee/files/opt/bulbbee/cloud_tunnel.py` (0644): outbound MQTT client. Subscribes `bulbbee/<device_id>/cmd`, maps to a lighting command, applies via the BULB-A1 `bulb_client.BulbClient` (single-owner :8082), publishes `bulbbee/<device_id>/state`. Auth: MQTT username=device_id, password=session token. Guarded paho import (python3-paho-mqtt already in image .config).
+- NEW `src/labs/bulbbee/files/etc/init.d/bulbbee-tunnel` (0755): procd service, START=97, respawn 60/10/0. Disabled by default (no respawn loop against an unreachable broker; enable once cloud_host is up).
+- `src/labs/bulbbee/files/opt/bulbbee/config.json`: + device_id, cloud_host, cloud_mqtt_port (1883), cloud_mqtt_tls_port (8883).
+- `src/cloud_api/bulbbee/docker-compose.yml`: + `bulbbee-broker` (eclipse-mosquitto:2, :1883/:8883). NEW `src/cloud_api/bulbbee/mosquitto.conf` (anonymous :1883 default, commented TLS :8883). Flask REST API (:5004 BULB-CLD) untouched.
+- `src/labs/vulnzoo/.config`: `CONFIG_PACKAGE_ca-certificates=y` (secure-mode TLS trust).
+- Doc: cloud plane rewritten in `src/labs/bulbbee/CONTEXT.md` component 5.
+- Repackaged `bulbbee.tar.gz` (session_token.py, cloud_tunnel.py, bulbbee-tunnel present).
+Verified (05_verify): `py_compile` clean x2, both `--selfcheck` pass (token round-trip/tamper/expiry, BULB-04 forge-in-default, secure per-device isolation; tunnel topic + command mapping). Live tunnel + broker round-trip: PENDING (Pi/broker not up). Badge -> DONE [logic verified]. See `05_verify/output/bulbbee-a3-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-A4 (LAN/TCP plane: local port + AES-CCM)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Promoted:
+- NEW `src/labs/bulbbee/files/opt/bulbbee/local_tcp.py` (0644): Tuya-style local control on `:6668`. AES-CCM framed commands (`nonce(11) || ciphertext || tag(16)`, `>H` length prefix), relayed to the daemon via the BULB-A1 `bulb_client.BulbClient`, state encrypted back. `socketserver.ThreadingTCPServer`. Crypto = `Crypto.Cipher.AES` (guarded like CareOtter). Local key: default = static `b"bulbbee-local-16"` recoverable from firmware (BULB-03 substrate, proximity = control = BULB-06 substrate); secure = per-device key from the per-device secret via HMAC.
+- NEW `src/labs/bulbbee/files/etc/init.d/bulbbee-lan` (0755): procd service, START=97, respawn.
+- NEW `src/labs/bulbbee/files/usr/lib/vulnzoo-hooks/profile-init.d/55-bulbbee-lan.sh` (0755): enable + start hook (mirrors 50-bulbbee-ble.sh).
+- `src/labs/vulnzoo/.config`: `CONFIG_PACKAGE_python3-cryptodome=y`.
+- Doc: LAN/TCP plane added to `src/labs/bulbbee/CONTEXT.md` component 6 + `:6668` transports row.
+- Repackaged `bulbbee.tar.gz` (local_tcp.py, bulbbee-lan, 55-bulbbee-lan.sh present).
+Verified (05_verify): `py_compile` clean, `sh -n` clean, `local_tcp --selfcheck` OK with crypto (AES-CCM round-trip, tampered-frame -> None, static-key frame not decryptable under a per-device key). Live `:6668` LAN round-trip on the Pi: PENDING (Pi not up). Badge -> DONE [logic verified]. See `05_verify/output/bulbbee-a4-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-A5 (secret store, simulated flash)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Promoted:
+- NEW `src/labs/bulbbee/files/opt/bulbbee/secret_store.py` (0644): `LAYOUT` names every device secret (session secret 0600, local key derived, provisioning cache, owner binding) with its rootfs path + intended protection. Owner binding at `/opt/bulbbee/secrets/owner.json` (write-once via O_EXCL): `check_owner` enforces a match in secure mode, returns True in default (the BULB-05 substrate). One root secret (`.session_secret`), token + local key derive from it (ponytail: single source of truth, no redundant key file).
+- Doc: secret store added to `src/labs/bulbbee/CONTEXT.md` component 7.
+- Repackaged `bulbbee.tar.gz` (secret_store.py present).
+Non-invasive: default `check_owner` returns True, so the working control path is unchanged; the module is opt-in until BULB-05/secure wire enforcement.
+Verified (05_verify): `py_compile` clean, `--selfcheck` OK (layout modes, write-once binding, secure-vs-default enforcement, dir 0700). Badge -> DONE. See `05_verify/output/bulbbee-a5-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-P01..P07 (three-plane weakness findings)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement (substrate from A-series) -> 03_document -> 04_integrate (this stage) -> 05_verify
+
+Decision (user): new ID axis BULB-P01..P07 under Vulns/Planes/, mapping to the intact classic BULB-01..07 catalogue (non-destructive, keeps Layer 3<->4 sync for still-present classic findings like unsigned OTA / scene DoS).
+
+Promoted (docs, Layer 3):
+- NEW `src/docs/BulbBee/Vulns/Planes/BULB-P01-ble-pairing-mitm.md` (degrades BULB-A2; maps BULB-01)
+- NEW `.../BULB-P02-wifi-psk-over-ble-cleartext.md` (degrades BULB-A2; maps BULB-03+BULB-05)
+- NEW `.../BULB-P03-static-local-key-firmware.md` (net-new; degrades BULB-A4)
+- NEW `.../BULB-P04-session-token-static-derivable.md` (net-new; degrades BULB-A3)
+- NEW `.../BULB-P05-owner-binding-app-only.md` (net-new; degrades BULB-A5)
+- NEW `.../BULB-P06-lan-proximity-equals-control.md` (degrades BULB-A4/A5; maps BULB-02+BULB-06)
+- NEW `.../BULB-P07-secure-by-default-violations.md` (degrades all A-series; maps BULB-06)
+- NEW `.../Planes/README.md` (mapping table); updated `.../Vulns/README.md` (three-plane section + pointer).
+No classic BULB-01..07 doc modified. No code change (the substrate is the A-series default branch).
+Verified (05_verify): each finding's default-vs-secure degradation is proven by the A-series selfchecks (P01 `_prov_flags`, P02 `_prov_read`, P03 `decrypt_frame(secure_key,...)`, P04 `confirm(forged, secure=True)`, P05 `check_owner`, P07 `/debug`+`_prov_auth`). Live on-Pi exploit runs PENDING. Badge -> DONE. See `05_verify/output/bulbbee-planes-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-SEC (secure-mode toggle)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement (branches from A2..A5) -> 03_document -> 04_integrate -> 05_verify
+
+Promoted:
+- NEW `src/docs/BulbBee/SECURE_MODE.md`: consolidated mechanism matrix (12 rows), one `secure` flag in config.json flips BLE pairing/PSK/PIN, local key, session token, cloud transport, owner binding, LAN auth, debug, control, scene clamp, OTA.
+No new code: the robust branches were built per target (A2 pairing, A3 token/tunnel, A4 local key, A5 owner binding), all reading `config.json` `secure` like the classic services.
+Verified (05_verify): every plane module reads the same flag (grep), and each divergence is asserted by the A-series selfchecks. Full-image live toggle on-Pi PENDING. Badge -> DONE. See `05_verify/output/bulbbee-sec-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-EVAL (assessor evaluation battery)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement (repro from findings) -> 03_document -> 04_integrate -> 05_verify
+
+Promoted:
+- NEW `src/docs/BulbBee/ASSESSOR_BATTERY.md`: single guided run, tests 0-7 (surface scan, /debug, unauth LAN control, pairing MITM, secret recovery, token spoof, device hijack, abusive re-provisioning), each with commands, default vs secure result, weakness ID (BULB-P0x + classic), failed EN 303 645 / CRA requirement, and a scoreboard.
+Verified (05_verify): the token-spoof test is runnable and proven by `session_token --selfcheck`; the rest are on-Pi live but their logic is selfcheck-proven. Badge -> DONE. See `05_verify/output/bulbbee-eval-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-CRA (dossier re-map)
+
+Date: 2026-09-17
+Pipeline: 01_spec -> 02_implement (n/a, doc) -> 03_document -> 04_integrate -> 05_verify
+
+Promoted (Layer 3, non-destructive):
+- `src/docs/BulbBee/CRA/99-Assessor-Gap-Key.md`: + "Three-plane findings (BULB-P01..P07)" table mapping each dossier claim to its P-finding contradiction and the battery test that proves it. Classic gap table (1-9) unchanged.
+- `src/docs/BulbBee/CRA/BB-ERM-002-essential-requirements-mapping.md`: assessment-outcome paragraph now points at Vulns/Planes/, SECURE_MODE.md, and ASSESSOR_BATTERY.md.
+Verified (05_verify): three-plane mapping present, classic dossier intact. Badge -> DONE. See `05_verify/output/bulbbee-cra-verification.md`.
+
+---
+
+# Integration Log - bulbbee docs consolidation (README overview)
+
+Date: 2026-09-17
+Pipeline: documentation refactor (user request: less segregation, more summarized in the device README)
+
+Change: consolidated 10 session-new docs into the single device overview `src/docs/BulbBee/README.md`, which now carries the secure-mode matrix, the three-plane findings table (BULB-P01..P07), and the assessor battery (8 tests + scoreboard) as compact sections.
+Deleted (absorbed into README): `src/docs/BulbBee/SECURE_MODE.md`, `src/docs/BulbBee/ASSESSOR_BATTERY.md`, and `src/docs/BulbBee/Vulns/Planes/` (BULB-P01..P07 + README). src/docs/BulbBee: 27 -> 17 .md files.
+Kept unchanged: the classic per-finding docs (`Vulns/IoT/BULB-01..07`, `Vulns/API/BULB-CLD`, `Vulns/Mobile/BULB-APP`), the CRA dossier (`CRA/`), and `LAB_SETUP.md`.
+References repointed to the README overview: `Vulns/README.md`, `LAB_SETUP.md`, `CRA/99-Assessor-Gap-Key.md`, `CRA/BB-ERM-002`, `src/labs/bulbbee/CONTEXT.md`, and the Phase-4/SEC/EVAL rows of `stages/TARGET_BULBBEE.md`. Earlier per-target integration/verify entries above are the point-in-time record (docs were at Vulns/Planes/ when written); this entry supersedes their doc locations.

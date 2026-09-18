@@ -2,7 +2,7 @@
 
 **Stage Purpose**: Deploy a consumer WiFi smart light (WS2812 LED ring on a Raspberry Pi 3B+) as the VulnZoo reference for a **CRA default-category** product with digital elements, one that falls outside every Annex III / Annex IV vertical and therefore inherits only the baseline essential requirements and the self-assessment (Module A) conformity route.
 
-> **Status**: implemented. The functional bring-up (BULB-A0/A1) and the device findings BULB-01..07 are in `files/` and verified offline (over-the-air / on-Pi steps blocked in the authoring environment), the cloud (BULB-CLD) and CRA dossier (BULB-CRA) and secure toggle (BULB-SEC) are DONE, and the Android app (BULB-APP) source is in `../../vulnzoo_apps/bulbbee_app/`. Development backlog and per-target status: [`../../../stages/TARGET_BULBBEE.md`](../../../stages/TARGET_BULBBEE.md). Per-finding docs: [`../../docs/BulbBee/Vulns/`](../../docs/BulbBee/).
+> **Status**: implemented. The bring-up and secure baselines (BULB-A0..A5) span the three control planes (BLE `ble_light.py`, cloud tunnel `cloud_tunnel.py` + `session_token.py`, LAN/TCP `local_tcp.py`) plus the secret store (`secret_store.py`) and the shared adapter (`bulb_client.py`), all in `files/opt/bulbbee/`. The three-plane findings (BULB-P01..P07) are the shipped default degradations, alongside the intact classic catalogue (BULB-01..07, cloud BULB-CLD, mobile BULB-APP) under [`../../docs/BulbBee/Vulns/`](../../docs/BulbBee/Vulns/). The three-plane findings table, the secure-toggle matrix (BULB-SEC) and the assessor battery (BULB-EVAL) are consolidated in the device overview [`../../docs/BulbBee/README.md`](../../docs/BulbBee/README.md), and the CRA dossier (BULB-CRA) is DONE. BULB-A0 is verified live on the Pi, the other planes are proven by unit selfcheck with the on-Pi / BLE-central / broker round-trips pending. Development backlog and per-target status: [`../../../stages/TARGET_BULBBEE.md`](../../../stages/TARGET_BULBBEE.md) (16/16).
 
 ## Why this lab
 
@@ -57,6 +57,8 @@ A budget WiFi smart light (BulbBee) drives an addressable RGB LED ring. The **An
 - LE advertising as `BulbBee` so the app discovers the bulb, with the CareOtter-style self-healing advertising watchdog.
 - Onboarding over BLE (WiFi/cloud provisioning) is the onboarding weakness and is delivered by BULB-01 (see component 3), not here.
 
+**Robust pairing baseline (BULB-A2, secure mode only)**: with `secure=1` the server registers an `org.bluez.Agent1` (KeyboardDisplay) as the default agent, so pairing negotiates LE Secure Connections + Passkey Entry / Numeric Comparison (a fresh random 6-digit passkey per pairing) instead of Just Works, sets the adapter pairable, and marks the provisioning characteristics `0xFF41`/`0xFF42` `encrypt-authenticated-*` so BlueZ refuses them on an unpaired or Just Works link. The default (shipped) path is unchanged: no agent, `set_pairable(False)`, plain characteristics, the no-bonding substrate that BULB-01 degrades. So A2 is the secure baseline the Phase-4 BLE findings (BULB-01/02) degrade from, selected by the same BULB-SEC toggle.
+
 ### 2. Lighting Service (HTTP `:8082`, secondary)
 **Purpose**: drive the WS2812 ring and expose a secondary local control / diagnostics surface.
 
@@ -68,14 +70,29 @@ A budget WiFi smart light (BulbBee) drives an addressable RGB LED ring. The **An
 - MQTT client for cloud control (Wave 4, local broker mock earlier).
 - Calibration knobs (gamma, max brightness, LED count) left tunable, real LEDs and the 800 kHz WS2812 timing drift from the ideal and need per-ring tuning.
 
+**Single state owner + plane adapter (BULB-A1)**: the lighting service is the only writer to the ring. Each control plane (BLE today, LAN/TCP in BULB-A4, cloud tunnel in BULB-A3) is a thin adapter that translates its wire format into a lighting command dict (`power`/`brightness`/`color`/`scene`) and applies it through the daemon's local surface. `bulb_light`'s shared client `bulb_client.py` (`BulbClient.apply()` / `.state()`) centralises the `/set` + `/scene` split so a new plane does not re-derive ring access. The existing `ble_light.py` keeps its own equivalent inline forwarder (unchanged, provisioning depends on it), the shared adapter is the path for the net-new planes.
+
 ### 3. Onboarding (BLE provisioning + setup AP, Wave 1, BULB-01)
 Primary path: an unauthenticated BLE provisioning GATT service (no bonding, LE Just Works or a hardcoded factory pairing PIN), mirroring CareOtter's WiFi-over-BLE provisioning. Fallback: an open `BulbBee-setup` WiFi AP with an unauthenticated provisioning endpoint. Intentional weakness.
 
 ### 4. Update Agent (Wave 1, BULB-04)
 Pulls and applies a scene-pack / firmware update with no signature, origin, or version check. Intentional weakness.
 
-### 5. Cloud connector (Wave 4, optional)
-Thin Flask cloud at `cloud_api/bulbbee/` on `:5004` for remote control and scene sync. Deferred.
+### 5. Cloud plane: outbound tunnel + emulator + session token (BULB-A3)
+The remote channel. The device opens an OUTBOUND MQTT tunnel to a cloud emulator broker and relays app commands to the lighting daemon, it never listens on the Internet.
+
+**Device side** (`/opt/bulbbee/`):
+- `cloud_tunnel.py`: an outbound MQTT client. It subscribes to `bulbbee/<device_id>/cmd`, maps each cloud message to a lighting command and applies it through the BULB-A1 adapter (`bulb_client.py` -> the single-owner `:8082` daemon), and publishes state to `bulbbee/<device_id>/state`. `python3-paho-mqtt` (already in the image `.config`), guarded import. Transport is vuln-consistent: plaintext MQTT `:1883` by default (the BULB-03 cleartext/replay substrate), MQTT over TLS `:8883` in secure mode.
+- `session_token.py`: the device's authority on the tunnel (MQTT username=device_id, password=token). Default (vulnerable) key is derived from the enumerable Pi serial + a hardcoded vendor salt, so it is forgeable (the BULB-04 substrate). Secure mode uses an HMAC token under a random per-device secret (`/opt/bulbbee/.session_secret`, 0600), rotatable.
+- `bulbbee-tunnel` init (procd, `START=97`): disabled by default so procd does not respawn against an unreachable broker, enable it once the broker is up.
+
+**Cloud side** (`cloud_api/bulbbee/`): a `mosquitto` broker service (`docker-compose.yml` + `mosquitto.conf`) on `:1883` (`:8883` TLS with certs). Command relay = publish to the device cmd topic. The existing Flask REST API (`:5004`, the BULB-CLD JWT/BOLA surface) is unchanged. Config knobs: `device_id`, `cloud_host`, `cloud_mqtt_port`, `cloud_mqtt_tls_port` in `config.json`.
+
+### 6. LAN/TCP plane: local port + AES-CCM (BULB-A4)
+The Tuya-style local channel, `local_tcp.py`, a TCP server on `:6668` (enabled by `55-bulbbee-lan.sh` -> `bulbbee-lan` procd). The app on the same LAN sends AES-CCM framed commands (`nonce(11) || ciphertext || tag(16)`, `>H` length prefix), which are relayed to the lighting daemon through the BULB-A1 adapter. The state snapshot is encrypted back. Crypto is `Crypto.Cipher.AES` (`python3-cryptodome`, enabled in the image `.config`), guarded import. Local key (vuln-consistent): default is a static 16-byte key hardcoded in firmware (the BULB-03 recoverable-key substrate, so proximity + the key = control, the BULB-06 substrate), secure mode derives a per-device key from the per-device secret so a shared image does not leak it.
+
+### 7. Secret store (simulated flash, BULB-A5)
+`secret_store.py` defines where every device secret lives on the rootfs and its intended protection (`LAYOUT`). One root secret, `/opt/bulbbee/.session_secret` (0600), is the single source of truth, the session token (BULB-A3) and the LAN/TCP local key (BULB-A4) derive from it in secure mode. The net-new stored secret is the owner binding at `/opt/bulbbee/secrets/owner.json`: write-once, enforced by `check_owner` in secure mode (an unbound device accepts the first claimant), not enforced in default mode where binding lives only in the app (the BULB-05 substrate). The module is non-invasive: the default `check_owner` returns True, so the working control path is unchanged until a plane opts in.
 
 ## Transports and ports
 
@@ -83,6 +100,7 @@ Thin Flask cloud at `cloud_api/bulbbee/` on `:5004` for remote control and scene
 |-------------------|------|----------|------|
 | App control (primary) | - | BLE GATT (hci0) | Android app channel, no bonding (BULB-02/03) |
 | Lighting control API (secondary) | 8082 | HTTP | local LAN control + diagnostics (BULB-02) |
+| LAN/TCP local plane (BULB-A4) | 6668 | TCP + AES-CCM | Tuya-style local control, static key by default (BULB-03/06) |
 | Cloud API (Wave 4) | 5004 | HTTP | remote control / scene sync |
 | MQTT (cloud channel) | 1883 | MQTT | no TLS, default creds (BULB-03) |
 | Onboarding | - | BLE GATT / WiFi | BLE provisioning primary, open `BulbBee-setup` AP fallback (BULB-01) |

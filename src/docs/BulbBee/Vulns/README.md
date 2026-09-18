@@ -21,6 +21,10 @@ The custom identifier scheme for the device findings is `BULB-##`, consistent wi
 
 ---
 
+## Three-plane findings (BULB-P01..P07)
+
+A second catalogue models the weaknesses along the BLE three-plane architecture (local BLE, cloud tunnel, LAN/TCP), each the shipped default degradation of a bring-up secure baseline (BULB-A2..A5) that `secure=true` restores. It is a separate ID axis from the classic `BULB-##` roadmap below, which stays intact, and cross-references it where they overlap. The full table, the secure-mode matrix and the assessor battery are consolidated in the device overview [`../README.md`](../README.md). Summary: P01 BLE pairing MITM, P02 WiFi PSK over BLE cleartext, P03 static local key from firmware, P04 static/derivable session token, P05 owner binding app-only, P06 LAN proximity = control, P07 secure-by-default violations.
+
 ## Planned vulnerabilities (roadmap)
 
 | ID | Title | Surface | OWASP IoT | EN 303 645 | CRA Annex I | Status | Severity (est.) | CWE (candidate) |

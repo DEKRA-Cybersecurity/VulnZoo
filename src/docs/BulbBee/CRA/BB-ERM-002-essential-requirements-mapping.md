@@ -40,3 +40,5 @@ This is the requirements-evidence document for the Module A self-assessment. For
 ## Assessment outcome (honest)
 
 Zero of the eight Part I requirement themes are met on the shipped device. The self-declared DoC (BB-DOC-001) is therefore not supportable. A conformant BulbBee is achievable, every gap has a fix in the corresponding finding's "How It Should Be" and lands behind the `secure` UCI toggle (BULB-SEC). The gap key (`99-Assessor-Gap-Key.md`) is the per-claim answer key.
+
+The same requirement themes are additionally mapped along the BLE three-plane architecture (local BLE, cloud tunnel, LAN/TCP) as BULB-P01..P07, each the shipped default degradation of a secure baseline (BULB-A2..A5) that `secure=true` restores. The three-plane findings table, the robust-vs-degraded matrix, and the assessor run that exercises both postures are consolidated in the device overview [`../README.md`](../README.md).
