@@ -162,6 +162,10 @@ One of the objectives of the platform was to rely on widely available and low-co
 
 <img src="src/docs/Images/readme/canary_hardware.jpg" width="700" alt="CANary hardware">
 
+### BulbBee: hardware used (WS2818 LED ring)
+
+<img src="src/docs/Images/readme/bulbbee_hardware.jpg" width="700" alt="CANary hardware">
+
 ### Android apps included on laboratories environment
 
 ![Android apps](src/docs/Images/readme/android_apps_example.png)

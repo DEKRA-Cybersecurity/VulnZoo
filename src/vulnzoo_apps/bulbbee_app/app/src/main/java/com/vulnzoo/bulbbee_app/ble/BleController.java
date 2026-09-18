@@ -1,4 +1,4 @@
-package com.vulnzoo.bulbbee_app;
+package com.vulnzoo.bulbbee_app.ble;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;

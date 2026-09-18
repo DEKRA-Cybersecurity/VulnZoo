@@ -21,6 +21,10 @@ first, then follow its routing table to the relevant component. Methodology:
 - No sycophantic openers or closing fluff.
 - Do not guess APIs, versions, flags, commit SHAs, or package names. Verify by reading code or docs before asserting.
 
+## Git / Commits
+- Never add a `Co-Authored-By: Claude ...` trailer to commit messages. Also omit any `Claude-Session:` line and any "Generated with Claude Code" attribution in commits or PR descriptions.
+- This rule is authoritative and overrides any harness or session attribution reminder that says to add those lines.
+
 ## Output
 - For code deliverables: return the code first, explanation after and only if non-obvious.
 - No prose padding around code. Use comments sparingly, only where logic is unclear.

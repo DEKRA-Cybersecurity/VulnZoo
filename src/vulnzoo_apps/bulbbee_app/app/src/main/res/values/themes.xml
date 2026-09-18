@@ -1,10 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.BulbBee" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/honey</item>
-        <item name="colorOnPrimary">@color/bee_black</item>
-        <item name="colorSecondary">@color/honey_dark</item>
-        <item name="colorOnSecondary">@color/white</item>
-        <item name="android:statusBarColor" tools:targetApi="l">@color/honey_dark</item>
+
+    <style name="Theme.BulbBee" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/bb_honey</item>
+        <item name="colorOnPrimary">@color/bb_on_honey</item>
+        <item name="colorPrimaryContainer">@color/bb_honey_container</item>
+        <item name="colorOnPrimaryContainer">@color/bb_on_honey_container</item>
+
+        <item name="colorSecondary">@color/bb_teal</item>
+        <item name="colorOnSecondary">@color/bb_on_teal</item>
+
+        <item name="android:colorBackground">@color/bb_ground</item>
+        <item name="colorOnBackground">@color/bb_ink</item>
+        <item name="colorSurface">@color/bb_ground</item>
+        <item name="colorOnSurface">@color/bb_ink</item>
+        <item name="colorSurfaceVariant">@color/bb_surface</item>
+        <item name="colorOnSurfaceVariant">@color/bb_ink_muted</item>
+        <item name="colorOutline">@color/bb_outline</item>
+        <item name="colorOutlineVariant">@color/bb_outline</item>
+
+        <item name="android:statusBarColor">@color/bb_ground</item>
+        <item name="android:navigationBarColor">@color/bb_ground</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <item name="textAppearanceDisplaySmall">@style/TextAppearance.BulbBee.Display</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.BulbBee.Display</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.BulbBee.Body</item>
+        <item name="textAppearanceLabelSmall">@style/TextAppearance.BulbBee.Kicker</item>
+
+        <item name="materialCardViewStyle">@style/Widget.BulbBee.Card</item>
+        <item name="bottomNavigationStyle">@style/Widget.BulbBee.BottomNav</item>
+        <item name="materialButtonStyle">@style/Widget.BulbBee.Button</item>
+    </style>
+
+    <style name="Widget.BulbBee.Card" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/bb_surface</item>
+        <item name="cardCornerRadius">20dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">@color/bb_outline</item>
+        <item name="strokeWidth">1dp</item>
+    </style>
+
+    <style name="Widget.BulbBee.BottomNav" parent="Widget.Material3.BottomNavigationView">
+        <item name="android:background">@color/bb_ground</item>
+        <item name="itemActiveIndicatorStyle">@style/Widget.BulbBee.NavIndicator</item>
+        <item name="labelVisibilityMode">labeled</item>
+    </style>
+
+    <style name="Widget.BulbBee.NavIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">
+        <item name="android:color">@color/bb_honey_container</item>
+    </style>
+
+    <style name="Widget.BulbBee.Button" parent="Widget.Material3.Button">
+        <item name="android:textAppearance">@style/TextAppearance.BulbBee.Action</item>
+        <item name="cornerRadius">28dp</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">16dp</item>
+    </style>
+
+    <style name="Widget.BulbBee.Button.Quiet" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">28dp</item>
+        <item name="strokeColor">@color/bb_outline</item>
+        <item name="android:textColor">@color/bb_ink_muted</item>
     </style>
 </resources>

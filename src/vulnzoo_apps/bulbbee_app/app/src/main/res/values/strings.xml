@@ -1,31 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BulbBee</string>
+    <string name="tagline">Your light, in your hand</string>
 
-    <string name="tagline">Smart light controller</string>
+    <!-- Navigation -->
+    <string name="nav_light">Light</string>
+    <string name="nav_scenes">Scenes</string>
+    <string name="nav_routines">Routines</string>
+    <string name="nav_setup">Setup</string>
 
-    <string name="connect">Scan and connect</string>
-    <string name="disconnect">Disconnect</string>
-    <string name="status_disconnected">Disconnected</string>
-    <string name="status_scanning">Scanning for BulbBee…</string>
-    <string name="status_connecting">Connecting…</string>
-    <string name="status_connected">Connected to BulbBee</string>
+    <!-- Scan / pair -->
+    <string name="scan_title">Looking for your bulb</string>
+    <string name="scan_body">Power the bulb on and keep it within a few metres.</string>
+    <string name="scan_found">%1$d devices nearby</string>
+    <string name="pair">Pair</string>
+    <string name="unpair">Unpair</string>
+    <string name="pairing_title">Handshaking</string>
 
-    <string name="light_control">Light Control</string>
-    <string name="power">Power</string>
+    <!-- Light -->
+    <string name="orb_hint">Tap the orb to toggle · drag the bar to dim</string>
     <string name="brightness">Brightness</string>
-    <string name="color">Color</string>
-    <string name="scenes">Scenes</string>
-    <string name="scene_solid">Solid</string>
-    <string name="scene_rainbow">Rainbow</string>
-    <string name="scene_breathe">Breathe</string>
-    <string name="scene_off">Off</string>
-    <string name="state_label">State</string>
+    <string name="brightness_raw">%1$d / 255</string>
+    <string name="colour">Colour</string>
+    <string name="pick_wheel">Wheel</string>
+    <string name="pick_white">White</string>
+    <string name="pick_presets">Presets</string>
+    <string name="lit">lit</string>
+    <string name="off">off</string>
+    <string name="doing">Bulb is doing</string>
 
-    <string name="wifi_setup">WiFi Setup</string>
-    <string name="pairing_pin">Pairing PIN</string>
-    <string name="wifi_ssid">WiFi Network (SSID)</string>
-    <string name="wifi_password">WiFi Password</string>
-    <string name="provision">Provision device</string>
-    <string name="prov_idle">Enter the factory PIN and your WiFi credentials.</string>
+    <!-- Scenes (the four the firmware ships) -->
+    <string name="scene_solid">Solid</string>
+    <string name="scene_solid_desc">Your colour, held steady</string>
+    <string name="scene_rainbow">Rainbow</string>
+    <string name="scene_rainbow_desc">Hue sweeps the ring</string>
+    <string name="scene_breathe">Breathe</string>
+    <string name="scene_breathe_desc">Slow fade in and out</string>
+    <string name="scene_off">Off</string>
+    <string name="scene_off_desc">Ring dark, bulb still paired</string>
+
+    <!-- Setup wizard -->
+    <string name="step_of">Step %1$d of 3</string>
+    <string name="step1_title">Prove you can touch the bulb</string>
+    <string name="step1_body">Setup only works for someone standing next to it. The code is printed on the base of this unit.</string>
+    <string name="step1_read">Read the code off the bulb</string>
+    <string name="step1_read_sub">Per-unit, printed on the base — nothing to remember</string>
+    <string name="step2_title">Hand over the network</string>
+    <string name="step2_body">We already know which Wi-Fi this phone is on. You only supply the password, once.</string>
+    <string name="step3_title">Provisioning</string>
+    <string name="wifi_ssid">Network</string>
+    <string name="wifi_password">Password</string>
+    <string name="pairing_pin">Bulb code</string>
+    <string name="provision">Send to bulb</string>
+    <string name="prov_idle">waiting for you to confirm</string>
+    <string name="back">Back</string>
+    <string name="finish">Finish</string>
+
+    <!-- Scan / connection status -->
+    <string name="scan_scanning">Scanning…</string>
+    <string name="perm_denied">Bluetooth permissions denied</string>
+    <string name="no_bluetooth">This device has no Bluetooth</string>
+
+    <!-- Scenes / routines -->
+    <string name="scenes_kicker">The four the firmware ships</string>
+    <string name="routines_empty">No schedules yet. Routines are not backed by the bulb in this build.</string>
+
+    <!-- Setup status -->
+    <string name="setup_need_ssid">Enter the network name</string>
+    <string name="setup_sending">Sending to bulb…</string>
 </resources>

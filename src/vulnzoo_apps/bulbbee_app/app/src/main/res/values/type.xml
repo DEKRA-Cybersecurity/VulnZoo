@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Drop Outfit / Instrument Serif / JetBrains Mono TTFs into res/font/ and
+         swap the three android:fontFamily values below to @font/outfit,
+         @font/instrument_serif and @font/jetbrains_mono. Until then these fall
+         back to the platform faces so the module builds unchanged. -->
+
+    <style name="TextAppearance.BulbBee.Display" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:textColor">@color/bb_ink</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <style name="TextAppearance.BulbBee.Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:lineSpacingMultiplier">1.4</item>
+        <item name="android:textColor">@color/bb_ink_muted</item>
+    </style>
+
+    <style name="TextAppearance.BulbBee.Action" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- Mono kickers and the protocol log. Keep at 11sp+ and .6 cream or lighter. -->
+    <style name="TextAppearance.BulbBee.Kicker" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:letterSpacing">0.16</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/bb_ink_muted</item>
+    </style>
+
+    <style name="TextAppearance.BulbBee.Mono" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/bb_ink_muted</item>
+    </style>
+</resources>

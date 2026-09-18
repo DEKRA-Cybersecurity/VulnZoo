@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scan is the start destination (pre-connection). The four bottom-nav tabs
+     share their ids with res/menu/bottom_nav.xml so NavigationUI wires them. -->
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/scanFragment">
+
+    <fragment
+        android:id="@+id/scanFragment"
+        android:name="com.vulnzoo.bulbbee_app.ui.ScanFragment"
+        android:label="@string/scan_title" />
+
+    <fragment
+        android:id="@+id/lightFragment"
+        android:name="com.vulnzoo.bulbbee_app.ui.LightFragment"
+        android:label="@string/nav_light" />
+
+    <fragment
+        android:id="@+id/scenesFragment"
+        android:name="com.vulnzoo.bulbbee_app.ui.ScenesFragment"
+        android:label="@string/nav_scenes" />
+
+    <fragment
+        android:id="@+id/routinesFragment"
+        android:name="com.vulnzoo.bulbbee_app.ui.RoutinesFragment"
+        android:label="@string/nav_routines" />
+
+    <fragment
+        android:id="@+id/setupFragment"
+        android:name="com.vulnzoo.bulbbee_app.ui.SetupFragment"
+        android:label="@string/nav_setup" />
+</navigation>

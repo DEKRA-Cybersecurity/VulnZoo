@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A single colour swatch in the Light screen's preset grid. The adapter tints
+     the inner view and sends {"color":[r,g,b]} on tap. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="6dp"
+    android:foreground="?android:attr/selectableItemBackgroundBorderless">
+
+    <View
+        android:id="@+id/swatch"
+        android:layout_width="match_parent"
+        android:layout_height="52dp" />
+</FrameLayout>
