@@ -64,3 +64,62 @@ Verified offline: `py_compile` clean, `sh -n` clean (init + hook), `local_tcp --
 | `labs/bulbbee/files/opt/bulbbee/secret_store.py` | `src/labs/bulbbee/files/opt/bulbbee/secret_store.py` | 0644 | `LAYOUT` map + owner-binding store; non-invasive (default `check_owner` True) |
 
 Verified offline: `py_compile` clean, `--selfcheck` OK (layout modes, write-once bind, secure-vs-default enforcement, dir 0700).
+
+## BULB-R1 - Cloud command relay (API -> broker cmd topic)
+
+| Draft (output/code/) | Target (src/) | Mode | Note |
+|---|---|---|---|
+| `cloud_api/bulbbee/api_server/app.py` | `src/cloud_api/bulbbee/api_server/app.py` | 0644 | `/state` + new `/scene` publish the lighting subset to `bulbbee/<bulb_id>/cmd` via `paho.mqtt.publish.single`; BOLA preserved (secure branch enforces owner + TLS) |
+| `cloud_api/bulbbee/api_server/requirements.txt` | `src/cloud_api/bulbbee/api_server/requirements.txt` | 0644 | add `paho-mqtt` (cloud-side only dep) |
+| `cloud_api/bulbbee/docker-compose.yml` | `src/cloud_api/bulbbee/docker-compose.yml` | 0644 | pass `BULBBEE_BROKER_HOST`/`_PORT` to `bulbbee-cloud`, `depends_on: bulbbee-broker` |
+
+Non-destructive: default posture unchanged (BOLA + plaintext `:1883`), the relay is added on top and the ownership check runs only under `BULBBEE_SECURE=1`. `bulb_id -> device_id` is a `ponytail:` identity map (topic == account bulb_id), superseded by the BULB-R2 binding. R1 stopgap: the demo device runs with `config.json device_id` set to the account `bulb_id` (baked into the tarball).
+
+Verified offline: `py_compile` clean, `app.py --selfcheck` OK (`relay_payload`/`cmd_topic` pure cases + Flask `test_client`: alice drives bob's bulb-2 with the relay captured = BOLA remote hijack, scene relay, 401 relays nothing). The `InsecureKeyLengthWarning` on the 14-byte secret is the intentional weak-JWT finding (API2), not a defect. Live broker round-trip (`cloudctl.sh sub` observes the POST, tunnel `parse_command` maps it) deferred to `05_verify`.
+
+## BULB-R2 - Cloud registration + account-device binding
+
+| Draft (output/code/) | Target (src/) | Mode | Note |
+|---|---|---|---|
+| `cloud_api/bulbbee/api_server/app.py` | `src/cloud_api/bulbbee/api_server/app.py` | 0644 | `BULBS` records gain `device_id`/`binding_token` (seeded bee-0001/bee-0002); new `/api/register`; `cmd_topic`/`relay` take the transport `device_id`; control resolves `bulb_id -> device_id` via the binding; `_bulb_for_device`/`_new_bulb_id` |
+
+Same file as BULB-R1 (evolved), `requirements.txt`/`docker-compose.yml` unchanged. Non-destructive: default keeps BOLA + unenforced binding. The R1 `bulb_id -> device_id` identity `ponytail:` note is superseded by the real binding. BULB-P05 owner binding is lifted from the app to the cloud, recorded but unenforced in default, authoritative in secure (`/api/register` 409 on cross-owner re-bind + owner check on control).
+
+Verified offline: `py_compile` clean, `app.py --selfcheck` OK (`_bulb_for_device`/`cmd_topic` pure cases + `test_client`: control relays to the bound device_id, register a new device then drive it by the returned bulb_id, register needs auth + device_id, 401 relays nothing). Live register-then-relay + secure 409 deferred to `05_verify`.
+
+## BULB-R3 - Device-to-cloud state uplink
+
+| Draft (output/code/) | Target (src/) | Mode | Note |
+|---|---|---|---|
+| `cloud_api/bulbbee/api_server/app.py` | `src/cloud_api/bulbbee/api_server/app.py` | 0644 | background subscriber to `bulbbee/+/state`, `ingest_state` reflects the device report into the bound record (via R2 `_bulb_for_device`), so `GET /state` is live; `device_from_state_topic`, `_state_listener` (paho 2.x `CallbackAPIVersion.VERSION1`), daemon thread started on the server path only |
+
+Same file as R1/R2 (evolved), `requirements.txt`/`docker-compose.yml` unchanged. No new weakness, honest wiring. The listener never runs in `--selfcheck`, a missing paho degrades to no listener.
+
+Verified offline: `py_compile` clean, `app.py --selfcheck` OK (`device_from_state_topic` parse, `ingest_state` reflects into `BULBS["bulb-2"]`, unregistered device ignored, and `GET /state` returns the ingested `brightness`/`scene`). Live device-publish -> `GET /state` deferred to `05_verify`.
+
+## BULB-R4 - App cloud client (remote leg)
+
+| Draft (output/code/) | Target (src/) | Mode | Note |
+|---|---|---|---|
+| `vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/cloud/CloudClient.java` | `src/vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/cloud/CloudClient.java` | 0644 | dependency-free REST client (`login`/`control`/`scene`/`getState`), plain HTTP, `main` self-check |
+| `.../cloud/CloudRepository.java` | `src/.../cloud/CloudRepository.java` | 0644 | Android singleton (mirrors `BleRepository`), JWT in plaintext prefs + Logcat (M9), state polling -> LiveData |
+| `.../ui/LightViewModel.java` | `src/.../ui/LightViewModel.java` | 0644 | `Transport { BLE, CLOUD }` seam, `cloudConnect`, control routing; BLE path unchanged |
+
+Net-new: `cloud/` package. Modified: `LightViewModel` (seam only). No new Gradle dep (`java.net` only). The automatic transport selector is BULB-R5.
+
+Verified offline: `javac` clean on `CloudClient` (JDK 21) and `CloudClient --selfcheck` OK (`extractToken` cases). The Android glue (`CloudRepository`, `LightViewModel`) is consistent with the app package layout but needs the Android SDK to compile (same limitation as BULB-APP). Live cloud drive of the sim device via `CloudClient` deferred to `05_verify`.
+
+## BULB-R5 - App local plane + transport selector
+
+| Draft (output/code/) | Target (src/) | Mode | Note |
+|---|---|---|---|
+| `.../local/LocalClient.java` | `src/.../local/LocalClient.java` | 0644 | AES-CCM `:6668` frame codec (BouncyCastle lightweight), static firmware key (BULB-P03), TCP send + `reachable` probe, `main` self-check |
+| `.../local/LocalRepository.java` | `src/.../local/LocalRepository.java` | 0644 | Android singleton (mirrors Ble/Cloud repos), wraps `LocalClient` on an executor, LiveData |
+| `.../ui/TransportSelector.java` | `src/.../ui/TransportSelector.java` | 0644 | pure `Transport { LOCAL, CLOUD, BLE, NONE }` + `choose` (LAN -> Cloud -> BLE) + scan gating, `main` self-check |
+| `.../ui/LightViewModel.java` | `src/.../ui/LightViewModel.java` | 0644 | uses `TransportSelector.Transport`, three legs, `autoSelect` failover + scan gating, control routing |
+| `gradle/libs.versions.toml` | `src/.../gradle/libs.versions.toml` | 0644 | + `bcprov-jdk18on` 1.80 |
+| `app/build.gradle.kts` | `src/.../app/build.gradle.kts` | 0644 | + `implementation(libs.bcprov)` |
+
+Net-new: `local/` package + `ui/TransportSelector`. Modified: `LightViewModel` (three-transport routing + failover), gradle (bcprov, because AES-CCM is not in the Android/JDK provider). BLE path unchanged.
+
+Verified offline: `javac` + `LocalClient --selfcheck` OK against `bcprov-1.80.jar` (CCM round-trip + tamper -> null), AES-CCM wire compatibility proven both directions against the reference CCM (`cryptography.AESCCM`, same construction as the server's pycryptodome), and `TransportSelector --selfcheck` OK (LAN -> Cloud -> BLE priority + scan gating). The Android glue (`LocalRepository`, `LightViewModel`) needs the SDK (BULB-APP limitation). Live socket round-trip deferred to `05_verify`.

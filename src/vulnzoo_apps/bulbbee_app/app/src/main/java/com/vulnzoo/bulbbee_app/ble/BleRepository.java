@@ -35,6 +35,7 @@ public class BleRepository implements BleController.Listener {
     private final MutableLiveData<String> stateJson = new MutableLiveData<>();
     private final MutableLiveData<ProvResult> provResult = new MutableLiveData<>();
     private final MutableLiveData<String> writeLog = new MutableLiveData<>("");
+    private final MutableLiveData<String> deviceId = new MutableLiveData<>();
 
     private final Deque<String> recentWrites = new ArrayDeque<>();
 
@@ -59,6 +60,8 @@ public class BleRepository implements BleController.Listener {
     public LiveData<ProvResult> provResult() { return provResult; }
     /** The last few Control (0xFF31) writes, newest last, for the "bulb is doing" log. */
     public LiveData<String> writeLog() { return writeLog; }
+    /** The device serial read over BLE during provisioning (BULB-R6), for cloud binding. */
+    public LiveData<String> deviceId() { return deviceId; }
 
     public boolean isBluetoothReady() { return ble.isBluetoothReady(); }
 
@@ -74,9 +77,11 @@ public class BleRepository implements BleController.Listener {
         ble.sendControl(json);
     }
 
-    /** Onboard over BLE. The PIN is the caller's (the hardcoded factory PIN, M1). */
-    public void provision(String pin, String ssid, String psk) {
-        ble.provision(pin, ssid, psk);
+    /** Onboard over BLE. The PIN is the caller's (the hardcoded factory PIN, M1).
+     *  cloudHost is the real cloud server IP the bulb should dial; claimToken (if any)
+     *  is the cloud claim so the bulb binds to the signed-in account (BULB-R6). */
+    public void provision(String pin, String ssid, String psk, String cloudHost, String claimToken) {
+        ble.provision(pin, ssid, psk, cloudHost, claimToken);
     }
 
     private void recordWrite(String json) {
@@ -103,4 +108,7 @@ public class BleRepository implements BleController.Listener {
 
     @Override
     public void onInfo(String message) { status.postValue(message); }
+
+    @Override
+    public void onDeviceId(String id) { deviceId.postValue(id); }
 }

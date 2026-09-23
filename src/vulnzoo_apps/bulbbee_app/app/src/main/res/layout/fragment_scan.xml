@@ -54,4 +54,12 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="36dp"
         android:text="@string/pair" />
+
+    <!-- BULB-R6: control a registered bulb over the cloud, no Bluetooth needed. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/signInButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/sign_in_remote" />
 </LinearLayout>

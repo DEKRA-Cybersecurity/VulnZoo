@@ -4,11 +4,23 @@ services:
     container_name: bulbbee-cloud
     ports:
       - "5004:5004"
+    environment:
+      # BULB-R1: the relay publishes commands to the broker over this service link.
+      - BULBBEE_BROKER_HOST=bulbbee-broker
+      - BULBBEE_BROKER_PORT=1883
+      # SQLAlchemy/SQLite database, persisted on the named volume below.
+      - DB_PATH=/app/data/bulbbee.db
+      # BULBBEE_SECURE=1 enforces bulb ownership and relays over TLS :8883 (BULB-SEC);
+      # unset by default, so the shipped posture is BOLA + plaintext MQTT.
+    volumes:
+      - bulbbee_data:/app/data
+    depends_on:
+      - bulbbee-broker
     restart: unless-stopped
 
   # BULB-A3: cloud emulator broker. The device opens an outbound MQTT tunnel to
   # it (:1883 plaintext by default, :8883 TLS in secure mode) and app commands
-  # are relayed by publishing to bulbbee/<device_id>/cmd.
+  # are relayed by publishing to bulbbee/<device_id>/cmd (BULB-R1).
   bulbbee-broker:
     image: eclipse-mosquitto:2
     container_name: bulbbee-broker
@@ -18,3 +30,6 @@ services:
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     restart: unless-stopped
+
+volumes:
+  bulbbee_data:

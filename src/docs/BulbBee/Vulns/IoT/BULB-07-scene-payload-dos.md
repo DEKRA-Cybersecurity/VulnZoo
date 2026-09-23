@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I2 - Insecure Network Services"
 standard: "ETSI EN 303 645 5.9 (resilient to outages), 5.13 (validate input data)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I(3)(k) - resilience to denial of service"
 cwe: "CWE-400 (Uncontrolled Resource Consumption) / CWE-1284 (Improper Validation of Specified Quantity in Input) / CWE-190 (Integer Overflow or Wraparound)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-07-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/lighting_service.py"
 verified_date: "2026-09-04"

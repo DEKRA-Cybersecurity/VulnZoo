@@ -37,4 +37,5 @@ dependencies {
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.lifecycle.livedata)
     implementation(libs.recyclerview)
+    implementation(libs.bcprov)
 }

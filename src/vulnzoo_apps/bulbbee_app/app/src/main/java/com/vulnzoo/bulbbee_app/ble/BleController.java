@@ -53,6 +53,7 @@ public class BleController {
         void onStateJson(String json);
         void onProvisionResult(boolean ok, String message);
         void onInfo(String message);
+        void onDeviceId(String deviceId);
     }
 
     private final Context appContext;
@@ -166,6 +167,23 @@ public class BleController {
         }
 
         @Override
+        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
+            // BULB-R6: the provisioning read carries the device serial (device_id),
+            // which the app uses to bind the real device to the account on sign-in.
+            if (PROV_CONFIG.equals(c.getUuid()) && status == BluetoothGatt.GATT_SUCCESS) {
+                byte[] v = c.getValue();
+                if (v != null) {
+                    try {
+                        String id = new org.json.JSONObject(new String(v, StandardCharsets.UTF_8))
+                                .optString("device_id", "");
+                        if (!id.isEmpty()) main.post(() -> listener.onDeviceId(id));
+                    } catch (Exception ignored) { }
+                }
+            }
+            opDone();
+        }
+
+        @Override
         public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic c) {
             if (STATE_CHAR.equals(c.getUuid())) {
                 byte[] v = c.getValue();
@@ -208,7 +226,7 @@ public class BleController {
      * Onboard the device: unlock with the factory PIN, then push the WiFi creds.
      * The link is not bonded, so the PIN is the only gate (BULB-01).
      */
-    public void provision(String pin, String ssid, String psk) {
+    public void provision(String pin, String ssid, String psk, String cloudHost, String claimToken) {
         BluetoothGatt g = gatt;
         if (g == null) {
             listener.onProvisionResult(false, "Not connected");
@@ -224,11 +242,27 @@ public class BleController {
             auth.setValue(pin.getBytes(StandardCharsets.UTF_8));   // BULB-01: factory PIN
             g.writeCharacteristic(auth);
         });
-        String body = "{\"cmd\":\"wifi_set\",\"ssid\":\"" + ssid + "\",\"psk\":\"" + psk + "\"}";
+        // wifi_set also carries the real cloud server IP, which the BLE service
+        // writes into the bulb's config.json so the tunnel dials the right cloud.
+        String body = "{\"cmd\":\"wifi_set\",\"ssid\":\"" + ssid + "\",\"psk\":\"" + psk + "\""
+                + (cloudHost != null && !cloudHost.isEmpty()
+                    ? ",\"cloud_host\":\"" + cloudHost + "\"" : "")
+                + "}";
         enqueue(() -> {
             cfg.setValue(body.getBytes(StandardCharsets.UTF_8));
             g.writeCharacteristic(cfg);
         });
+        // BULB-R6: pair_set carries the cloud claim token, which the bulb presents
+        // on activation so the cloud binds it to the signed-in account.
+        if (claimToken != null && !claimToken.isEmpty()) {
+            String pair = "{\"cmd\":\"pair_set\",\"token\":\"" + claimToken + "\"}";
+            enqueue(() -> {
+                cfg.setValue(pair.getBytes(StandardCharsets.UTF_8));
+                g.writeCharacteristic(cfg);
+            });
+        }
+        // BULB-R6: read the device serial so the app can bind the real device on sign-in.
+        enqueue(() -> g.readCharacteristic(cfg));
         enqueue(() -> {
             main.post(() -> listener.onProvisionResult(true, "WiFi sent to BulbBee"));
             opDone();

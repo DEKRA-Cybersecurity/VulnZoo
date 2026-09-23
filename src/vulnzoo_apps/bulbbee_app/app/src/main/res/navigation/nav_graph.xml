@@ -9,7 +9,16 @@
     <fragment
         android:id="@+id/scanFragment"
         android:name="com.vulnzoo.bulbbee_app.ui.ScanFragment"
-        android:label="@string/scan_title" />
+        android:label="@string/scan_title">
+        <action
+            android:id="@+id/action_scan_to_login"
+            app:destination="@id/loginFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.vulnzoo.bulbbee_app.ui.LoginFragment"
+        android:label="@string/cloud_signin_title" />
 
     <fragment
         android:id="@+id/lightFragment"

@@ -112,10 +112,19 @@ public class LightFragment extends Fragment {
             orb.setBulbState(power, brightness, color, scene);
             brightnessBar.setValue(brightness);
             brightnessRaw.setText(getString(R.string.brightness_raw, brightness));
-            linkLine.setText("BLE · " + Math.round(brightness / 255f * 100) + "% · " + scene
+            linkLine.setText(transportLabel() + " · " + Math.round(brightness / 255f * 100) + "% · " + scene
                     + (o.optBoolean("simulated") ? " · sim" : ""));
         } catch (Exception e) {
             linkLine.setText(json);
+        }
+    }
+
+    /** The active transport, for the state line (BLE / Cloud / LAN). */
+    private String transportLabel() {
+        switch (vm.transport()) {
+            case CLOUD: return "Cloud";
+            case LOCAL: return "LAN";
+            default: return "BLE";
         }
     }
 

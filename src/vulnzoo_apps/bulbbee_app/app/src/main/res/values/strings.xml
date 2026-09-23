@@ -56,6 +56,22 @@
     <string name="back">Back</string>
     <string name="finish">Finish</string>
 
+    <!-- BULB-R6: cloud account sign-in (control remotely without Bluetooth) -->
+    <string name="sign_in_remote">Control remotely (sign in)</string>
+    <string name="cloud_signin_title">Sign in to the cloud</string>
+    <string name="cloud_signin_body">Control a registered bulb over the cloud, no Bluetooth needed.</string>
+    <string name="signing_in">Signing in…</string>
+    <string name="cloud_base">Cloud server URL</string>
+    <string name="cloud_user">User</string>
+    <string name="cloud_password">Password</string>
+    <string name="sign_in">Sign in</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Setup step 3: cloud server IP (provisioned into the bulb's config.json) -->
+    <string name="cloud_title">Point it at the cloud</string>
+    <string name="cloud_body">The bulb reaches the cloud server on this network. Enter its IP, it is not always the default.</string>
+    <string name="cloud_host">Cloud server IP</string>
+
     <!-- Scan / connection status -->
     <string name="scan_scanning">Scanning…</string>
     <string name="perm_denied">Bluetooth permissions denied</string>

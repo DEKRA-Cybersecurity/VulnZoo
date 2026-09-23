@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I1 - Weak, Guessable, or Hardcoded Passwords"
 standard: "ETSI EN 303 645 5.1 (no universal default passwords)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - secure by default / authentication"
 cwe: "CWE-798 (Use of Hard-coded Credentials) / CWE-1392 (Use of Default Credentials) / CWE-307 (Improper Restriction of Excessive Authentication Attempts) / CWE-306 (Missing Authentication for a Critical Function)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-01-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/ble_light.py"
   - "labs/bulbbee/files/opt/bulbbee/config.json"

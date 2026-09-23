@@ -83,7 +83,7 @@ A `secure` toggle (`bulbbee.@bulbbee[0].secure=1` in UCI, `"secure": true` in `c
 | BULB-06 | `/debug` is forced off (404) |
 | BULB-07 | the scene `count` is clamped to `led_count` |
 
-BULB-03 (transport confidentiality) is documented, not code-gated, its secure state is TLS on HTTP plus LE Secure Connections on BLE plus a per-command nonce. All the neutralizations above are verified offline in `stages/05_verify/output/bulbbee-sec-verification.md`.
+BULB-03 (transport confidentiality) is documented, not code-gated, its secure state is TLS on HTTP plus LE Secure Connections on BLE plus a per-command nonce. All the neutralizations above are verified offline in secure mode (`BULBBEE_SECURE=1`).
 
 ## Legend
 
@@ -102,6 +102,6 @@ Phase 0 (BULB-A0, BULB-A1) is the functional bring-up and carries no intentional
 - **Layer 4 (working artifacts):** `labs/bulbbee/`
 - **Layer 3 (landing page):** [`../README.md`](../README.md), setup [`../LAB_SETUP.md`](../LAB_SETUP.md)
 - **Layer 2 (lab contract):** [`../../../labs/bulbbee/CONTEXT.md`](../../../labs/bulbbee/CONTEXT.md)
-- **Development backlog / stages:** `stages/TARGET_BULBBEE.md`, spec `stages/01_spec/output/bulbbee-a0-spec.md`
+- **Development backlog / stages:** `stages/TARGET_BULBBEE.md`
 - **CRA framing to reuse / contrast:** [`../../RoutCoon/CRA/00-CRA-Documentation-Plan.md`](../../RoutCoon/CRA/00-CRA-Documentation-Plan.md)
 - **Layer 0 (global identity):** [`../../../AGENTS.md`](../../../AGENTS.md)

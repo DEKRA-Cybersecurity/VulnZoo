@@ -8,11 +8,12 @@ owasp: "OWASP Mobile Top 10 M1 (Improper Credential Usage) / M9 (Insecure Data S
 standard: "ETSI EN 303 645 5.4 (securely store sensitive parameters)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - protect stored data"
 cwe: "CWE-798 (Use of Hard-coded Credentials) / CWE-312 (Cleartext Storage of Sensitive Information)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-app-spec.md"
 affected_components:
   - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/ui/SetupFragment.java"
   - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/ble/BleController.java"
+  - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/cloud/CloudRepository.java"
+  - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/cloud/CloudClient.java"
+  - "vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/local/LocalClient.java"
 verified_date: "2026-09-04"
 ---
 
@@ -39,14 +40,24 @@ Log.d(TAG, "stored creds ssid=" + ssid + " psk=" + psk + " token=" + cloudToken)
 
 Missing controls: no secret in the app binary (the pairing secret should be per-device and provisioned, not baked in), and no protected storage (Android Keystore / EncryptedSharedPreferences) for the WiFi PSK and token, and no secrets in logs.
 
+Cloud transport (M9 + insecure transport, client side of BULB-CLD): the remote leg (BULB-R4) logs in to the cloud API and drives the bulb over plain HTTP, then stores the returned bearer JWT in the same plaintext prefs and logs it:
+
+```java
+// cloud/CloudRepository.connect(...)
+prefs.edit().putString("cloud_jwt", jwt).apply();          // bearer stored in the clear
+Log.d(TAG, "cloud login user=" + user + " jwt=" + jwt);    // and leaked to Logcat
+// cloud/CloudClient talks http:// (no TLS), so the JWT and the commands are on the wire in the clear
+```
+
 ## Steps to Reproduce
 
 ```sh
 # M1: recover the hardcoded PIN from the built APK
 unzip -p bulbbee_app.apk classes.dex | strings | grep 8080          # or apktool + read MainActivity
 # M9: read the plaintext credentials from device storage (rooted / adb backup / malware)
-adb shell run-as com.vulnzoo.bulbbee_app cat shared_prefs/bulbbee.xml   # wifi_psk / cloud_token in cleartext
-adb logcat -s BulbBee                                                   # creds printed to Logcat
+adb shell run-as com.vulnzoo.bulbbee_app cat shared_prefs/bulbbee.xml   # wifi_psk / cloud_token / cloud_jwt in cleartext
+adb logcat -s BulbBee                                                   # creds + cloud jwt printed to Logcat
+# BULB-R4: the remote leg drives the bulb over plain HTTP, so the JWT and commands are sniffable on the wire
 ```
 
 ## Expected Result
@@ -66,9 +77,13 @@ The PIN `8080` is present in the APK, and after onboarding the WiFi PSK and clou
 | App (creds) | Per-device pairing code, no hardcoded PIN | Remove the extractable shared secret (CWE-798) |
 | App (storage) | Android Keystore / EncryptedSharedPreferences | Protect secrets at rest (CWE-312) |
 | App (logging) | Strip secrets from logs | No Logcat leak |
+| App (cloud) | HTTPS + cert pinning, JWT in the Keystore | Protect the remote leg on the wire and at rest (BULB-R4) |
 
 ## Verification Checklist
 
 - [x] `PAIRING_PIN = "8080"` is present in the app source / APK (M1). Verified in the debug APK: `strings classes3.dex | grep 8080`.
 - [x] the WiFi PSK and cloud token are written to plain SharedPreferences and Logcat (M9), in `ui/SetupFragment.storeCredentials`.
 - [ ] end-to-end BLE drive on a device is still pending hardware. The app builds (`assembleDebug` produces an APK) and implements BLE scan/connect, ring control (Control `0xFF31`, State notify `0xFF32`) and WiFi provisioning (Auth `0xFF41`, Config `0xFF42`) in `ble/BleController`. The UI is a fragment-based redesign (bottom nav: Light / Scenes / Routines / Setup) over `ble/BleRepository` + `ui/LightViewModel`.
+- [x] BULB-R4: the remote leg (`cloud/CloudClient`, dependency-free) logs in and drives a bulb over the cloud API, and `cloud/CloudRepository` stores the bearer JWT in plaintext (`shared_prefs/bulbbee.xml` key `cloud_jwt`) and logs it, over plain HTTP. `CloudClient` verified against the live stack (login, control, scene, state).
+- [x] BULB-R5: the local leg (`local/LocalClient`) embeds the static firmware key `bulbbee-local-16` and drives the bulb over AES-CCM `:6668` (proximity = control, BULB-P03/P06). Frame codec verified wire-compatible both directions against the reference CCM.
+- [x] BULB-R6 binding: during onboarding `ble/BleController` reads the device serial (`device_id`) from the provisioning characteristic (`onDeviceId`) and stashes it in plaintext prefs (`cloud_device_id`, M9). On cloud sign-in `cloud/CloudRepository` `POST /api/register`s it, so remote control targets the real device (`bulbbee/<serial>/cmd`) instead of the first seeded bulb. The serial is enumerable and the app-driven registration has no proof of possession (BULB-P04 / P05).

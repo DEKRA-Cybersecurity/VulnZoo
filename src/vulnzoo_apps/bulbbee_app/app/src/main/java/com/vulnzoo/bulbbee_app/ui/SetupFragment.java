@@ -38,9 +38,11 @@ public class SetupFragment extends Fragment {
     private static final String PAIRING_PIN = "8080";
     // Cloud pairing token shipped with the app (stored in the clear, M9).
     private static final String CLOUD_TOKEN = "cloud-token-abc";
+    // Default cloud server IP, prefilled but editable (it depends on the network).
+    private static final String DEFAULT_CLOUD_HOST = "192.168.2.10";
 
     private LightViewModel vm;
-    private TextInputEditText pinInput, ssidInput, pskInput;
+    private TextInputEditText pinInput, ssidInput, pskInput, cloudHostInput;
     private android.widget.TextView provStatus;
     private BleRepository.ProvResult handled;
 
@@ -57,27 +59,44 @@ public class SetupFragment extends Fragment {
         pinInput = v.findViewById(R.id.pinInput);
         ssidInput = v.findViewById(R.id.ssidInput);
         pskInput = v.findViewById(R.id.pskInput);
+        cloudHostInput = v.findViewById(R.id.cloudHostInput);
         provStatus = v.findViewById(R.id.provStatus);
 
         // M1: prefill the shared factory PIN so onboarding "just works".
         pinInput.setText(PAIRING_PIN);
+        cloudHostInput.setText(DEFAULT_CLOUD_HOST);   // editable, depends on the network
 
         ((MaterialButton) v.findViewById(R.id.provisionButton))
                 .setOnClickListener(x -> onProvisionClicked());
 
         vm.provResult().observe(getViewLifecycleOwner(), this::onProvisionResult);
+        // BULB-R6: the device serial read over BLE, stashed so the cloud sign-in can
+        // register this exact device to the account.
+        vm.deviceId().observe(getViewLifecycleOwner(), this::onDeviceId);
+    }
+
+    private void onDeviceId(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) return;
+        requireContext().getSharedPreferences("bulbbee", Context.MODE_PRIVATE)
+                .edit().putString("cloud_device_id", deviceId).apply();
+        Log.d(TAG, "device serial for cloud binding: " + deviceId);
     }
 
     private void onProvisionClicked() {
         String pin = text(pinInput);
         String ssid = text(ssidInput);
         String psk = text(pskInput);
+        String cloudHost = text(cloudHostInput);
         if (ssid.isEmpty()) {
             provStatus.setText(R.string.setup_need_ssid);
             return;
         }
         provStatus.setText(R.string.setup_sending);
-        vm.provision(pin, ssid, psk);   // BULB-01: PIN is the only gate on an unbonded link
+        // BULB-01: PIN is the only gate on an unbonded link. cloudHost is written
+        // into the bulb's config.json. BULB-R6: if signed in, fetch a claim token so
+        // the bulb binds to this account during onboarding.
+        vm.fetchClaim(claim ->
+                vm.provision(pin, ssid, psk, cloudHost, claim == null ? "" : claim));
     }
 
     private void onProvisionResult(BleRepository.ProvResult result) {

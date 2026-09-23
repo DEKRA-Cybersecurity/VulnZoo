@@ -61,6 +61,9 @@ except ImportError:
 
 CONFIG_PATH = os.environ.get("BULBBEE_CONFIG", "/opt/bulbbee/config.json")
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import session_token          # for the device serial exposed in the provisioning read
+
 
 def _load_config():
     cfg = {"http_port": 8082, "ble_name": "BulbBee", "ble_interval": 1}
@@ -244,6 +247,52 @@ def _do_wifi_set(ssid: str, psk: str):
         _log("wifi hook failed (%s)" % e)
 
 
+TUNNEL_INIT = "/etc/init.d/bulbbee-tunnel"
+
+
+def _write_cloud_host(host: str, config_path: str = CONFIG_PATH) -> bool:
+    """Persist the provisioned cloud server IP into config.json so the outbound
+    tunnel (cloud_tunnel.py) dials the real cloud instead of the 192.168.2.10
+    default. Pure file I/O, unit-checkable. A cold boot re-extracts the tarball,
+    so this is a runtime setting, re-provision after a factory reset."""
+    host = str(host).strip()
+    if not host:
+        return False
+    try:
+        with open(config_path) as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        cfg = {}
+    cfg["cloud_host"] = host
+    try:
+        with open(config_path, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except OSError:
+        return False
+    return True
+
+
+def _apply_cloud_host(host: str):
+    """Write cloud_host into config.json and restart the tunnel so it reconnects
+    to the real cloud. Gated by the same (hardcoded) PIN as the rest of
+    provisioning, so an attacker in range can also point the bulb at their own
+    cloud (the re-provisioning surface, BULB-01 / BULB-P07)."""
+    if not _write_cloud_host(host):
+        _log("cloud_host not applied (%r)" % host)
+        return
+    host = str(host).strip()
+    _prov_state["cloud_url"] = host
+    _save_prov_state()
+    _log("cloud_host set to %s in config.json" % host)
+    import subprocess
+    try:
+        subprocess.run([TUNNEL_INIT, "restart"], capture_output=True,
+                       timeout=15, check=False)
+        _log("cloud tunnel restarted to reconnect to %s" % host)
+    except (OSError, subprocess.SubprocessError) as e:
+        _log("tunnel restart failed (%s)" % e)
+
+
 def _prov_auth(pin: str) -> bool:
     """Check the factory PIN. Default (vulnerable): no lockout, the counter only
     climbs, the hardcoded PIN always works (BULB-01). Secure (BULB-SEC): lock out
@@ -279,7 +328,12 @@ def _prov_apply(cmd: dict):
         _prov_state["wifi_psk"] = psk
         _save_prov_state()
         _do_wifi_set(ssid, psk)
+        if cmd.get("cloud_host"):                    # optional: the real cloud server IP
+            _apply_cloud_host(cmd["cloud_host"])
         _log("Provisioning wifi_set: %s" % ssid)
+    elif action == "cloud_set":
+        _apply_cloud_host(str(cmd.get("cloud_host", "")))
+        _log("Provisioning cloud_set: %s" % cmd.get("cloud_host", ""))
     elif action == "pair_set":
         _prov_state["pair_token"] = str(cmd.get("token", ""))
         _prov_state["cloud_url"] = str(cmd.get("cloud_url", ""))
@@ -295,8 +349,10 @@ def _prov_read() -> dict:
     if not _prov_state["authenticated"]:
         return {"error": "PIN_REQUIRED"}
     if SECURE:                                       # BULB-05 fix: never return the PSK
-        return {"wifi_ssid": _prov_state["wifi_ssid"], "cloud_url": _prov_state["cloud_url"]}
+        return {"device_id": session_token.device_serial(),
+                "wifi_ssid": _prov_state["wifi_ssid"], "cloud_url": _prov_state["cloud_url"]}
     return {
+        "device_id": session_token.device_serial(),  # the app reads this to bind the real device
         "wifi_ssid": _prov_state["wifi_ssid"],
         "wifi_psk": _prov_state["wifi_psk"],
         "cloud_url": _prov_state["cloud_url"],
@@ -865,6 +921,19 @@ def _demo():
     _prov_apply({"cmd": "wifi_set", "ssid": "evil-ap", "psk": "p@ss"})
     assert _prov_state["wifi_ssid"] == "evil-ap" and _prov_state["wifi_psk"] == "p@ss"
     assert _prov_read()["wifi_psk"] == "p@ss"                # BULB-05 chain: PSK in cleartext
+
+    # cloud_host provisioning: the real cloud IP is written into config.json
+    import tempfile
+    tf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    json.dump({"cloud_host": "192.168.2.10", "http_port": 8082}, tf)
+    tf.close()
+    assert _write_cloud_host("", tf.name) is False           # empty ignored, keeps default
+    assert _write_cloud_host("10.0.0.5", tf.name) is True
+    with open(tf.name) as f:
+        after = json.load(f)
+    assert after["cloud_host"] == "10.0.0.5"                 # real IP persisted
+    assert after["http_port"] == 8082                        # other config untouched
+    os.unlink(tf.name)
 
     # BULB-A2: robust-pairing helpers
     assert _prov_flags(["read", "write"], False) == ["read", "write"]   # default unchanged

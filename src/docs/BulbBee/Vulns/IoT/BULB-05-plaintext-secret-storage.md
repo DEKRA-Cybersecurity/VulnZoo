@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I7 - Insecure Data Transfer and Storage"
 standard: "ETSI EN 303 645 5.4 (securely store sensitive security parameters)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - protect stored data"
 cwe: "CWE-312 (Cleartext Storage of Sensitive Information) / CWE-256 (Plaintext Storage of a Password)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-05-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/ble_light.py"
   - "labs/bulbbee/files/opt/bulbbee/config.json"

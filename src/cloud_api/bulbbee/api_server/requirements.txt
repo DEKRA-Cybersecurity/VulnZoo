@@ -1,2 +1,5 @@
 flask
 pyjwt
+paho-mqtt
+SQLAlchemy
+gunicorn

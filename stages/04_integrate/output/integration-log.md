@@ -1798,3 +1798,103 @@ Change: consolidated 10 session-new docs into the single device overview `src/do
 Deleted (absorbed into README): `src/docs/BulbBee/SECURE_MODE.md`, `src/docs/BulbBee/ASSESSOR_BATTERY.md`, and `src/docs/BulbBee/Vulns/Planes/` (BULB-P01..P07 + README). src/docs/BulbBee: 27 -> 17 .md files.
 Kept unchanged: the classic per-finding docs (`Vulns/IoT/BULB-01..07`, `Vulns/API/BULB-CLD`, `Vulns/Mobile/BULB-APP`), the CRA dossier (`CRA/`), and `LAB_SETUP.md`.
 References repointed to the README overview: `Vulns/README.md`, `LAB_SETUP.md`, `CRA/99-Assessor-Gap-Key.md`, `CRA/BB-ERM-002`, `src/labs/bulbbee/CONTEXT.md`, and the Phase-4/SEC/EVAL rows of `stages/TARGET_BULBBEE.md`. Earlier per-target integration/verify entries above are the point-in-time record (docs were at Vulns/Planes/ when written); this entry supersedes their doc locations.
+
+---
+
+# Integration Log - bulbbee BULB-R1 (cloud command relay)
+
+Date: 2026-09-21
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify
+
+Promoted (from `02_implement/output/code/`):
+- `src/cloud_api/bulbbee/api_server/app.py`: `POST /api/bulb/<id>/state` (extended to the lighting subset) and the new `POST /api/bulb/<id>/scene` publish the command to `bulbbee/<id>/cmd` via `paho.mqtt.publish.single`. BOLA preserved (no ownership check in default), the secure branch (`BULBBEE_SECURE=1`) enforces owner + relays over TLS `:8883`. `relay_payload`/`cmd_topic`/`_selfcheck` added.
+- `src/cloud_api/bulbbee/api_server/requirements.txt`: + `paho-mqtt`.
+- `src/cloud_api/bulbbee/docker-compose.yml`: `BULBBEE_BROKER_HOST`/`_PORT` env on `bulbbee-cloud`, `depends_on: bulbbee-broker`.
+Docs (03_document, Layer 3 in sync): `src/docs/BulbBee/Vulns/API/BULB-CLD-...md` (new `Remote Control Relay (BULB-R1)` section, repro step 3, relay control row, checklist item) and `src/cloud_api/bulbbee/CONTEXT.md` (relay note + checklist).
+
+Non-destructive: default posture unchanged (BOLA + plaintext `:1883`). `bulb_id -> device_id` is a `ponytail:` identity map, superseded by BULB-R2. The live-Pi leg (the device consuming `bulbbee/bulb-1/cmd`) needs the device `config.json device_id = bulb-1` baked into the tarball, an R1 stopgap left for the R2 binding, not baked here to avoid reworking the tarball twice. The cloud relay itself is verified live below.
+
+Verified (05_verify): live stack up (`docker compose`), a logged-in POST publishes the shaped command to the device topic (observed with `mosquitto_sub`), scene relay works, 401 relays nothing, and `cloud_tunnel.parse_command` maps the observed payload. Badge -> DONE. See `05_verify/output/bulbbee-r1-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-R2 (cloud registration + account-device binding)
+
+Date: 2026-09-21
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify
+
+Promoted (from `02_implement/output/code/`):
+- `src/cloud_api/bulbbee/api_server/app.py`: `BULBS` records gain `device_id`/`binding_token` (seeded `bee-0001`/`bee-0002`), new `POST /api/register` (owner = caller, assign/update the binding, secure 409 on cross-owner re-bind), `cmd_topic`/`relay` take the transport `device_id`, `set_state`/`scene` resolve `bulb_id -> device_id` through the binding, `_bulb_for_device`/`_new_bulb_id`. `requirements.txt`/`docker-compose.yml` unchanged from R1.
+Docs (03_document, Layer 3 in sync): `BULB-CLD` doc (`Account-Device Binding (BULB-R2)` section, repro step 4, binding control row, checklist), `src/docs/BulbBee/README.md` (BULB-P05 rows: owner binding lifted to the cloud, recorded but unenforced), `src/cloud_api/bulbbee/CONTEXT.md` (register note + checklist).
+
+Non-destructive: default keeps BOLA + unenforced binding (device takeover by registration). The R1 `bulb_id -> device_id` identity map is superseded by the real binding. The secure branch (`BULBBEE_SECURE=1`) adds the 409 cross-owner refusal + owner enforcement.
+
+Verified (05_verify): live stack rebuilt, `/api/register` binds a new device and control resolves `bulb_id -> device_id` (relay lands on `bulbbee/bee-0009/cmd`), BOLA resolves through the binding (`bulbbee/bee-0002/cmd`), the default accepts a cross-owner takeover, and secure gives 409 + non-owner control 403. Badge -> DONE. See `05_verify/output/bulbbee-r2-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-R3 (device-to-cloud state uplink)
+
+Date: 2026-09-21
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify
+
+Promoted (from `02_implement/output/code/`):
+- `src/cloud_api/bulbbee/api_server/app.py`: `device_from_state_topic` + `ingest_state` + `_state_listener`, a background daemon thread that subscribes `bulbbee/+/state` and reflects each device's reported state into `BULBS` through the R2 binding (`_bulb_for_device`), so `GET /api/bulb/<id>/state` is live. paho client via `CallbackAPIVersion.VERSION1` (2.x), started only on the server path. `requirements.txt`/`docker-compose.yml` unchanged.
+Docs (03_document): `src/cloud_api/bulbbee/CONTEXT.md` (uplink note + checklist).
+
+Non-destructive: honest wiring, no new weakness (the uplink is unauthenticated at the anonymous broker like the rest of the plaintext plane). The listener is guarded (missing paho -> no listener, API still serves) and never runs in `--selfcheck`.
+
+Verified (05_verify): live stack rebuilt, `GET /api/bulb/bulb-2/state` returned the seed, then a device state publish on `bulbbee/bee-0002/state` made it return the live state (`power/brightness/color/scene`), and a report for an unregistered device (`bee-3333`) was ignored. Badge -> DONE. See `05_verify/output/bulbbee-r3-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-R4 (app cloud client)
+
+Date: 2026-09-21
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify
+
+Promoted (from `02_implement/output/code/`, app side):
+- `src/vulnzoo_apps/bulbbee_app/app/src/main/java/com/vulnzoo/bulbbee_app/cloud/CloudClient.java`: dependency-free REST client (`login`/`control`/`scene`/`getState`, `java.net` only, `main` self-check).
+- `.../cloud/CloudRepository.java`: Android singleton mirroring `BleRepository`, JWT in plaintext prefs (`cloud_jwt`) + Logcat (M9), plain HTTP, state polling -> LiveData.
+- `.../ui/LightViewModel.java`: `Transport { BLE, CLOUD }` seam, `cloudConnect`, control routing (BLE default, unchanged).
+Docs (03_document): `BULB-APP` doc (cloud transport M9/HTTP weakness, affected_components, repro/control/checklist) + app `README.md` (the `cloud/` transport).
+
+Non-destructive: the BLE path is unchanged, the cloud leg is opt-in via `cloudConnect`. No new Gradle dep (`java.net` only), no cloud stack change (app-side only). The automatic LAN -> Cloud -> BLE selector is BULB-R5.
+
+Verified (05_verify): `javac` clean on `CloudClient` (JDK 21), and the class drove the sim device live (`app -> cloud -> device`: `bulbbee/bee-0002/cmd` observed for the control and the scene), `getState` returned live state. The Android glue (`CloudRepository`, `LightViewModel`) is consistent with the app but needs the SDK to compile (BULB-APP limitation). Badge -> DONE. See `05_verify/output/bulbbee-r4-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-R5 (app local plane + transport selector)
+
+Date: 2026-09-21
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify
+
+Promoted (from `02_implement/output/code/`, app side):
+- `src/.../local/LocalClient.java`: AES-CCM `:6668` frame codec (BouncyCastle lightweight `CCMBlockCipher`), the static firmware key `bulbbee-local-16` (BULB-P03), TCP `send` + `reachable` probe, `main` self-check.
+- `.../local/LocalRepository.java`: Android singleton mirroring the BLE/cloud repos, wraps `LocalClient` on an executor, LiveData.
+- `.../ui/TransportSelector.java`: pure `Transport { LOCAL, CLOUD, BLE, NONE }` + `choose` (LAN -> Cloud -> BLE) + `scansEnabled` gating.
+- `.../ui/LightViewModel.java`: three-transport routing, `autoSelect` failover + scan gating (replaces the R4 two-transport enum).
+- `gradle/libs.versions.toml` + `app/build.gradle.kts`: add `bcprov-jdk18on` 1.80 (AES-CCM is not in the Android/JDK provider).
+Docs (03_document): app `README.md` (the `local/` transport, the failover model, the proximity=control weakness, the bcprov dep) + `BULB-APP` doc (local plane in affected_components + checklist).
+
+Non-destructive: BLE stays the default, cloud/local are opt-in, the selector chooses on reachability. New dep `bcprov` is required (CCM absent from the platform). The static local key embeds BULB-P03/P06 in the app (proximity = control).
+
+Verified (05_verify): `javac` + `LocalClient --selfcheck` + `TransportSelector` selfcheck OK; AES-CCM wire compatibility proven both directions against the reference CCM (`cryptography.AESCCM`); and a live socket round-trip drove a byte-identical `local_tcp.py` stand-in (the server decrypted `{"scene":"breathe","brightness":200}`, the client decrypted the reply). The Android glue needs the SDK (BULB-APP limitation). Badge -> DONE. See `05_verify/output/bulbbee-r5-verification.md`.
+
+---
+
+# Integration Log - bulbbee BULB-R6 (account sign-in + claim-token device binding)
+
+Date: 2026-09-21
+Pipeline: 01_spec -> 02_implement -> 03_document -> 04_integrate -> 05_verify (edited src in place)
+
+Promoted (edited directly in `src/`):
+- `src/cloud_api/bulbbee/api_server/app.py`: `USERS` gain passwords; `/api/login` verifies the password only in secure (API2 default); `/api/claim` issues single-use TTL claim tokens; `register_from_activation` + a `bulbbee/+/register` subscription bind `device -> user` from the device's activation message (default binds on any named claim, secure requires a valid/unused/unexpired claim and is write-once); `/api/mybulbs` (owner-scoped) for the app's device list.
+- `src/labs/bulbbee/files/opt/bulbbee/cloud_tunnel.py`: `activation_payload` + on connect publish `{device_id, token, claim_token}` to `bulbbee/<device_id>/register` (claim read from `provisioning.json` `pair_token`).
+- App: `cloud/CloudClient` (login+password, `claim`, `firstBulbId`), `cloud/CloudRepository` (`signIn`, `fetchClaim`), `ui/LightViewModel` (`cloudSignIn`, `cloudStatus`, `fetchClaim`, provision +claim), `MainActivity` (gate on BLE OR cloud), `ui/ScanFragment` (+ sign-in dialog `dialog_cloud_login.xml`), `ui/SetupFragment` + `ble/BleController` + `ble/BleRepository` (claim delivered via `pair_set`), `strings.xml`.
+Docs (03_document): BULB-CLD doc, app `README.md`, `labs/bulbbee/CONTEXT.md`.
+
+Non-destructive: the existing findings stay (BOLA control, unenforced `/api/register`, plaintext MQTT, unbonded BLE, serial-derived token). R6 adds the robust claim path behind `BULBBEE_SECURE=1` and the sign-in UX. `ble_light.py` `pair_set` was already present (stores `pair_token`), no device-side change beyond the tunnel.
+
+Verified (05_verify): backend `--selfcheck` + live (default + secure), tunnel `--selfcheck`, app `assembleDebug` BUILD SUCCESSFUL, and an end-to-end live run (sign-in -> claim -> activation -> bind -> `mybulbs` -> cloud control without BLE). Badge -> DONE. See `05_verify/output/bulbbee-r6-verification.md`.

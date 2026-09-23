@@ -21,6 +21,8 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
+import androidx.navigation.Navigation;
+
 import com.google.android.material.button.MaterialButton;
 import com.vulnzoo.bulbbee_app.R;
 
@@ -63,6 +65,9 @@ public class ScanFragment extends Fragment {
         vm = new ViewModelProvider(requireActivity()).get(LightViewModel.class);
         scanStatus = view.findViewById(R.id.scanStatus);
         ((MaterialButton) view.findViewById(R.id.pairButton)).setOnClickListener(v -> onPairClicked());
+        // BULB-R6: move to the dedicated sign-in screen (no floating dialog).
+        ((MaterialButton) view.findViewById(R.id.signInButton)).setOnClickListener(v ->
+                Navigation.findNavController(v).navigate(R.id.action_scan_to_login));
         vm.status().observe(getViewLifecycleOwner(), s -> scanStatus.setText(s));
     }
 

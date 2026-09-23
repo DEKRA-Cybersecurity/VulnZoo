@@ -94,6 +94,35 @@
                 android:inputType="textPassword" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Step 3: point the bulb at the cloud server (its IP on this network). -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
+            android:text="@string/cloud_title" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textAppearance="@style/TextAppearance.BulbBee.Body"
+            android:text="@string/cloud_body" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:hint="@string/cloud_host"
+            app:boxBackgroundColor="@color/bb_surface">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/cloudHostInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/provisionButton"
             android:layout_width="match_parent"

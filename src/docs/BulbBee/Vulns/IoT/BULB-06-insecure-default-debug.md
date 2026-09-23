@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I9 - Insecure Default Settings"
 standard: "ETSI EN 303 645 5.6 (minimise exposed attack surfaces)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - secure by default"
 cwe: "CWE-1188 (Insecure Default Initialization) / CWE-489 (Active Debug Code)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-06-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/lighting_service.py"
   - "labs/bulbbee/files/opt/bulbbee/config.json"

@@ -28,6 +28,7 @@ public class MainActivity extends AppCompatActivity {
 
     private NavController navController;
     private BottomNavigationView bottomNav;
+    private LightViewModel vm;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,19 +45,26 @@ public class MainActivity extends AppCompatActivity {
         // bottom nav there so it does not offer tabs for a bulb that is not paired.
         navController.addOnDestinationChangedListener((c, dest, args) ->
                 bottomNav.setVisibility(
-                        dest.getId() == R.id.scanFragment ? View.GONE : View.VISIBLE));
+                        (dest.getId() == R.id.scanFragment || dest.getId() == R.id.loginFragment)
+                                ? View.GONE : View.VISIBLE));
 
-        LightViewModel vm = new ViewModelProvider(this).get(LightViewModel.class);
-        vm.connected().observe(this, this::onConnectionChanged);
+        vm = new ViewModelProvider(this).get(LightViewModel.class);
+        // Enter the app when EITHER transport connects: BLE local, or a cloud sign-in
+        // without Bluetooth (BULB-R6). Fall back to Scan only when both are down.
+        vm.connected().observe(this, c -> onConnectionChanged());
+        vm.cloudConnected().observe(this, c -> onConnectionChanged());
     }
 
-    private void onConnectionChanged(@NonNull Boolean isConnected) {
+    private void onConnectionChanged() {
+        boolean any = Boolean.TRUE.equals(vm.connected().getValue())
+                || Boolean.TRUE.equals(vm.cloudConnected().getValue());
         NavDestination dest = navController.getCurrentDestination();
         int id = dest != null ? dest.getId() : 0;
-        if (isConnected && id == R.id.scanFragment) {
+        boolean preConnect = (id == R.id.scanFragment || id == R.id.loginFragment);
+        if (any && preConnect) {
             bottomNav.setSelectedItemId(R.id.lightFragment);   // enter the app on connect
-        } else if (!isConnected && id != R.id.scanFragment) {
-            navController.navigate(R.id.scanFragment);          // fall back to scan on drop
+        } else if (!any && !preConnect) {
+            navController.navigate(R.id.scanFragment);          // fall back to scan when both drop
         }
     }
 }

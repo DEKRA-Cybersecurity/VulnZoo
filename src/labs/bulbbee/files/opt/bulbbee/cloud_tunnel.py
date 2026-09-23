@@ -29,6 +29,7 @@ except ImportError:
     _HAS_MQTT = False
 
 CONFIG_PATH = os.environ.get("BULBBEE_CONFIG", "/opt/bulbbee/config.json")
+PROV_STATE_FILE = "/tmp/bulbbee/provisioning.json"
 LIGHT_KEYS = ("power", "brightness", "color", "scene")
 
 
@@ -51,6 +52,27 @@ def cmd_topic(device_id):
 
 def state_topic(device_id):
     return "bulbbee/%s/state" % device_id
+
+
+def register_topic(device_id):
+    return "bulbbee/%s/register" % device_id
+
+
+def _load_claim_token():
+    """The claim token the app delivered over BLE (pair_set -> provisioning.json).
+    The device presents it on activation so the cloud binds it to the claiming
+    account (BULB-R6, proof of possession)."""
+    try:
+        with open(PROV_STATE_FILE) as f:
+            return json.load(f).get("pair_token", "")
+    except (OSError, ValueError):
+        return ""
+
+
+def activation_payload(device_id, token, claim_token):
+    """Pure: the activation message the device publishes on connect so the cloud
+    binds device -> owner via the claim token (BULB-R6)."""
+    return {"device_id": device_id, "token": token, "claim_token": claim_token}
 
 
 def parse_command(payload):
@@ -86,6 +108,11 @@ def run():
     def on_connect(cl, userdata, flags, rc):
         _log("connected rc=%s, subscribing %s" % (rc, cmd_topic(dev)))
         cl.subscribe(cmd_topic(dev))
+        # BULB-R6: announce ourselves so the cloud binds us to the claiming account.
+        claim = _load_claim_token()
+        cl.publish(register_topic(dev), json.dumps(activation_payload(dev, token, claim)))
+        _log("published activation on %s (claim=%s)"
+             % (register_topic(dev), "yes" if claim else "none"))
 
     def on_message(cl, userdata, m):
         cmd = parse_command(m.payload)
@@ -115,6 +142,9 @@ def run():
 def _selfcheck():
     assert cmd_topic("abc") == "bulbbee/abc/cmd"
     assert state_topic("abc") == "bulbbee/abc/state"
+    assert register_topic("abc") == "bulbbee/abc/register"
+    assert activation_payload("dev", "tok", "claim") == \
+        {"device_id": "dev", "token": "tok", "claim_token": "claim"}
     assert parse_command(b'{"scene":"rainbow","junk":1}') == {"scene": "rainbow"}
     assert parse_command(b'{"power":true,"brightness":10,"color":[1,2,3]}') == \
         {"power": True, "brightness": 10, "color": [1, 2, 3]}

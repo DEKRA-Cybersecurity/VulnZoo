@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I4 - Lack of Secure Update Mechanism"
 standard: "ETSI EN 303 645 5.7 (ensure software integrity), 5.3 (keep software updated)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - secure updates"
 cwe: "CWE-347 (Improper Verification of Cryptographic Signature) / CWE-494 (Download of Code Without Integrity Check)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-04-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/update_agent.py"
   - "labs/bulbbee/files/opt/bulbbee/lighting_service.py"

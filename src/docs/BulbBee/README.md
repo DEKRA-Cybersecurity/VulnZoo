@@ -81,7 +81,7 @@ Every service reads `secure` from `/opt/bulbbee/config.json` (bake it into the t
 | Local (LAN/TCP) key | static `bulbbee-local-16` in firmware (BULB-P03) | per-device HMAC key (BULB-A4) | `local_tcp.py` |
 | Session token | key from vendor salt + serial (BULB-P04) | random per-device secret, rotatable (BULB-A3) | `session_token.py` |
 | Cloud tunnel transport | plaintext MQTT `:1883` (BULB-P02) | MQTT over TLS `:8883` (BULB-A3) | `cloud_tunnel.py` |
-| Owner binding | not enforced, app-only (BULB-P05) | write-once, device-enforced (BULB-A5) | `secret_store.py` |
+| Owner binding | recorded but not enforced, app + cloud (BULB-P05) | write-once, device-enforced + cloud `owner==caller` (BULB-A5) | `secret_store.py`, cloud `/api/register` |
 | LAN proximity = control | shared key + no owner check (BULB-P06) | per-device key + enforced binding | `local_tcp.py` + `secret_store.py` |
 | Debug surface | `GET /debug` dumps secrets (BULB-P07) | `/debug` refused | `lighting_service.py` |
 | Control surface | unauthenticated (classic BULB-02) | authenticated, secrets redacted | `lighting_service.py` |
@@ -98,7 +98,7 @@ The weaknesses along the BLE three-plane architecture, each the shipped default 
 | BULB-P02 | WiFi PSK over BLE in cleartext | `ble_light.py` `_prov_read` PSK | BULB-A2 | BULB-03 + 05 | 5.4 |
 | BULB-P03 | Static local key recoverable from firmware | `local_tcp.py` `STATIC_LOCAL_KEY` | BULB-A4 | net-new | 5.5 |
 | BULB-P04 | Session token static / derivable from serial | `session_token.py` `_static_key` | BULB-A3 | net-new (rel. BULB-05) | 5.1 |
-| BULB-P05 | Owner binding only in the app | `secret_store.py` `check_owner` True | BULB-A5 | net-new | 5.6 |
+| BULB-P05 | Owner binding only in the app, and cloud-recorded but unenforced | `secret_store.py` `check_owner` True + cloud `/api/register` (BULB-R2) | BULB-A5 | net-new | 5.6 |
 | BULB-P06 | LAN/TCP proximity = control | `local_tcp.py` key-only gate | BULB-A4 + A5 | BULB-02 + 06 | 5.6 |
 | BULB-P07 | Secure-by-default violations (debug, logging, re-provisioning) | `config.json` `debug:true`, no lockout | all A-series | BULB-06 | 5.6 |
 
@@ -146,4 +146,4 @@ PY
 
 ## Status
 
-The bring-up and secure baselines (BULB-A0..A5), the secure toggle (BULB-SEC), the three-plane findings (BULB-P01..P07), the assessor battery (BULB-EVAL) and the CRA dossier (BULB-CRA) are implemented through the MWP pipeline ([`../../../stages/TARGET_BULBBEE.md`](../../../stages/TARGET_BULBBEE.md), 16/16). BULB-A0 is certified live on the Pi, the BLE/cloud/LAN planes are proven by unit selfcheck with the live on-Pi / BLE-central / broker round-trips pending. The classic catalogue (BULB-01..07, BULB-CLD, BULB-APP) keeps its prior status. Evidence: `stages/05_verify/output/`.
+The bring-up and secure baselines (BULB-A0..A5), the secure toggle (BULB-SEC), the three-plane findings (BULB-P01..P07), the assessor battery (BULB-EVAL) and the CRA dossier (BULB-CRA) are implemented through the MWP pipeline ([`../../../stages/TARGET_BULBBEE.md`](../../../stages/TARGET_BULBBEE.md), 16/16). BULB-A0 is certified live on the Pi, the BLE/cloud/LAN planes are proven by unit selfcheck with the live on-Pi / BLE-central / broker round-trips pending. The classic catalogue (BULB-01..07, BULB-CLD, BULB-APP) keeps its prior status.

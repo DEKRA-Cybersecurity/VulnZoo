@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I7 - Insecure Data Transfer and Storage"
 standard: "ETSI EN 303 645 5.5 (communicate securely)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - protect data in transit"
 cwe: "CWE-319 (Cleartext Transmission of Sensitive Information) / CWE-294 (Authentication Bypass by Capture-replay)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-03-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/lighting_service.py"
   - "labs/bulbbee/files/opt/bulbbee/ble_light.py"

@@ -8,8 +8,6 @@ owasp: "OWASP IoT Top 10 (2018) I2 - Insecure Network Services (API2 Broken Auth
 standard: "ETSI EN 303 645 5.6 (minimise exposed attack surfaces)"
 regulation: "CRA (EU) 2024/2847 Annex I Part I - access control"
 cwe: "CWE-306 (Missing Authentication for a Critical Function) / CWE-284 (Improper Access Control)"
-source_docs:
-  - "stages/01_spec/output/bulbbee-02-spec.md"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/lighting_service.py"
   - "labs/bulbbee/files/opt/bulbbee/ble_light.py"
