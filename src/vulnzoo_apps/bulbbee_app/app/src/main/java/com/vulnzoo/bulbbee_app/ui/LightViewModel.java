@@ -9,6 +9,8 @@ import androidx.annotation.NonNull;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MediatorLiveData;
+import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.Observer;
 
 import com.vulnzoo.bulbbee_app.ble.BleRepository;
 import com.vulnzoo.bulbbee_app.cloud.CloudRepository;
@@ -41,10 +43,25 @@ public class LightViewModel extends AndroidViewModel {
 
     private volatile TransportSelector.Transport transport = TransportSelector.Transport.BLE;
     private volatile boolean scansGated = false;
+    private volatile boolean bleActive = false;   // BLE is the active, connected transport
 
     /** Merged live state from whichever transport is active (BLE / cloud / local),
      *  so the UI reflects the bulb over any leg, not just BLE. */
     private final MediatorLiveData<String> stateJson = new MediatorLiveData<>();
+
+    /** BULB-U2/U3/U4: the control screen's state, computed by {@link #enterControl}. */
+    public enum ControlState { CONNECTING, CONNECTED, OFFLINE, UNLINKED }
+    private final MutableLiveData<ControlState> controlState =
+            new MutableLiveData<>(ControlState.CONNECTING);
+
+    /** Watches the BLE link: if it was the active transport and drops, fail over to
+     *  the cloud instead of appearing connected but dead (no re-login needed). */
+    private final Observer<Boolean> bleWatch = c -> {
+        if (Boolean.FALSE.equals(c) && bleActive) {
+            bleActive = false;
+            failoverToCloud();
+        }
+    };
 
     public LightViewModel(@NonNull Application app) {
         super(app);
@@ -54,6 +71,13 @@ public class LightViewModel extends AndroidViewModel {
         stateJson.addSource(repo.stateJson(), stateJson::setValue);
         stateJson.addSource(cloud.stateJson(), stateJson::setValue);
         stateJson.addSource(local.stateJson(), stateJson::setValue);
+        repo.connected().observeForever(bleWatch);
+    }
+
+    @Override
+    protected void onCleared() {
+        repo.connected().removeObserver(bleWatch);
+        super.onCleared();
     }
 
     // ── observable ────────────────────────────────────────────────────
@@ -73,6 +97,80 @@ public class LightViewModel extends AndroidViewModel {
 
     public TransportSelector.Transport transport() { return transport; }
     public boolean scansGated() { return scansGated; }
+
+    public LiveData<ControlState> controlState() { return controlState; }
+    public String cloudUser() { return cloud.currentUser(); }
+
+    // ── session lifecycle (BULB-U1) ───────────────────────────────────
+
+    /** BULB-U1: auto-resume a stored cloud session (skips login when a token exists). */
+    public boolean resumeSession() { return cloud.resumeSession(); }
+
+    /** BULB-U1: end the session, drop BLE, and let the login gate take over. */
+    public void signOut() {
+        bleActive = false;              // an intentional drop, do not fail over
+        cloud.signOut();
+        repo.disconnect();
+        transport = TransportSelector.Transport.BLE;
+        controlState.postValue(ControlState.UNLINKED);
+    }
+
+    /** "Forget device": drop the app's memory of the provisioned device (client-side)
+     *  and BLE, and show the unlinked state so the user can re-link. The session stays. */
+    public void forgetDevice() {
+        bleActive = false;              // an intentional drop, do not fail over
+        cloud.forgetDevice();
+        repo.disconnect();
+        transport = TransportSelector.Transport.BLE;
+        controlState.postValue(ControlState.UNLINKED);
+    }
+
+    // ── automatic transport for the control screen (BULB-U2/U3/U4) ────
+
+    /**
+     * Decide the control screen's channel and state (Decision U-1: BLE proximity
+     * then Cloud). Resolves the account's bound bulb: none -> UNLINKED. Else, when
+     * BLE is ready, scan/connect for ~6 s -> BLE CONNECTED. Otherwise read the
+     * bulb's cloud liveness (BULB-U3) -> CLOUD CONNECTED, or OFFLINE. Runs off the
+     * main thread. The LAN {@code :6668} plane stays a built capability, out of
+     * this automatic decision (Decision U-1).
+     */
+    public void enterControl(boolean bleReady) {
+        controlState.postValue(ControlState.CONNECTING);
+        bg.execute(() -> {
+            String bulb = cloud.resolveBulbBlocking();
+            if (bulb == null) { bleActive = false; controlState.postValue(ControlState.UNLINKED); return; }
+            if (bleReady) {
+                main.post(() -> { transport = TransportSelector.Transport.BLE; repo.scanAndConnect(); });
+                for (int i = 0; i < 20; i++) {                 // ~6 s BLE probe window
+                    if (Boolean.TRUE.equals(repo.connected().getValue())) {
+                        transport = TransportSelector.Transport.BLE;
+                        bleActive = true;                       // BLE is now the active leg
+                        controlState.postValue(ControlState.CONNECTED);
+                        return;
+                    }
+                    try { Thread.sleep(300); } catch (InterruptedException ignored) { return; }
+                }
+            }
+            bleActive = false;
+            boolean online = cloud.bulbOnlineBlocking(bulb);   // BULB-U3 device liveness
+            transport = TransportSelector.Transport.CLOUD;
+            controlState.postValue(online ? ControlState.CONNECTED : ControlState.OFFLINE);
+        });
+    }
+
+    /** BLE-drop failover (BULB-U2): BLE was the active transport and dropped, so try
+     *  the cloud for the same account bulb, keeping the app usable without a re-login. */
+    private void failoverToCloud() {
+        controlState.postValue(ControlState.CONNECTING);
+        bg.execute(() -> {
+            String bulb = cloud.resolveBulbBlocking();
+            if (bulb == null) { controlState.postValue(ControlState.UNLINKED); return; }
+            boolean online = cloud.bulbOnlineBlocking(bulb);
+            transport = TransportSelector.Transport.CLOUD;
+            controlState.postValue(online ? ControlState.CONNECTED : ControlState.OFFLINE);
+        });
+    }
 
     // ── transport selection (BULB-R5) ─────────────────────────────────
 

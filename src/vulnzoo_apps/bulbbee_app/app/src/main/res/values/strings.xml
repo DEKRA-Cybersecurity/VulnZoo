@@ -84,4 +84,17 @@
     <!-- Setup status -->
     <string name="setup_need_ssid">Enter the network name</string>
     <string name="setup_sending">Sending to bulb…</string>
+    <string name="setup_connect_first">Connecting to the bulb…</string>
+    <string name="setup_bulb_connected">Connected to the bulb</string>
+    <string name="sign_out">Sign out</string>
+
+    <!-- Control screen states (BULB-U2/U3/U4) -->
+    <string name="state_connecting">Connecting…</string>
+    <string name="offline_device">Offline device</string>
+    <string name="offline_sub">The bulb is not responding over Bluetooth or the cloud.</string>
+    <string name="no_bulb_title">No bulb linked</string>
+    <string name="no_bulb_sub">Link a BulbBee to this account to control it.</string>
+    <string name="link_device">Vincular device</string>
+    <string name="forget_device">Forget device</string>
+    <string name="retry">Retry</string>
 </resources>

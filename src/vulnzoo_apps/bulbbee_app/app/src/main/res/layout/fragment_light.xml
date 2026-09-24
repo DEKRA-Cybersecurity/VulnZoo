@@ -1,203 +1,244 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The daily control surface. One screen, no scrolling on a 412x892 device. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- The daily control surface, over a state overlay (BULB-U2/U3/U4): the controls
+     show when CONNECTED, the overlay when CONNECTING / OFFLINE / UNLINKED. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:paddingHorizontal="22dp"
-    android:paddingTop="18dp"
-    android:paddingBottom="20dp"
     android:background="@color/bb_ground">
 
-    <!-- Paired-device header -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
     <LinearLayout
+        android:id="@+id/controlContent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:orientation="vertical"
+        android:paddingHorizontal="22dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="20dp">
 
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/deviceName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textAppearance="@style/TextAppearance.BulbBee.Display"
-                android:textSize="24sp"
-                android:text="BulbBee-3F2A" />
-
-            <TextView
-                android:id="@+id/linkLine"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textAppearance="@style/TextAppearance.BulbBee.Mono"
-                android:textColor="@color/bb_teal"
-                android:text="BLE · 70% · solid" />
-        </LinearLayout>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/unpairButton"
-            style="@style/Widget.BulbBee.Button.Quiet"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minHeight="44dp"
-            android:text="@string/unpair" />
-    </LinearLayout>
-
-    <!-- The orb IS the bulb: live colour, dimmed by brightness, animated by scene. -->
-    <com.vulnzoo.bulbbee_app.ui.BulbOrbView
-        android:id="@+id/orb"
-        android:layout_width="216dp"
-        android:layout_height="216dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="14dp"
-        android:contentDescription="@string/orb_hint" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="6dp"
-        android:textAppearance="@style/TextAppearance.BulbBee.Body"
-        android:textSize="13sp"
-        android:text="@string/orb_hint" />
-
-    <!-- Brightness: one fat 56dp target instead of a hairline Slider -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
-        android:orientation="horizontal"
-        android:baselineAligned="false">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
-            android:text="@string/brightness" />
-
-        <TextView
-            android:id="@+id/brightnessRaw"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textAppearance="@style/TextAppearance.BulbBee.Mono"
-            android:text="178 / 255" />
-    </LinearLayout>
-
-    <com.vulnzoo.bulbbee_app.ui.BrightnessBarView
-        android:id="@+id/brightnessBar"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="10dp" />
-
-    <!-- Colour: three ways in, one segmented control. Replaces the R/G/B sliders. -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:baselineAligned="false">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
-            android:text="@string/colour" />
-
-        <com.google.android.material.button.MaterialButtonToggleGroup
-            android:id="@+id/pickMode"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:singleSelection="true"
-            app:selectionRequired="true">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/modeWheel"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="@string/pick_wheel" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/modeWhite"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="@string/pick_white" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/modePresets"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="@string/pick_presets" />
-        </com.google.android.material.button.MaterialButtonToggleGroup>
-    </LinearLayout>
-
-    <!-- Only one of these three is visible at a time (set by LightFragment). -->
-    <com.vulnzoo.bulbbee_app.ui.ColorWheelView
-        android:id="@+id/colorWheel"
-        android:layout_width="168dp"
-        android:layout_height="168dp"
-        android:layout_marginTop="12dp" />
-
-    <com.vulnzoo.bulbbee_app.ui.TempRampView
-        android:id="@+id/tempRamp"
-        android:layout_width="match_parent"
-        android:layout_height="64dp"
-        android:layout_marginTop="12dp"
-        android:visibility="gone" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/presetGrid"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:visibility="gone"
-        app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
-        app:spanCount="4" />
-
-    <Space
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-
-    <!-- "No feedback on what the bulb is doing" - the real 0xFF31 writes, verbatim. -->
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:cardBackgroundColor="@color/bb_surface_sunken"
-        app:cardCornerRadius="18dp">
-
+        <!-- Paired-device header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-            <TextView
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/deviceName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.BulbBee.Display"
+                    android:textSize="24sp"
+                    android:text="BulbBee-3F2A" />
+
+                <TextView
+                    android:id="@+id/linkLine"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAppearance="@style/TextAppearance.BulbBee.Mono"
+                    android:textColor="@color/bb_teal"
+                    android:text="BLE · 70% · solid" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
-                android:text="@string/doing" />
+                android:orientation="vertical"
+                android:gravity="end">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/forgetButton"
+                    style="@style/Widget.BulbBee.Button.Quiet"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="40dp"
+                    android:text="@string/forget_device" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/signOutButton"
+                    style="@style/Widget.BulbBee.Button.Quiet"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="40dp"
+                    android:text="@string/sign_out" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- The orb IS the bulb: live colour, dimmed by brightness, animated by scene. -->
+        <com.vulnzoo.bulbbee_app.ui.BulbOrbView
+            android:id="@+id/orb"
+            android:layout_width="216dp"
+            android:layout_height="216dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="14dp"
+            android:contentDescription="@string/orb_hint" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="6dp"
+            android:textAppearance="@style/TextAppearance.BulbBee.Body"
+            android:textSize="13sp"
+            android:text="@string/orb_hint" />
+
+        <!-- Brightness: one fat 56dp target instead of a hairline Slider -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
 
             <TextView
-                android:id="@+id/protocolLog"
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:maxLines="4"
+                android:layout_weight="1"
+                android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
+                android:text="@string/brightness" />
+
+            <TextView
+                android:id="@+id/brightnessRaw"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:textAppearance="@style/TextAppearance.BulbBee.Mono"
-                android:lineSpacingMultiplier="1.7" />
+                android:text="178 / 255" />
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-</LinearLayout>
+
+        <com.vulnzoo.bulbbee_app.ui.BrightnessBarView
+            android:id="@+id/brightnessBar"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="10dp" />
+
+        <!-- Colour: three ways in, one segmented control. Replaces the R/G/B sliders. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:baselineAligned="false">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
+                android:text="@string/colour" />
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/pickMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/modeWheel"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="@string/pick_wheel" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/modeWhite"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="@string/pick_white" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/modePresets"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="@string/pick_presets" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+        </LinearLayout>
+
+        <!-- Only one of these three is visible at a time (set by LightFragment). -->
+        <com.vulnzoo.bulbbee_app.ui.ColorWheelView
+            android:id="@+id/colorWheel"
+            android:layout_width="168dp"
+            android:layout_height="168dp"
+            android:layout_marginTop="12dp" />
+
+        <com.vulnzoo.bulbbee_app.ui.TempRampView
+            android:id="@+id/tempRamp"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/presetGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
+            app:spanCount="4" />
+
+    </LinearLayout>
+    </ScrollView>
+
+    <!-- State overlay: CONNECTING / OFFLINE / UNLINKED (BULB-U2/U3/U4). -->
+    <LinearLayout
+        android:id="@+id/stateOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingHorizontal="32dp"
+        android:background="@color/bb_ground"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/stateMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.BulbBee.Display"
+            android:gravity="center"
+            android:text="@string/state_connecting" />
+
+        <TextView
+            android:id="@+id/stateSub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:textAppearance="@style/TextAppearance.BulbBee.Body" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/linkButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:paddingHorizontal="28dp"
+            android:minHeight="56dp"
+            android:text="@string/link_device"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/retryButton"
+            style="@style/Widget.BulbBee.Button.Quiet"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/retry"
+            android:visibility="gone" />
+    </LinearLayout>
+</FrameLayout>

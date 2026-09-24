@@ -51,11 +51,11 @@
 
       <div class="content-section">
         <h2>What is this environment?</h2>
-        <p><strong>BulbBee</strong> is a vulnerable consumer smart-light simulator for security testing and learning. It reproduces a budget WiFi smart light: a <strong>Raspberry Pi 3B+ running OpenWRT</strong> drives an addressable <strong>WS2812 RGB LED ring</strong>. The controller is an <strong>Android app that talks to the device over BLE</strong> (a GATT server on the Pi, as in CareOtter), and a local HTTP control API on the LAN is a secondary surface to set power, brightness, color and named scenes.</p>
+        <p><strong>BulbBee</strong> is a vulnerable consumer smart-light simulator for security testing and learning. It reproduces a budget WiFi smart light: a <strong>Raspberry Pi 3B+ running OpenWRT</strong> drives an addressable <strong>WS2812 RGB LED ring</strong>. The controller is an <strong>Android app that drives the device over three planes</strong>: a BLE GATT server on the Pi (local, in range, as in CareOtter), an outbound cloud tunnel (the device dials a broker, so the app controls it remotely over the Internet), and a local AES-CCM channel on the LAN. The app signs in to a cloud account and picks the channel automatically, BLE when the bulb is nearby and the cloud otherwise. A local HTTP control API on <code>:8082</code> is a secondary surface to set power, brightness, color and named scenes.</p>
         <p>BulbBee is the VulnZoo reference for a <strong>Cyber Resilience Act default-category</strong> product: a device that falls in no vertical of Annex III or Annex IV and therefore follows the lightest conformity route, self-assessment under Module A with a self-declared EU Declaration of Conformity. The lab is framed as the sample a CRA assessor receives, and you play the assessor testing a self-declared product against the baseline.</p>
         <p><strong>VulnZoo WWW interface</strong>: device management, loading and resetting the BulbBee simulator, and project administration.</p>
-        <p><strong>BulbBee device interface</strong>: the BLE GATT control channel (the app's path, planned) and the local HTTP control API on <code>:8082</code>, plus, in later waves, its onboarding, update and cloud surfaces.</p>
-        <p><strong>NOTE: Loading the BulbBee lab will restart thet Raspberry Pi. Check after a few seconds if the device is responding.</strong></p>
+        <p><strong>BulbBee device interface</strong>: the BLE GATT control and onboarding channel (the app's local path), the outbound cloud tunnel that carries remote control (app to cloud to device), the local AES-CCM plane on <code>:6668</code>, and the HTTP control API on <code>:8082</code> for diagnostics.</p>
+        <p><strong>NOTE: Loading the BulbBee lab will restart the Raspberry Pi. Check after a few seconds if the device is responding.</strong></p>
       </div>
 
       <div class="content-section">
@@ -73,7 +73,7 @@
         <h2>Lab prerequisites</h2>
         <ul>
           <li><strong>Ethernet</strong>: a <strong>direct cable</strong> between Raspberry Pi and PC (PC static IP <code>192.168.2.2/24</code>), the Pi is at <code>192.168.2.1</code>.</li>
-          <li><strong>Bluetooth</strong>: the controller (an Android phone or a BLE-capable host) needs <strong>Bluetooth enabled</strong> to reach the BLE GATT control server on the Pi (planned, BULB-A1).</li>
+          <li><strong>Bluetooth</strong>: the controller (an Android phone or a BLE-capable host) needs <strong>Bluetooth enabled</strong> to reach the BLE GATT control server on the Pi (implemented, BULB-A2).</li>
           <li><strong>WS2812 ring (optional)</strong>: DIN to Pi GPIO10 (pin 19), 5V to pin 2/4, GND to pin 6. SPI must be enabled (<code>dtparam=spi=on</code>). Without a ring the lab runs in simulation.</li>
         </ul>
       </div>
@@ -81,22 +81,25 @@
       <div class="content-section">
         <h2>Device architecture</h2>
         <ul>
-          <li><strong>BLE GATT control server (app channel)</strong>: the primary controller path, an app connects over BLE to set power, brightness, color and scene, and onboards the device (planned, BULB-A1, modeled on CareOtter).</li>
+          <li><strong>BLE GATT control server (app channel)</strong>: the local controller path, the app connects over BLE to set power, brightness, color and scene and to onboard the device over WiFi (implemented, BULB-A2, modeled on CareOtter).</li>
           <li><strong>Lighting service (Raspberry Pi)</strong>: OpenWRT service driving the WS2812 ring over SPI, with a simulation fallback, and the secondary HTTP control API on <code>:8082</code>.</li>
           <li><strong>WS2812 ring</strong>: addressable RGB LEDs on the SPI0 MOSI line (GPIO10), scenes solid / off / rainbow / breathe.</li>
-          <li><strong>Cloud API</strong>: a thin remote-control backend on <code>:5004</code>, deferred to a later wave.</li>
-          <li><strong>Mobile app</strong>: the Android companion, the device's controller over BLE, deferred to a later wave.</li>
+          <li><strong>Local AES-CCM plane</strong>: a scannable TCP channel on <code>:6668</code> for low-latency local control, encrypted with a static firmware key. It is an analysis and attack surface, not the app's default path.</li>
+          <li><strong>Cloud API</strong>: a Flask backend on <code>:5004</code> with an MQTT broker. The device holds an outbound tunnel and the API relays account commands to it, so remote control (app to cloud to device) works end to end (implemented, BULB-R1..R6): account-device binding, single-use claim tokens, a device state uplink and a device-liveness signal.</li>
+          <li><strong>Mobile app</strong>: the Android companion. Login-first with a persisted cloud session, automatic BLE-proximity-then-Cloud transport with failover on a dropped link, plus offline and link-device states (implemented).</li>
         </ul>
       </div>
 
       <div class="content-section">
         <h2>Security training focus</h2>
-        <p>BulbBee teaches the CRA baseline that applies to every product with digital elements, mapped to OWASP IoT Top 10 and ETSI EN 303 645. The vulnerabilities are a documented roadmap, all currently pending.</p>
+        <p>BulbBee teaches the CRA baseline that applies to every product with digital elements, mapped to OWASP IoT Top 10, OWASP API and Mobile Top 10, and ETSI EN 303 645. The vulnerabilities are implemented across the BLE, cloud and app surfaces and documented.</p>
         <ul>
           <li><strong>Onboarding</strong>: open setup AP and hardcoded pairing credentials.</li>
           <li><strong>Control</strong>: unauthenticated local API, cleartext replayable command channel.</li>
           <li><strong>Update</strong>: unsigned over-the-air update of the lighting service.</li>
           <li><strong>Data and resilience</strong>: plaintext secrets, insecure defaults, scene-payload denial of service.</li>
+          <li><strong>Cloud API</strong>: broken object-level authorization (any account controls any bulb) and broken authentication (the <code>alg:none</code> forge and a weak JWT secret), which the command relay turns into remote physical control of any user's bulb.</li>
+          <li><strong>Mobile app</strong>: a hardcoded factory pairing PIN extractable from the APK, and WiFi and cloud credentials stored in plaintext.</li>
         </ul>
       </div>
 

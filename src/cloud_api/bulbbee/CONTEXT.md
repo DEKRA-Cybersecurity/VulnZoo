@@ -21,6 +21,8 @@ The BulbBee cloud lets the app control bulbs remotely and sync scenes. It seeds 
 
 > BULB-R6: `/api/login` gains a password (ignored by default = API2, verified in secure), `/api/claim` issues a single-use TTL claim token, and a `bulbbee/+/register` activation binds `device -> user` via the claim (default binds on any named claim with no proof, secure is single-use + write-once). `/api/mybulbs` lists the caller's own bulbs.
 
+> BULB-U3: the app must tell a cloud-connected bulb from an offline one, and the REST API always answers, so a bulb record carries `last_seen` (set on each `bulbbee/+/state` ingest, R3) and a derived `online` (fresh within `ONLINE_TTL` = 60 s), surfaced on `/api/mybulbs` and `GET /state`. A cloud write does not fake liveness, only a device uplink marks the bulb online. The device refreshes `last_seen` on connect, on a periodic heartbeat (`cloud_tunnel.py`) and via its activation publish, so a connected but idle bulb stays online, not only one that just applied a command. Honest wiring, no new weakness.
+
 > The vulnerabilities are intentional. Documented in [`../../docs/BulbBee/Vulns/API/`](../../docs/BulbBee/).
 
 ## Structure
@@ -28,7 +30,7 @@ The BulbBee cloud lets the app control bulbs remotely and sync scenes. It seeds 
 The API is split into a `services/` layer over a SQLAlchemy (SQLite) database (replacing the earlier in-process dicts), served by gunicorn (`wsgi:app`, workers 1 so the MQTT subscriber runs once):
 
 - `config.py` - env-driven config (`JWT_SECRET`, `BULBBEE_SECURE`, broker, `CLAIM_TTL`, `DB_PATH`).
-- `services/database_service.py` - SQLAlchemy models (`User` / `Bulb` / `Claim` / `Event`) + persistence + the seed (users alice/bob/admin, bulbs bulb-1/bulb-2), plus `log_event` (a timestamped `events` row + a stdout line: the server's temporal event log). DB at `DB_PATH` (default `/app/data/bulbbee.db`), persisted on the `bulbbee_data` volume.
+- `services/database_service.py` - SQLAlchemy models (`User` / `Bulb` with `last_seen` for the BULB-U3 online flag / `Claim` / `Event`) + persistence + the seed (users alice/bob/admin, bulbs bulb-1/bulb-2), plus `log_event` (a timestamped `events` row + a stdout line: the server's temporal event log). DB at `DB_PATH` (default `/app/data/bulbbee.db`), persisted on the `bulbbee_data` volume.
 - `services/auth_service.py` - login + JWT decode (API2: `alg:none` / weak secret / password ignored by default).
 - `services/claim_service.py` - claim tokens (single-use + TTL in secure).
 - `services/bulb_service.py` - control (BOLA), binding (register + activation), state uplink.
@@ -63,6 +65,7 @@ docker compose up --build      # serves the API on :5004 and the broker on :1883
 - [ ] BULB-R1: a `POST /api/bulb/bulb-2/state` publishes the command to `bulbbee/bee-0002/cmd` (observe with `cloudctl.sh sub 'bulbbee/bee-0002/cmd'` or `mosquitto_sub`), and `/scene` publishes `{"scene":...}`
 - [ ] BULB-R2: `POST /api/register {"device_id":"bee-0009"}` returns a `bulb_id` bound to the caller, control resolves it to `bulbbee/bee-0009/cmd`, and a cross-owner re-bind returns 409 under `BULBBEE_SECURE=1`
 - [ ] BULB-R3: a state publish on `bulbbee/bee-0002/state` is reflected in `GET /api/bulb/bulb-2/state` (live device state, not the seed)
+- [ ] BULB-U3: `GET /api/mybulbs` reports `online:false` for a bulb with no recent uplink and `online:true` after a `bulbbee/<id>/state` publish (the device-liveness signal for the app's offline state)
 - [ ] Event log: every route and each appreciable event is recorded in the `events` table (timestamped) + stdout; `GET /api/admin/events` returns the log (reachable with a forged `alg:none` admin token, API2 data exposure of the activity trail)
 
 ## References

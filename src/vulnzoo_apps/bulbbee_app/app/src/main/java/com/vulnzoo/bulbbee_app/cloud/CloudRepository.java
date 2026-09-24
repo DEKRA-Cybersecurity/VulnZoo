@@ -40,6 +40,8 @@ public class CloudRepository {
 
     private CloudClient client;   // set on connect / resume
     private String bulbId;
+    private String base;          // BULB-U1: persisted session, for resume + re-probe
+    private String user;
 
     private CloudRepository(Context ctx) {
         this.prefs = ctx.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -110,9 +112,16 @@ public class CloudRepository {
                 fail(loginError(r));                          // distinct message per API response
                 return;
             }
-            // M9: store the bearer token in the clear and log it.
-            prefs.edit().putString("cloud_jwt", r.token).apply();
+            // M9: store the bearer token + session (base/user) in the clear and log it.
+            // BULB-U1: the persisted session is what auto-resumes on the next launch.
+            prefs.edit()
+                    .putString("cloud_jwt", r.token)
+                    .putString("cloud_base", base)
+                    .putString("cloud_user", user)
+                    .apply();
             Log.d(TAG, "cloud login user=" + user + " jwt=" + r.token);
+            this.base = base;
+            this.user = user;
             String bulb = null;
             try {
                 // BULB-R6: if a device serial was captured over BLE during onboarding,
@@ -123,6 +132,7 @@ public class CloudRepository {
             }
             this.client = c;
             this.bulbId = bulb;
+            rememberDevice(user, bulb);   // BULB-U1: per-user device profile
             final String b = bulb;
             main.post(() -> {
                 connected.setValue(true);
@@ -159,6 +169,117 @@ public class CloudRepository {
 
     private void fail(String msg) {
         main.post(() -> { connected.setValue(false); status.setValue(msg); });
+    }
+
+    /** BULB-U1: auto-resume a stored session without a fresh login (M9: reads the
+     *  plaintext jwt + base + user). Returns true if a session was restored. Call
+     *  on the main thread. */
+    public boolean resumeSession() {
+        String jwt = prefs.getString("cloud_jwt", null);
+        String b = prefs.getString("cloud_base", null);
+        String u = prefs.getString("cloud_user", null);
+        if (jwt == null || b == null) return false;
+        this.base = b;
+        this.user = u;
+        CloudClient c = new CloudClient(b);
+        c.setToken(jwt);
+        this.client = c;
+        connected.setValue(true);
+        status.setValue("cloud: " + (u != null ? u : ""));
+        io.execute(() -> {
+            String bulb = null;
+            try { bulb = c.firstBulbId(); } catch (Exception ignored) { }
+            this.bulbId = bulb;
+            rememberDevice(u, bulb);
+        });
+        return true;
+    }
+
+    /** BULB-U1: end the session until the next sign-in. Clears the persisted bearer
+     *  and session (the per-user device list is kept as a profile). */
+    public void signOut() {
+        prefs.edit().remove("cloud_jwt").remove("cloud_base").remove("cloud_user").apply();
+        client = null;
+        bulbId = null;
+        base = null;
+        user = null;
+        connected.postValue(false);
+        status.postValue("signed out");
+    }
+
+    public String currentUser() { return user; }
+    public String bulbId() { return bulbId; }
+
+    /** "Forget device": drop the app's memory of the provisioned device (the real
+     *  serial + the per-user list), so the control screen no longer targets it.
+     *  Client-side only, the cloud binding is unchanged. */
+    public void forgetDevice() {
+        SharedPreferences.Editor e = prefs.edit().remove("cloud_device_id");
+        if (user != null) e.remove("devices_" + user);
+        e.apply();
+        bulbId = null;
+    }
+
+    /** BULB-U2: resolve the account's bound bulb synchronously (call off the main
+     *  thread). Prefers the real device serial captured over BLE (`cloud_device_id`)
+     *  so control targets the provisioned device, not the first (possibly seeded)
+     *  bulb the account owns, mirroring {@link #signIn}. Falls back to the first
+     *  bulb. Returns null when the account has none. */
+    public String resolveBulbBlocking() {
+        CloudClient c = client;
+        if (c == null) return bulbId;
+        try {
+            String serial = prefs.getString("cloud_device_id", null);
+            String b = (serial != null && !serial.isEmpty())
+                    ? c.register(serial)            // the provisioned device
+                    : preferOnline(c.myBulbs());    // else an online bulb, not an offline seed
+            this.bulbId = b;
+            rememberDevice(user, b);
+            return b;
+        } catch (Exception e) {
+            return bulbId;
+        }
+    }
+
+    /** Pick an online bulb from the mybulbs object, else the first, else null, so a
+     *  seeded but offline bulb the account owns does not shadow a live one. */
+    private static String preferOnline(String myBulbsJson) {
+        try {
+            org.json.JSONObject o = new org.json.JSONObject(myBulbsJson);
+            String first = null;
+            for (java.util.Iterator<String> it = o.keys(); it.hasNext(); ) {
+                String id = it.next();
+                if (first == null) first = id;
+                if (o.getJSONObject(id).optBoolean("online", false)) return id;
+            }
+            return first;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** BULB-U3: is the bound bulb reporting live device state (online) over the cloud?
+     *  The REST API always answers, so this reads the last_seen-derived online flag.
+     *  Call off the main thread. */
+    public boolean bulbOnlineBlocking(String bulb) {
+        CloudClient c = client;
+        if (c == null || bulb == null) return false;
+        try {
+            String s = c.getState(bulb);
+            return new org.json.JSONObject(s).optBoolean("online", false);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** BULB-U1: remember which bulbs this user configures (per-user device profile,
+     *  plaintext prefs). */
+    private void rememberDevice(String user, String bulb) {
+        if (user == null || bulb == null || bulb.isEmpty()) return;
+        String key = "devices_" + user;
+        java.util.Set<String> set = new java.util.HashSet<>(
+                prefs.getStringSet(key, java.util.Collections.emptySet()));
+        if (set.add(bulb)) prefs.edit().putStringSet(key, set).apply();
     }
 
     /** Reuse a stored JWT without a fresh login (M9: reads the plaintext token). */

@@ -1,19 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Scan is the start destination (pre-connection). The four bottom-nav tabs
-     share their ids with res/menu/bottom_nav.xml so NavigationUI wires them. -->
+<!-- Login is the start destination (BULB-U1): the mandatory barrier before any
+     control. After sign-in MainActivity switches to the Light tab; the four
+     bottom-nav tabs share their ids with res/menu/bottom_nav.xml. The old Scan
+     entry is retired (BULB-U5): BLE scan is the Light probe (U2) and provisioning
+     is the Setup link panel (U4). -->
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/scanFragment">
-
-    <fragment
-        android:id="@+id/scanFragment"
-        android:name="com.vulnzoo.bulbbee_app.ui.ScanFragment"
-        android:label="@string/scan_title">
-        <action
-            android:id="@+id/action_scan_to_login"
-            app:destination="@id/loginFragment" />
-    </fragment>
+    app:startDestination="@id/loginFragment">
 
     <fragment
         android:id="@+id/loginFragment"

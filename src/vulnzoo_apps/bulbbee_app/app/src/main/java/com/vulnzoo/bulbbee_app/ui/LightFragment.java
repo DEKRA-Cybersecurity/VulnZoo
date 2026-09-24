@@ -1,6 +1,9 @@
 package com.vulnzoo.bulbbee_app.ui;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,8 +15,10 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
+import androidx.navigation.Navigation;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
@@ -36,7 +41,10 @@ public class LightFragment extends Fragment {
 
     private LightViewModel vm;
 
-    private TextView linkLine, brightnessRaw, protocolLog;
+    private TextView linkLine, brightnessRaw;
+    private View stateOverlay;
+    private TextView stateMessage, stateSub;
+    private MaterialButton linkButton, retryButton;
     private BulbOrbView orb;
     private BrightnessBarView brightnessBar;
     private ColorWheelView colorWheel;
@@ -58,7 +66,6 @@ public class LightFragment extends Fragment {
 
         linkLine = v.findViewById(R.id.linkLine);
         brightnessRaw = v.findViewById(R.id.brightnessRaw);
-        protocolLog = v.findViewById(R.id.protocolLog);
         orb = v.findViewById(R.id.orb);
         brightnessBar = v.findViewById(R.id.brightnessBar);
         colorWheel = v.findViewById(R.id.colorWheel);
@@ -81,7 +88,8 @@ public class LightFragment extends Fragment {
             vm.writeColor(color);
         }));
 
-        ((MaterialButton) v.findViewById(R.id.unpairButton)).setOnClickListener(x -> vm.disconnect());
+        ((MaterialButton) v.findViewById(R.id.forgetButton)).setOnClickListener(x -> vm.forgetDevice());
+        ((MaterialButton) v.findViewById(R.id.signOutButton)).setOnClickListener(x -> vm.signOut());
 
         MaterialButtonToggleGroup pickMode = v.findViewById(R.id.pickMode);
         pickMode.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
@@ -92,8 +100,65 @@ public class LightFragment extends Fragment {
         });
         pickMode.check(R.id.modeWheel);
 
+        stateOverlay = v.findViewById(R.id.stateOverlay);
+        stateMessage = v.findViewById(R.id.stateMessage);
+        stateSub = v.findViewById(R.id.stateSub);
+        linkButton = v.findViewById(R.id.linkButton);
+        retryButton = v.findViewById(R.id.retryButton);
+        // BULB-U4: link a device (Setup is the link panel).
+        linkButton.setOnClickListener(x -> Navigation.findNavController(x).navigate(R.id.setupFragment));
+        // BULB-U3: retry the probe, the device may have come back.
+        retryButton.setOnClickListener(x -> vm.enterControl(bleReady()));
+
         vm.stateJson().observe(getViewLifecycleOwner(), this::applyState);
-        vm.writeLog().observe(getViewLifecycleOwner(), s -> protocolLog.setText(s));
+        vm.controlState().observe(getViewLifecycleOwner(), this::applyControlState);
+
+        // BULB-U2: pick the channel automatically on FIRST entry (BLE proximity ->
+        // Cloud). Skip it when already connected, so switching tabs and returning to
+        // Light does not re-probe and flash "Connecting". The connection lives in the
+        // activity-scoped repositories, so it survives tab switches, only Forget
+        // device / Sign out (or a real drop) change it. Retry re-probes explicitly.
+        if (vm.controlState().getValue() != LightViewModel.ControlState.CONNECTED) {
+            vm.enterControl(bleReady());
+        }
+    }
+
+    /** BULB-U2/U3/U4: show the controls only when CONNECTED, the overlay otherwise. */
+    private void applyControlState(LightViewModel.ControlState st) {
+        boolean connected = st == LightViewModel.ControlState.CONNECTED;
+        stateOverlay.setVisibility(connected ? View.GONE : View.VISIBLE);
+        linkButton.setVisibility(st == LightViewModel.ControlState.UNLINKED ? View.VISIBLE : View.GONE);
+        retryButton.setVisibility(st == LightViewModel.ControlState.OFFLINE ? View.VISIBLE : View.GONE);
+        switch (st) {
+            case OFFLINE:
+                stateMessage.setText(R.string.offline_device);
+                stateSub.setText(R.string.offline_sub);
+                break;
+            case UNLINKED:
+                stateMessage.setText(R.string.no_bulb_title);
+                stateSub.setText(R.string.no_bulb_sub);
+                break;
+            default:   // CONNECTING
+                stateMessage.setText(R.string.state_connecting);
+                stateSub.setText("");
+        }
+    }
+
+    /** BLE is usable for the proximity probe only when the adapter is on and the
+     *  runtime permissions are already granted (they are requested in the link
+     *  panel, BULB-U4, not on every login). */
+    private boolean bleReady() {
+        if (!vm.isBluetoothReady()) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return granted(Manifest.permission.BLUETOOTH_SCAN)
+                    && granted(Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        return granted(Manifest.permission.ACCESS_FINE_LOCATION);
+    }
+
+    private boolean granted(String perm) {
+        return ContextCompat.checkSelfPermission(requireContext(), perm)
+                == PackageManager.PERMISSION_GRANTED;
     }
 
     /** Reflect the 0xFF32 snapshot into the controls. These setters do not fire

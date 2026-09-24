@@ -17,6 +17,8 @@ mapping logic is unit-checkable and a missing dep degrades to a clean exit.
 import json
 import os
 import sys
+import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bulb_client
@@ -92,6 +94,18 @@ def _log(msg):
     print("[tunnel] %s" % msg, flush=True)
 
 
+def _heartbeat(cl, dev, client, period=20):
+    """BULB-U3: publish state periodically so a connected but idle device stays
+    online (last_seen fresh within the cloud's TTL), the way a real bulb reports
+    in. Tolerates the daemon being transiently down."""
+    while True:
+        time.sleep(period)
+        try:
+            cl.publish(state_topic(dev), json.dumps(client.state()))
+        except Exception:
+            pass
+
+
 def run():
     if not _HAS_MQTT:
         _log("paho-mqtt not available — cannot open tunnel, exiting")
@@ -113,6 +127,12 @@ def run():
         cl.publish(register_topic(dev), json.dumps(activation_payload(dev, token, claim)))
         _log("published activation on %s (claim=%s)"
              % (register_topic(dev), "yes" if claim else "none"))
+        # BULB-U3: report state on connect so the cloud marks us online immediately
+        # (last_seen), not only after the first command arrives.
+        try:
+            cl.publish(state_topic(dev), json.dumps(client.state()))
+        except Exception as e:
+            _log("initial state publish failed (%s)" % e)
 
     def on_message(cl, userdata, m):
         cmd = parse_command(m.payload)
@@ -136,6 +156,8 @@ def run():
 
     _log("opening outbound tunnel to %s:%d (secure=%s)" % (cfg["cloud_host"], port, secure))
     c.connect(cfg["cloud_host"], port, keepalive=30)   # OUTBOUND, never listens
+    # BULB-U3: heartbeat state so a connected idle device stays online.
+    threading.Thread(target=_heartbeat, args=(c, dev, client), daemon=True).start()
     c.loop_forever()
 
 

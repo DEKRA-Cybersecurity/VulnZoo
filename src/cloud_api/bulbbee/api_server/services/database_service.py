@@ -21,6 +21,11 @@ from sqlalchemy.pool import StaticPool
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bulbbee")
 
+# BULB-U3: a bulb is "online" if the device pushed state within this window. The
+# device tunnel publishes bulbbee/<id>/state after each apply, so a fresh last_seen
+# means the physical bulb is reachable (a 200 from the REST API alone does not).
+ONLINE_TTL = 60
+
 Base = declarative_base()
 
 
@@ -41,6 +46,7 @@ class Bulb(Base):
     brightness = Column(Integer, nullable=True)
     color = Column(String, default="[0,0,0]")     # JSON-encoded [r,g,b]
     scene = Column(String, nullable=True)
+    last_seen = Column(Float, nullable=True)       # BULB-U3: last device state uplink
 
 
 class Claim(Base):
@@ -111,6 +117,9 @@ class DatabaseService:
             d["brightness"] = b.brightness
         if b.scene is not None:
             d["scene"] = b.scene
+        # BULB-U3: device-liveness the app reads to tell cloud-connected from offline.
+        d["last_seen"] = b.last_seen
+        d["online"] = b.last_seen is not None and (time.time() - b.last_seen) < ONLINE_TTL
         return d
 
     def get_bulb(self, bulb_id):
@@ -155,6 +164,14 @@ class DatabaseService:
                 b.binding_token = token
             s.commit()
             return bulb_id
+
+    def touch_device(self, device_id):
+        """BULB-U3: mark the device seen now (called on each state uplink)."""
+        with self.Session() as s:
+            b = s.query(Bulb).filter_by(device_id=device_id).first()
+            if b:
+                b.last_seen = time.time()
+                s.commit()
 
     def update_bulb(self, bulb_id, data):
         """Update the lighting fields present in `data` (power/brightness/color/scene)."""

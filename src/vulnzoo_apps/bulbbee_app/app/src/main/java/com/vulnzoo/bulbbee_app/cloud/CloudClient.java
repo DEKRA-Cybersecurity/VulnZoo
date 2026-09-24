@@ -84,6 +84,12 @@ public class CloudClient {
         return firstKey(send("GET", "/api/mybulbs", null, true));
     }
 
+    /** GET /api/mybulbs -> the raw JSON object keyed by bulb_id (each value carries
+     *  the bulb's fields, including the BULB-U3 {@code online} flag). */
+    public String myBulbs() throws IOException {
+        return send("GET", "/api/mybulbs", null, true);
+    }
+
     /** POST /api/register {device_id} -> the bulb_id bound to this account (BULB-R2).
      *  Used at sign-in to bind the real device serial the app read over BLE. */
     public String register(String deviceId) throws IOException {

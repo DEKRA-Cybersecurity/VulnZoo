@@ -42,6 +42,8 @@ The ecosystem models a real product with all its interconnected layers:
 
 - **OctoBot** (in development): Robotic arm simulation that uses industrial communication protocols like Modbus TCP/IP.
 
+- **BulbBee**: Consumer smart light (WiFi and BLE) serving as the Cyber Resilience Act default-category reference, with a hardcoded pairing PIN, cleartext replayable control channels, unsigned OTA updates, and a cloud API with broken object-level authorization and forgeable JWTs.
+
 ### Mobile Applications
 
 - Android/iOS companion apps that interact with devices, incorporating hardcoded secrets, incorrect certificate validation, and broken authorization logic—serving as entry points to the backend.
@@ -164,7 +166,7 @@ One of the objectives of the platform was to rely on widely available and low-co
 
 ### BulbBee: hardware used (WS2818 LED ring)
 
-<img src="src/docs/Images/readme/bulbbee_hardware.jpg" width="700" alt="CANary hardware">
+<img src="src/docs/Images/readme/bulbbee_hardware.jpg" width="700" alt="BulbBee hardware">
 
 ### Android apps included on laboratories environment
 

@@ -1,5 +1,7 @@
 package com.vulnzoo.bulbbee_app.ui;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -41,7 +43,12 @@ public class LoginFragment extends Fragment {
         userInput = v.findViewById(R.id.loginUser);
         passInput = v.findViewById(R.id.loginPassword);
         status = v.findViewById(R.id.loginStatus);
-        baseInput.setText("http://192.168.2.10:5004");
+        // BULB-U1: prefill the cloud server and user from the last session, so a
+        // re-login after Sign out keeps the network's real cloud IP.
+        SharedPreferences prefs = requireContext().getSharedPreferences("bulbbee", Context.MODE_PRIVATE);
+        baseInput.setText(prefs.getString("cloud_base", "http://192.168.2.10:5004"));
+        String lastUser = prefs.getString("cloud_user", "");
+        if (!lastUser.isEmpty()) userInput.setText(lastUser);
 
         ((MaterialButton) v.findViewById(R.id.loginButton)).setOnClickListener(x -> onSignIn());
         vm.cloudStatus().observe(getViewLifecycleOwner(), s -> {

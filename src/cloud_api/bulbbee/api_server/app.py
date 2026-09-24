@@ -208,11 +208,15 @@ def _selfcheck():
 
     out = tbulbs.set_state("bulb-2", {"power": True, "color": [9, 9, 9]})
     assert out is not None and cap.sent[-1] == ("bee-0002", {"power": True, "color": [9, 9, 9]}), cap.sent
+    # BULB-U3: a cloud write does not fake liveness, only a device uplink marks online.
+    assert tdb.get_bulb("bulb-2")["online"] is False
     bid, code = tbulbs.register("alice", "bee-9999")
     assert code == 200 and tdb.get_bulb(bid)["owner"] == "alice" and tdb.get_bulb(bid)["device_id"] == "bee-9999"
     assert tbulbs.ingest_state("bee-0002", {"power": True, "brightness": 200, "scene": "solid", "color": [1, 2, 3]}) == "bulb-2"
     st = tdb.get_bulb("bulb-2")
     assert st["brightness"] == 200 and st["scene"] == "solid"
+    assert st["online"] is True                  # BULB-U3: ingest marked it live
+    assert tdb.get_bulb("bulb-1")["online"] is False   # never ingested -> offline
 
     t1 = tclaims.issue("alice")
     assert tclaims.redeem(t1) == "alice"

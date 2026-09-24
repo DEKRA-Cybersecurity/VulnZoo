@@ -86,6 +86,7 @@ class BulbService:
                 self.db.log_event("bind", "activation device=%s rejected (unknown claim)" % device_id)
                 return None
         bulb_id = self.db.bind(device_id, owner, token)
+        self.db.touch_device(device_id)     # BULB-U3: the device just announced itself -> live
         self.db.log_event("bind", "activation device=%s -> owner=%s (%s)" % (device_id, owner, bulb_id))
         return bulb_id
 
@@ -97,5 +98,6 @@ class BulbService:
             self.db.log_event("state", "ignored device=%s (unregistered)" % device_id)
             return None
         self.db.update_bulb(bid, {k: state[k] for k in self.cfg.LIGHT_KEYS if k in state})
+        self.db.touch_device(device_id)     # BULB-U3: mark the device live
         self.db.log_event("state", "device=%s -> %s updated" % (device_id, bid))
         return bid

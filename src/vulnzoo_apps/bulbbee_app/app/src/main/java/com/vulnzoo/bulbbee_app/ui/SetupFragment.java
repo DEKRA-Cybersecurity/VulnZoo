@@ -1,22 +1,35 @@
 package com.vulnzoo.bulbbee_app.ui;
 
+import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.vulnzoo.bulbbee_app.R;
 import com.vulnzoo.bulbbee_app.ble.BleRepository;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * WiFi onboarding screen. The redesigned wizard only changes what it says and
@@ -45,6 +58,22 @@ public class SetupFragment extends Fragment {
     private TextInputEditText pinInput, ssidInput, pskInput, cloudHostInput;
     private android.widget.TextView provStatus;
     private BleRepository.ProvResult handled;
+    // True only between a provision started on this screen and its result, so the
+    // sticky provResult LiveData does not re-fire (and re-navigate) on re-entry.
+    private boolean awaitingResult = false;
+
+    // BULB-U4: the link panel establishes the BLE link itself (the retired Scan
+    // screen used to). Request the runtime permissions, then scan/connect.
+    private final ActivityResultLauncher<String[]> permLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), granted -> {
+                for (Boolean g : granted.values()) {
+                    if (!Boolean.TRUE.equals(g)) { provStatus.setText(R.string.perm_denied); return; }
+                }
+                startScan();
+            });
+
+    private final ActivityResultLauncher<Intent> enableBtLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), r -> ensureBleConnection());
 
     @Nullable
     @Override
@@ -73,6 +102,52 @@ public class SetupFragment extends Fragment {
         // BULB-R6: the device serial read over BLE, stashed so the cloud sign-in can
         // register this exact device to the account.
         vm.deviceId().observe(getViewLifecycleOwner(), this::onDeviceId);
+
+        vm.connected().observe(getViewLifecycleOwner(), c -> {
+            if (Boolean.TRUE.equals(c) && handled == null) provStatus.setText(R.string.setup_bulb_connected);
+        });
+        // BULB-U4: the link panel needs a live BLE link to provision over.
+        ensureBleConnection();
+    }
+
+    /** BULB-U4: ensure a BLE connection to the bulb before provisioning. */
+    private void ensureBleConnection() {
+        if (Boolean.TRUE.equals(vm.connected().getValue())) return;
+        BluetoothManager bm = (BluetoothManager) requireContext().getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter adapter = bm != null ? bm.getAdapter() : null;
+        if (adapter == null) { provStatus.setText(R.string.no_bluetooth); return; }
+        if (!adapter.isEnabled()) {
+            enableBtLauncher.launch(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE));
+            return;
+        }
+        String[] needed = requiredPermissions();
+        if (allGranted(needed)) startScan();
+        else permLauncher.launch(needed);
+    }
+
+    private void startScan() {
+        provStatus.setText(R.string.setup_connect_first);
+        vm.scanAndConnect();
+    }
+
+    private String[] requiredPermissions() {
+        List<String> perms = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            perms.add(Manifest.permission.BLUETOOTH_SCAN);
+            perms.add(Manifest.permission.BLUETOOTH_CONNECT);
+        } else {
+            perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        return perms.toArray(new String[0]);
+    }
+
+    private boolean allGranted(String[] perms) {
+        for (String p : perms) {
+            if (ContextCompat.checkSelfPermission(requireContext(), p) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void onDeviceId(String deviceId) {
@@ -91,7 +166,14 @@ public class SetupFragment extends Fragment {
             provStatus.setText(R.string.setup_need_ssid);
             return;
         }
+        // BULB-U4: provisioning rides an active BLE link, connect first if needed.
+        if (!Boolean.TRUE.equals(vm.connected().getValue())) {
+            provStatus.setText(R.string.setup_connect_first);
+            ensureBleConnection();
+            return;
+        }
         provStatus.setText(R.string.setup_sending);
+        awaitingResult = true;   // a result from now on is ours to act on
         // BULB-01: PIN is the only gate on an unbonded link. cloudHost is written
         // into the bulb's config.json. BULB-R6: if signed in, fetch a claim token so
         // the bulb binds to this account during onboarding.
@@ -100,11 +182,19 @@ public class SetupFragment extends Fragment {
     }
 
     private void onProvisionResult(BleRepository.ProvResult result) {
-        if (result == null || result == handled) return;   // do not re-store on re-observe
+        if (result == null || result == handled) return;   // do not re-fire on re-observe
         handled = result;
         provStatus.setText(result.message);
-        if (result.ok) {
+        // provResult is sticky: a fresh SetupFragment re-observes the last success.
+        // Only act on a result from a provision started on THIS screen, otherwise
+        // every visit to Setup would re-store and bounce the user to Light.
+        if (result.ok && awaitingResult) {
+            awaitingResult = false;
             storeCredentials(text(ssidInput), text(pskInput), CLOUD_TOKEN);
+            // BULB-U4: the bulb binds to the account on activation, drop into control
+            // via the bottom nav (a clean tab switch, not a back-stack push).
+            BottomNavigationView nav = requireActivity().findViewById(R.id.bottomNav);
+            if (nav != null) nav.setSelectedItemId(R.id.lightFragment);
         }
     }
 
