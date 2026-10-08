@@ -13,7 +13,7 @@
 
 **VulnZoo** is an open-source ecosystem of *intentionally vulnerable* IoT devices
 for cybersecurity training in embedded, medical, industrial and automotive
-environments. Labs run on **OpenWRT v24.10.2** on a **Raspberry Pi 3B/3B+/4**,
+environments. Labs run on **OpenWRT v24.10.3** on a **Raspberry Pi 3B/3B+/4**,
 managed through a **Device Manager** web UI on port **8080**. Cloud backends run
 as **Docker** containers; companion **Android** apps talk to the devices and APIs.
 

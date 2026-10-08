@@ -6,6 +6,14 @@ This laboratory simulates a real-world security camera environment, including an
 
 A video surveillance camera has been installed in your home, but the company is taking too long to configure your access to it. While you wait, you decide to investigate the security of your new camera and discover that it has several known vulnerabilities. You decide to take this opportunity to learn more about IoT device security and how to protect your home and others.
 
+## Architecture
+
+The diagram below maps the OwlCam lab. The IP camera runs on OpenWRT at 192.168.2.1 (device management on 8080, SSH, and the RTSP and MJPEG streams), the Dockerized cloud backend runs on the host at 192.168.2.2 (the Flask API on 5000, the C2 server on 4999 and MongoDB), and the Android app drives them over the home LAN, which is the surface the documented attack chains target.
+
+![[OwlCam.svg]]
+
+A detailed, vulnerability-annotated flowchart of the same architecture is at the end of this document.
+
 ## Getting Started
 
 To begin working with the IP Camera vulnerable profile, follow these steps:

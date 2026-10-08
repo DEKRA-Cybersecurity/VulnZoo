@@ -23,7 +23,7 @@ verified_date: "2026-09-04"
 
 ## Why It Matters
 
-The BulbBee Android app is the device's controller over BLE. It embeds the factory pairing PIN `8080` in the source, so it ships inside the APK, is identical on every install, and is recovered by unzipping and reading the app (M1). This is the client side of BULB-01, the "the PIN is extractable from the app" claim made literal. The app also saves the home WiFi PSK and the cloud pairing token in plaintext `SharedPreferences` and writes them to Logcat (M9), so malware, a backup, or anyone with device access reads the home network credentials, the client side of BULB-05.
+The BulbBee Android app is the device's controller over BLE. It embeds the factory pairing PIN `8080` in the source, so it ships inside the APK, is identical on every install, and is recovered by unzipping and reading the app (M1). The Setup screen no longer shows or prefills the PIN, so static analysis of the APK is the only way to recover it. This is the client side of BULB-01, the "the PIN is extractable from the app" claim made literal. The app also saves the home WiFi PSK and the cloud pairing token in plaintext `SharedPreferences` and writes them to Logcat (M9), so malware, a backup, or anyone with device access reads the home network credentials, the client side of BULB-05.
 
 ## Root Cause
 

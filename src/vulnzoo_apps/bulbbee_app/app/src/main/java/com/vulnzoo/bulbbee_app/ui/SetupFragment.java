@@ -37,7 +37,8 @@ import java.util.List;
  *
  * VULNERABILITY M1 (Improper Credential Usage) / CWE-798: the factory pairing PIN
  *   is hardcoded here, so it is extractable from the shipped APK and identical on
- *   every device (client side of BULB-01). It is prefilled so onboarding "just works".
+ *   every device (client side of BULB-01). It is intentionally NOT shown or prefilled in
+ *   the Setup screen, so an attacker must recover it by static analysis of the APK.
  * VULNERABILITY M9 (Insecure Data Storage) / CWE-312: the home WiFi PSK and the
  *   cloud pairing token are stored in plaintext SharedPreferences and written to
  *   Logcat (client side of BULB-05).
@@ -55,7 +56,7 @@ public class SetupFragment extends Fragment {
     private static final String DEFAULT_CLOUD_HOST = "192.168.2.10";
 
     private LightViewModel vm;
-    private TextInputEditText pinInput, ssidInput, pskInput, cloudHostInput;
+    private TextInputEditText ssidInput, pskInput, cloudHostInput;
     private android.widget.TextView provStatus;
     private BleRepository.ProvResult handled;
     // True only between a provision started on this screen and its result, so the
@@ -85,14 +86,12 @@ public class SetupFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View v, @Nullable Bundle savedInstanceState) {
         vm = new ViewModelProvider(requireActivity()).get(LightViewModel.class);
-        pinInput = v.findViewById(R.id.pinInput);
         ssidInput = v.findViewById(R.id.ssidInput);
         pskInput = v.findViewById(R.id.pskInput);
         cloudHostInput = v.findViewById(R.id.cloudHostInput);
         provStatus = v.findViewById(R.id.provStatus);
 
-        // M1: prefill the shared factory PIN so onboarding "just works".
-        pinInput.setText(PAIRING_PIN);
+        // M1: the factory PIN is not shown or prefilled, it is recovered by static analysis.
         cloudHostInput.setText(DEFAULT_CLOUD_HOST);   // editable, depends on the network
 
         ((MaterialButton) v.findViewById(R.id.provisionButton))
@@ -103,11 +102,17 @@ public class SetupFragment extends Fragment {
         // register this exact device to the account.
         vm.deviceId().observe(getViewLifecycleOwner(), this::onDeviceId);
 
+        // Sign out: end the cloud session (MainActivity gate returns to login).
+        ((MaterialButton) v.findViewById(R.id.signoutButton)).setOnClickListener(x -> vm.signOut());
+
         vm.connected().observe(getViewLifecycleOwner(), c -> {
             if (Boolean.TRUE.equals(c) && handled == null) provStatus.setText(R.string.setup_bulb_connected);
         });
-        // BULB-U4: the link panel needs a live BLE link to provision over.
-        ensureBleConnection();
+        // BULB-U4: the link panel needs a live BLE link to provision over, but only
+        // auto-connect (and prompt to enable Bluetooth) when there is no cloud-reachable
+        // bulb. If the account already has one over the cloud, do not nag for Bluetooth,
+        // Setup is then just settings/logout, and a re-link still starts on "Send to bulb".
+        if (!vm.hasCloudBulb()) ensureBleConnection();
     }
 
     /** BULB-U4: ensure a BLE connection to the bulb before provisioning. */
@@ -158,7 +163,6 @@ public class SetupFragment extends Fragment {
     }
 
     private void onProvisionClicked() {
-        String pin = text(pinInput);
         String ssid = text(ssidInput);
         String psk = text(pskInput);
         String cloudHost = text(cloudHostInput);
@@ -178,7 +182,7 @@ public class SetupFragment extends Fragment {
         // into the bulb's config.json. BULB-R6: if signed in, fetch a claim token so
         // the bulb binds to this account during onboarding.
         vm.fetchClaim(claim ->
-                vm.provision(pin, ssid, psk, cloudHost, claim == null ? "" : claim));
+                vm.provision(PAIRING_PIN, ssid, psk, cloudHost, claim == null ? "" : claim));
     }
 
     private void onProvisionResult(BleRepository.ProvResult result) {

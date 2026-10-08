@@ -307,7 +307,7 @@ The Android app connects to both services:
 | Component | Requirement |
 |-----------|-------------|
 | Hardware | Raspberry Pi 3B+ with Bluetooth |
-| OS | OpenWRT v24.10.2 |
+| OS | OpenWRT v24.10.3 |
 | Python | 3.11+ with standard library |
 | Bluetooth | BlueZ with D-Bus support |
 | Network | 192.168.2.0/24 |

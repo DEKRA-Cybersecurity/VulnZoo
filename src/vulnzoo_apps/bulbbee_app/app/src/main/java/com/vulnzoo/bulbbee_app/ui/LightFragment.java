@@ -1,6 +1,10 @@
 package com.vulnzoo.bulbbee_app.ui;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Build;
@@ -13,14 +17,16 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
-import androidx.navigation.Navigation;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.vulnzoo.bulbbee_app.R;
@@ -28,6 +34,8 @@ import com.vulnzoo.bulbbee_app.R;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.IntConsumer;
 
 /**
@@ -44,7 +52,7 @@ public class LightFragment extends Fragment {
     private TextView linkLine, brightnessRaw;
     private View stateOverlay;
     private TextView stateMessage, stateSub;
-    private MaterialButton linkButton, retryButton;
+    private MaterialButton linkButton, retryButton, bleScanButton;
     private BulbOrbView orb;
     private BrightnessBarView brightnessBar;
     private ColorWheelView colorWheel;
@@ -52,6 +60,15 @@ public class LightFragment extends Fragment {
     private RecyclerView presetGrid;
 
     private Throttle colorThrottle, brightnessThrottle;
+
+    // BLE permission flow for the manual "Connect over BLE" button on the error overlay.
+    private final ActivityResultLauncher<String[]> permLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), granted -> {
+                for (Boolean g : granted.values()) if (!Boolean.TRUE.equals(g)) return;
+                vm.scanBleManually();
+            });
+    private final ActivityResultLauncher<Intent> enableBtLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), r -> onScanBleClicked());
 
     @Nullable
     @Override
@@ -105,10 +122,18 @@ public class LightFragment extends Fragment {
         stateSub = v.findViewById(R.id.stateSub);
         linkButton = v.findViewById(R.id.linkButton);
         retryButton = v.findViewById(R.id.retryButton);
-        // BULB-U4: link a device (Setup is the link panel).
-        linkButton.setOnClickListener(x -> Navigation.findNavController(x).navigate(R.id.setupFragment));
+        bleScanButton = v.findViewById(R.id.bleScanButton);
+        // BULB-U4: link a device (Setup is the link panel). Switch via the bottom nav,
+        // not navController.navigate(), so NavigationUI keeps each tab's back stack
+        // intact (a raw navigate to a tab destination corrupts it: Light then restores
+        // to Setup).
+        linkButton.setOnClickListener(x ->
+                ((BottomNavigationView) requireActivity().findViewById(R.id.bottomNav))
+                        .setSelectedItemId(R.id.setupFragment));
         // BULB-U3: retry the probe, the device may have come back.
         retryButton.setOnClickListener(x -> vm.enterControl(bleReady()));
+        // Manual BLE connect: a user-driven fallback when the cloud/WiFi path fails.
+        bleScanButton.setOnClickListener(x -> onScanBleClicked());
 
         vm.stateJson().observe(getViewLifecycleOwner(), this::applyState);
         vm.controlState().observe(getViewLifecycleOwner(), this::applyControlState);
@@ -129,6 +154,10 @@ public class LightFragment extends Fragment {
         stateOverlay.setVisibility(connected ? View.GONE : View.VISIBLE);
         linkButton.setVisibility(st == LightViewModel.ControlState.UNLINKED ? View.VISIBLE : View.GONE);
         retryButton.setVisibility(st == LightViewModel.ControlState.OFFLINE ? View.VISIBLE : View.GONE);
+        // BLE fallback offered whenever the cloud path did not connect.
+        bleScanButton.setVisibility(
+                (st == LightViewModel.ControlState.UNLINKED || st == LightViewModel.ControlState.OFFLINE)
+                        ? View.VISIBLE : View.GONE);
         switch (st) {
             case OFFLINE:
                 stateMessage.setText(R.string.offline_device);
@@ -159,6 +188,37 @@ public class LightFragment extends Fragment {
     private boolean granted(String perm) {
         return ContextCompat.checkSelfPermission(requireContext(), perm)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Manual BLE connect: ensure Bluetooth is on and the runtime permissions are
+     *  granted, then scan/connect. Requests them if missing (unlike the passive probe). */
+    private void onScanBleClicked() {
+        BluetoothManager bm = (BluetoothManager) requireContext().getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter adapter = bm != null ? bm.getAdapter() : null;
+        if (adapter == null) { stateSub.setText(R.string.no_bluetooth); return; }
+        if (!adapter.isEnabled()) {
+            enableBtLauncher.launch(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE));
+            return;
+        }
+        String[] needed = requiredPermissions();
+        if (allGranted(needed)) vm.scanBleManually();
+        else permLauncher.launch(needed);
+    }
+
+    private String[] requiredPermissions() {
+        List<String> perms = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            perms.add(Manifest.permission.BLUETOOTH_SCAN);
+            perms.add(Manifest.permission.BLUETOOTH_CONNECT);
+        } else {
+            perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        return perms.toArray(new String[0]);
+    }
+
+    private boolean allGranted(String[] perms) {
+        for (String p : perms) if (!granted(p)) return false;
+        return true;
     }
 
     /** Reflect the 0xFF32 snapshot into the controls. These setters do not fire

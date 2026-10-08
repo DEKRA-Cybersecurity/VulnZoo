@@ -9,6 +9,12 @@ This laboratory simulates a real-world enterprise router environment, including 
 
 A new router has been installed in your home or office, but the company has not yet fully configured its security. While waiting, you decide to investigate the router’s security and discover several known vulnerabilities. This environment allows you to learn about network device security and how to protect your infrastructure.
 
+## Architecture
+
+The diagram below maps the RoutCoon lab. The OpenWRT router sits at 192.168.2.1 on the wired LAN with a WiFi access point on 192.168.3.1, exposing the LUCI web UI and internal API, SSH, FTP, Telnet, SNMP and UPnP that the documented attack chains target, alongside the VulnZoo Device Manager on 8080.
+
+![[RoutCoon.svg]]
+
 ## Hosts, ports and credentials
 
 The lab device is at **192.168.2.1** (canonical and authoritative).

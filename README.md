@@ -148,8 +148,10 @@ One of the objectives of the platform was to rely on widely available and low-co
 
 - Heart Rate Sensor (MAX30102) – approx. $2
 - Mechanical Robot Arm (SG90 / MG90S) – approx. $15
-- CAN Bus Module (MCP2515) – approx. $2
+- CAN Bus Module (MCP2515) – approx. $2 - and a MKS CANable adapter (USB to CAN bus) - approx. $10
 - USB Camera – any standard USB camera can be used
+- WS2818 RGB LED ring - approx. $7
+- Nordic NRF52840 Dongle Adaptor for Bluetooth evaluations - approx. $20
 
 ### OctoBot: hardware used (SG90 MG90S Mechanic robot)
 

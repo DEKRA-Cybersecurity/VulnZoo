@@ -163,7 +163,9 @@ MWP stages 01-04 complete: the lab is implemented under `src/labs/octobot/`, the
 
 ## Lab Architecture
 
-Solid arrows are the legitimate control path (Mobile/Web -> Cloud REST -> Modbus/TCP -> Pi gateway -> USB serial `Sx:angle` -> Arduino -> PWM -> servos). Dashed arrows are attacker paths and the command-echo leaks. The joystick path stays wired in parallel as a local manual fallback.
+![[OctoBot.svg]]
+
+The flowchart below is the detailed, vulnerability-annotated view of the same architecture. Solid arrows are the legitimate control path (Mobile/Web -> Cloud REST -> Modbus/TCP -> Pi gateway -> USB serial `Sx:angle` -> Arduino -> PWM -> servos). Dashed arrows are attacker paths and the command-echo leaks. The joystick path stays wired in parallel as a local manual fallback.
 
 ```mermaid
 flowchart TB

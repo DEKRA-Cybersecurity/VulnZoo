@@ -68,7 +68,7 @@ User → Web UI (:8080) → Device Selection
 
 ## Dependencies
 
-- Platform: OpenWRT v24.10.2
+- Platform: OpenWRT v24.10.3
 - Web: uhttpd
 - Backend: Shell scripts + UCI
 - Requires: Other lab packages in `/releases/`

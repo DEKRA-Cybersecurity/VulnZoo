@@ -43,6 +43,10 @@ Because CareOtter mirrors the control surface of a real cardiac implant, the lab
 
 ## Architecture
 
+![[CareOtter.svg]]
+
+The text breakdown below details the same architecture: the DAI/ICD implant over I2C, the Raspberry Pi bedside monitor and its services (HTTP :8081, IGP v4 :9999, BLE GATT), and the Flask Cloud API and mobile app.
+
 ```
 │  DAI/ICD IMPLANT (simulated)                                     │
 │  MAX30102 pulse-oximeter sensor — BPM / SpO₂ / therapy events    │

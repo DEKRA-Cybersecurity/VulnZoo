@@ -95,16 +95,16 @@ Acceptance rule: a residual risk is acceptable if its risk level is Low, or if i
 
 The product cybersecurity assets and the properties to be protected are identified from the product context.
 
-| Asset | Confidentiality | Integrity | Availability | Authenticity |
-|-------|:---:|:---:|:---:|:---:|
-| Administrator credentials and session tokens | x | x | | x |
-| Device firmware and installed packages | | x | | x |
-| Device configuration (UCI) | x | x | x | |
-| Wireless passphrase (WPA2 PSK) | x | | | |
-| User network traffic in transit | x | x | | |
-| DHCP lease and DNS query records (personal data) | x | | | |
-| SMB shared files | x | x | x | |
-| Device availability and management plane | | | x | |
+| Asset                                            | Confidentiality | Integrity | Availability | Authenticity |
+| ------------------------------------------------ | :-------------: | :-------: | :----------: | :----------: |
+| Administrator credentials and session tokens     |        x        |     x     |              |      x       |
+| Device firmware and installed packages           |                 |     x     |              |      x       |
+| Device configuration (UCI)                       |        x        |     x     |      x       |              |
+| Wireless passphrase (WPA2 PSK)                   |        x        |           |              |              |
+| User network traffic in transit                  |        x        |     x     |              |              |
+| DHCP lease and DNS query records (personal data) |        x        |           |              |              |
+| SMB shared files                                 |        x        |     x     |      x       |              |
+| Device availability and management plane         |                 |           |      x       |              |
 
 ### 6.4.3 Threat identification (RMA-04-RQ-01)
 

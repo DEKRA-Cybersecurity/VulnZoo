@@ -101,6 +101,11 @@ public class LightViewModel extends AndroidViewModel {
     public LiveData<ControlState> controlState() { return controlState; }
     public String cloudUser() { return cloud.currentUser(); }
 
+    /** Whether the account already has a bulb resolvable over the cloud. Used to avoid
+     *  nagging for Bluetooth when a cloud path exists (Setup only auto-connects BLE for
+     *  linking when there is none). */
+    public boolean hasCloudBulb() { return cloud.bulbId() != null; }
+
     // ── session lifecycle (BULB-U1) ───────────────────────────────────
 
     /** BULB-U1: auto-resume a stored cloud session (skips login when a token exists). */
@@ -169,6 +174,28 @@ public class LightViewModel extends AndroidViewModel {
             boolean online = cloud.bulbOnlineBlocking(bulb);
             transport = TransportSelector.Transport.CLOUD;
             controlState.postValue(online ? ControlState.CONNECTED : ControlState.OFFLINE);
+        });
+    }
+
+    /** User-initiated BLE connect from the error overlay: a manual fallback when the
+     *  cloud path fails (WiFi down, no bulb resolved). Scans/connects over BLE and,
+     *  on success, uses it as the active transport. Reverts to the prior state if the
+     *  peripheral is not found. Permissions are requested by the fragment first. */
+    public void scanBleManually() {
+        ControlState prior = controlState.getValue();
+        controlState.postValue(ControlState.CONNECTING);
+        main.post(() -> { transport = TransportSelector.Transport.BLE; repo.scanAndConnect(); });
+        bg.execute(() -> {
+            for (int i = 0; i < 44; i++) {          // ~13 s, covers the 12 s BLE scan timeout
+                if (Boolean.TRUE.equals(repo.connected().getValue())) {
+                    transport = TransportSelector.Transport.BLE;
+                    bleActive = true;
+                    controlState.postValue(ControlState.CONNECTED);
+                    return;
+                }
+                try { Thread.sleep(300); } catch (InterruptedException ignored) { return; }
+            }
+            controlState.postValue(prior != null ? prior : ControlState.UNLINKED);
         });
     }
 

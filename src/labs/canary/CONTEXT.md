@@ -85,7 +85,7 @@ The Pi hosts two ECUs on two MCP2515 + TJA1050 CAN nodes sharing one bus: a Cent
 | Component | Requirement |
 |---|---|
 | Hardware | Raspberry Pi 3B+/4, 2x MCP2515 + TJA1050 on SPI0 CE0/CE1 with separate INT GPIOs, 120 ohm at the two bus ends, PC USB-CAN adapter for the tester |
-| OS | OpenWRT v24.10.2, target `bcm27xx` |
+| OS | OpenWRT v24.10.3, target `bcm27xx` |
 | Kernel | `kmod-can`, `kmod-can-mcp251x`, `kmod-can-raw`, `kmod-can-vcan`, `libsocketcan`, `ip-full` for `ip link ... type can` |
 | Python | 3.x standard library only (AF_CAN raw sockets, UDP), no pip packages |
 | Network | `192.168.2.0/24`, Pi at `192.168.2.1`, direct Ethernet |

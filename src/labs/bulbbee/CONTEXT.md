@@ -164,7 +164,7 @@ Then add the `bulbbee` row to [`../../../shared/glossary.md`](../../../shared/gl
 | Component | Requirement |
 |-----------|-------------|
 | Hardware | Raspberry Pi 3B+ (onboard BLE), WS2812 LED ring (DIN, 5V, GND) |
-| OS | OpenWRT v24.10.2 |
+| OS | OpenWRT v24.10.3 |
 | Python | 3.11+ with standard library |
 | Bluetooth | BlueZ with D-Bus (BLE GATT server, the app control channel), as in CareOtter |
 | SPI | `kmod-spi-dev` / `/dev/spidev0.0` for real-hardware LED driving |

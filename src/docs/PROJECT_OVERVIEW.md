@@ -6,7 +6,7 @@
 
 | Component | Technology |
 |-----------|------------|
-| **Firmware Platform** | OpenWRT v24.10.2 (Linux-based for embedded) |
+| **Firmware Platform** | OpenWRT v24.10.3 (Linux-based for embedded) |
 | **Base Hardware** | Raspberry Pi 3B/3B+/4 |
 | **Backend Services** | Python (Flask/FastAPI), Lua (LUCI/OpenWRT) |
 | **Frontend** | HTML/JavaScript (Device Manager), Lua/LUCI (Router) |
@@ -35,11 +35,13 @@
 | octobot | Gateway HMI / REST | 8090 | HTTP |
 | octobot | ser2net serial bridge | 2000 | TCP |
 | octobot | Modbus/TCP | 502 | TCP |
-| octobot | Cloud API (PC) | 5003 | HTTP |
+| octobot | Cloud API (PC) | 5002 | HTTP |
 | canary | SOME/IP CentralLockingService | 30509 | UDP |
 | canary | CAN bus (can0/can1) | - | CAN |
-| cloud_api | C2 Server | 5000 | HTTP |
-| cloud_api | MQTT Broker | 1883 | MQTT |
+| owlcam | C2 Server | 4999 | HTTP |
+| octobot | MQTT Broker (on-Pi) | 1883 | MQTT |
+| bulbbee | Cloud API | 5004 | HTTP |
+| bulbbee | Cloud MQTT Broker | 1883 / 8883 | MQTT |
 
 ## Troubleshooting
 

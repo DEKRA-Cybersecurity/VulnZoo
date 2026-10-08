@@ -235,7 +235,7 @@ option check_signature 0
 
 ## Dependencies
 
-- Platform: OpenWRT v24.10.3 (`r28739-d9340319c6`, per the image banner; a point release above the 24.10.2 project baseline in AGENTS.md), Raspberry Pi 3B/4
+- Platform: OpenWRT v24.10.3 (`r28739-d9340319c6`, per the image banner), Raspberry Pi 3B/4
 - Web: uhttpd + LUCI (Lua)
 - Services: dropbear, miniupnpd, snmpd, dnsmasq, samba4 (smbd, guest share), wpad (AP mode, WPA2-PSK)
 - Tools: busybox (telnetd, ftpd), tcpsvd

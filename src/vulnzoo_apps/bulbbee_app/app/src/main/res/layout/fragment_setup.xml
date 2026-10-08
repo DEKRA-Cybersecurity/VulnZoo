@@ -20,37 +20,10 @@
             android:textAppearance="@style/TextAppearance.BulbBee.Display"
             android:text="@string/nav_setup" />
 
-        <!-- Step 1: the "prove you can touch the bulb" gate — the factory code. -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:textAppearance="@style/TextAppearance.BulbBee.Kicker"
-            android:text="@string/step1_title" />
+        <!-- The factory PIN field was removed on purpose (M1): the PIN is hardcoded in
+             the app and never shown, so it must be recovered by static analysis of the APK. -->
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textAppearance="@style/TextAppearance.BulbBee.Body"
-            android:text="@string/step1_body" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:hint="@string/pairing_pin"
-            app:boxBackgroundColor="@color/bb_surface">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/pinInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="number"
-                android:maxLength="8" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- Step 2: hand over the network. -->
+        <!-- Step 1: hand over the network. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -94,7 +67,7 @@
                 android:inputType="textPassword" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Step 3: point the bulb at the cloud server (its IP on this network). -->
+        <!-- Step 2: point the bulb at the cloud server (its IP on this network). -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -139,5 +112,14 @@
             android:textAppearance="@style/TextAppearance.BulbBee.Mono"
             android:textColor="@color/bb_teal"
             android:text="@string/prov_idle" />
+
+        <!-- End the cloud session (returns to login via the MainActivity gate). -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/signoutButton"
+            style="@style/Widget.BulbBee.Button.Quiet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="@string/sign_out" />
     </LinearLayout>
 </ScrollView>

@@ -4,13 +4,13 @@
 
 CareOtter is a simulated embedded medical device designed for IoT security training. It represents a wearable cardiac monitor that measures heart rate (BPM) and blood oxygen saturation (SpO2) in real time and transmits readings to a companion mobile application and a cloud management API.
 
-The device runs on a **Raspberry Pi 3B/4** under **OpenWRT v24.10.2** and exposes three distinct communication surfaces, each carrying intentional security weaknesses that mirror documented vulnerabilities found in real-world medical IoT devices.
+The device runs on a **Raspberry Pi 3B/4** under **OpenWRT v24.10.3** and exposes three distinct communication surfaces, each carrying intentional security weaknesses that mirror documented vulnerabilities found in real-world medical IoT devices.
 
 ### Hardware and Software Architecture
 
 | Component | Technology |
 |-----------|-----------|
-| Platform | Raspberry Pi 3B/4 — OpenWRT 24.10.2 |
+| Platform | Raspberry Pi 3B/4 — OpenWRT 24.10.3 |
 | Sensor simulator | Python 3 (`simulator.py`) — 10 Hz synthetic BPM/SpO2 |
 | HTTP sensor service | Python (`sensor_service.py`) — port 8081 |
 | BLE GATT server | Python + `dbus_fast` (`ble_server.py`) — BlueZ |

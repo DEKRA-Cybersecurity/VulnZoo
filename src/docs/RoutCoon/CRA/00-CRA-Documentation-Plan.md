@@ -49,26 +49,26 @@ Clause 6 (risk management) sub-structure:
 
 Clause 7 (lifecycle) sub-structure:
 
-| Clause | Deliverable | Requirements |
-|--------|-------------|--------------|
-| 7.2 | Product Cybersecurity Plan (living document) | CLA-01-RQ-01..02 |
-| 7.3 | Product Cybersecurity Requirements | CLA-02-RQ-01..02 |
-| 7.4 | Cybersecurity Architecture and Design | CLA-03-RQ-01..02 |
-| 7.5a | Secure Development Environment Evidence | CLA-04-RQ-01..07 |
-| 7.5b | Component List | annex-derived, no RQ ID |
-| 7.5c | Software Bill of Materials (SBOM) | annex-derived, see prEN 40000-1-3 |
-| 7.5d | Technical Documentation (CRA Annex VII) | annex-derived, no RQ ID |
-| 7.5e | Information and Instructions to the User (CRA Annex II) | annex-derived, no RQ ID |
-| 7.5f | Third-Party Component Integration Confirmation | annex-derived, no RQ ID |
-| 7.6 | Cybersecurity Verification and Validation | CLA-05-RQ-01..06 |
-| 7.7a | Secure Software Distribution Evidence | CLA-06-RQ-01..04 |
-| 7.7b | Accessible User Documentation Channel Evidence | annex-derived, no RQ ID |
-| 7.7c | Secure Physical Production Evidence | CLA-07-RQ-01..02 |
-| 7.8a | Monitoring Intervals Justification | CLA-08-RQ-01..05 |
-| 7.8b | Incident / Vulnerability Treatment Evidence | annex-derived, no RQ ID |
-| 7.9a | Secure Decommissioning Plan | CLA-09-RQ-01..02 |
-| 7.9b | Decommissioning Instructions to the User | annex-derived, no RQ ID |
-| 7.10 | Third-Party Component Due Diligence Evidence | CLA-10-RQ-01..05 |
+| Clause | Deliverable                                             | Requirements                      |
+| ------ | ------------------------------------------------------- | --------------------------------- |
+| 7.2    | Product Cybersecurity Plan (living document)            | CLA-01-RQ-01..02                  |
+| 7.3    | Product Cybersecurity Requirements                      | CLA-02-RQ-01..02                  |
+| 7.4    | Cybersecurity Architecture and Design                   | CLA-03-RQ-01..02                  |
+| 7.5a   | Secure Development Environment Evidence                 | CLA-04-RQ-01..07                  |
+| 7.5b   | Component List                                          | annex-derived, no RQ ID           |
+| 7.5c   | Software Bill of Materials (SBOM)                       | annex-derived, see prEN 40000-1-3 |
+| 7.5d   | Technical Documentation (CRA Annex VII)                 | annex-derived, no RQ ID           |
+| 7.5e   | Information and Instructions to the User (CRA Annex II) | annex-derived, no RQ ID           |
+| 7.5f   | Third-Party Component Integration Confirmation          | annex-derived, no RQ ID           |
+| 7.6    | Cybersecurity Verification and Validation               | CLA-05-RQ-01..06                  |
+| 7.7a   | Secure Software Distribution Evidence                   | CLA-06-RQ-01..04                  |
+| 7.7b   | Accessible User Documentation Channel Evidence          | annex-derived, no RQ ID           |
+| 7.7c   | Secure Physical Production Evidence                     | CLA-07-RQ-01..02                  |
+| 7.8a   | Monitoring Intervals Justification                      | CLA-08-RQ-01..05                  |
+| 7.8b   | Incident / Vulnerability Treatment Evidence             | annex-derived, no RQ ID           |
+| 7.9a   | Secure Decommissioning Plan                             | CLA-09-RQ-01..02                  |
+| 7.9b   | Decommissioning Instructions to the User                | annex-derived, no RQ ID           |
+| 7.10   | Third-Party Component Due Diligence Evidence            | CLA-10-RQ-01..05                  |
 
 Eight deliverables carry no RMA/CLA requirement ID because they are CRA-annex artifacts rather than prEN clause requirements. They are: Component List (7.5b), SBOM (7.5c), Annex VII technical documentation (7.5d), Annex II user information (7.5e), third-party integration confirmation (7.5f), accessible channel evidence (7.7b), incident treatment evidence (7.8b), and decommissioning instructions to the user (7.9b). These are still mandatory deliverables and each is mapped to a document below.
 
@@ -184,5 +184,5 @@ Dependency-ordered. Each phase produces complete, self-contained documents. Late
 The following were settled before generation so the dossier is internally consistent.
 
 - **SNMP is treated as a shipped component.** net-snmp (snmpd, v1/v2c with default communities `public`/`private`) is documented as a running RoutCoon service and included in the component list (RC-CBL-006), the SBOM (RC-SBOM-007), and the risk assessment (RC-RMR-001), consistent with `labs/routcoon/CONTEXT.md`, the vulnerability catalogue, and the `80-routcoon-services.sh` hook. This holds even though every SNMP package is currently "not set" in `.config`. Mark the SNMP entry in the SBOM as declared and confirm its version against the running image before pinning.
-- **OpenWrt version is 24.10.3.** RoutCoon ships OpenWrt 24.10.3 (`r28739-d9340319c6`), Linux 6.6, BusyBox 1.36.1. This is authoritative for the dossier. The 24.10.2 value elsewhere is the wider project baseline in AGENTS.md and applies to other labs, not to RoutCoon. The `.config` device profile `rpi-2` (bcm2709) is retained as-is because the image runs correctly on Pi 3B/3B+.
+- **OpenWrt version is 24.10.3.** RoutCoon ships OpenWrt 24.10.3 (`r28739-d9340319c6`), Linux 6.6, BusyBox 1.36.1. This is authoritative for the dossier and matches the project-wide OpenWrt 24.10.3 baseline in AGENTS.md. The `.config` device profile `rpi-2` (bcm2709) is retained as-is because the image runs correctly on Pi 3B/3B+.
 - **Management IP is 192.168.2.1.** The authoritative address throughout the dossier is 192.168.2.1 (wired LAN) with the WiFi AP on 192.168.3.1. The stale `192.168.1.1` values in the IoT walkthrough and the RoutCoon README note have been corrected. The `192.168.1.x` values that remain in `dnsmasq.conf.reference` (a parked, unloaded config), `CONFIG_TARGET_PREINIT_IP` (the failsafe preinit IP), and the intentionally vulnerable LuCI controllers are functional or deliberate and were left unchanged.

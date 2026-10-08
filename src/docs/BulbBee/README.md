@@ -9,7 +9,7 @@ The lab is framed as the sample a tester receives for a CRA conformity assessmen
 |                     |                                                                     |
 | ------------------- | ------------------------------------------------------------------- |
 | Domain              | Consumer IoT, smart lighting (CRA default category)                 |
-| Platform            | OpenWRT v24.10.2 on Raspberry Pi 3B+/4                              |
+| Platform            | OpenWRT v24.10.3 on Raspberry Pi 3B+/4                              |
 | LED hardware        | WS2812 RGB ring (DIN, 5V, GND), driven over SPI0 MOSI (GPIO10)      |
 | App control channel | BLE GATT (hci0), `ble_light.py`, robust LE SC + Passkey pairing under `secure` (BULB-A2) |
 | Local control API   | HTTP on `:8082` (`/state`, `/health`, `/set`, `/scene`, `/config`), secondary LAN/diagnostics; on-device CLI `bulbctl` |
@@ -51,6 +51,57 @@ One daemon (`lighting_service.py`) owns the ring and the lighting state on `:808
 | HTTP (diagnostics) | `lighting_service.py` | HTTP `:8082` | unauthenticated vs authenticated + `/debug` off |
 
 BLE GATT `0xFF31` (Control, write JSON, same shape as HTTP `/set`+`/scene`) and `0xFF32` (State, read/notify). HTTP `:8082`: `GET /health`, `GET /state`, `GET /config`, `POST /set {"power":true,"brightness":200,"color":[10,20,30]}`, `POST /scene {"scene":"rainbow|solid|off|breathe"}`. The on-device CLI `bulbctl` (`color|bright|scene|on|off|state`) is a thin client of `:8082`.
+
+## Architecture diagram
+
+![[BulbBee.svg]]
+
+The Mermaid flowchart below is the detailed, vulnerability-annotated view of the same architecture. Solid arrows are the legitimate control path: the phone app reaches the ring over BLE (proximity), over the home WiFi to the LAN AES-CCM port, or over WiFi/Internet to the cloud REST API, and each adapter relays its command into the single lighting owner on `:8082`, which drives the WS2812 ring over SPI. The smart light is provisioned onto the home WiFi and opens an outbound MQTT tunnel to the cloud over it, the device never listens on the Internet. The lab's base management link (Device Manager `:8080`, SSH) is the direct Ethernet `192.168.2.0/24`, Pi at `192.168.2.1`. Dashed arrows are the attacker paths and the three-plane and classic findings (BULB-P01..P07, BULB-01..07, BULB-CLD). One `secure` flag flips every plane from the shipped degraded posture to the robust baseline.
+
+```mermaid
+flowchart TB
+    subgraph HOME["Home WiFi network + BLE range"]
+        ATT["Attacker (on the WiFi / in BLE range)"]
+        APP["Android app (BulbBee)<br/>BLE + cloud REST + LAN client<br/>JWT/PSK plaintext in prefs (BULB-APP / M9)"]
+
+        subgraph PI["Smart light - RPi/OpenWRT, WS2812 ring (labs/bulbbee)<br/>provisioned onto the home WiFi"]
+            BLE["ble_light.py - GATT hci0<br/>0xFF30 control (0xFF31/0xFF32) + 0xFF40 prov (0xFF41/0xFF42)<br/>Just Works + PIN 8080 (BULB-P01/P02)"]
+            TUN["cloud_tunnel.py<br/>outbound MQTT client, serial-derived token (BULB-P04)"]
+            TCP["local_tcp.py - AES-CCM :6668<br/>static key bulbbee-local-16 (BULB-P03/P06)"]
+            SEC["session_token.py + secret_store.py<br/>sim-flash secrets, owner binding unenforced (BULB-P05)"]
+            OWN["lighting_service.py - HTTP :8082 (single ring/state owner)<br/>/set /scene /state /config /debug<br/>unauthenticated, /debug dumps secrets (BULB-02/06/P07)"]
+            WS["ws2812.py -> SPI /dev/spidev0.0"]
+            RING["WS2812 RGB ring"]
+        end
+    end
+
+    subgraph CLOUD["Cloud emulator - Docker, cloud_api/bulbbee (over WiFi / Internet)"]
+        BROKER["mosquitto broker<br/>:1883 plaintext / :8883 TLS (BULB-A3)<br/>topics bulbbee/{id}/cmd + bulbbee/+/state"]
+        API["Flask REST API :5004<br/>JWT alg:none / weak secret, BOLA (BULB-CLD)"]
+    end
+
+    %% legitimate control path (solid)
+    APP -->|"BLE 0xFF31 write (proximity)"| BLE
+    APP -->|"AES-CCM :6668 (home WiFi/LAN)"| TCP
+    APP -->|"REST :5004 (WiFi / Internet)"| API
+    API -->|"publish bulbbee/{id}/cmd"| BROKER
+    BROKER <-->|"outbound MQTT over WiFi: sub cmd, pub state"| TUN
+    SEC -->|"HMAC token"| TUN
+    SEC -->|"local key"| TCP
+    BLE --> OWN
+    TUN --> OWN
+    TCP --> OWN
+    OWN --> WS
+    WS -->|"SPI ~2.4 MHz, GRB"| RING
+
+    %% attacker paths (dashed)
+    ATT -.->|"Just Works pairing / PIN 8080 / read PSK (BULB-P01/P02/01/03)"| BLE
+    ATT -.->|"unauth control, /debug secrets, scene DoS (BULB-02/06/07/P07)"| OWN
+    ATT -.->|"AES-CCM static key, proximity = control (BULB-P03/P06)"| TCP
+    ATT -.->|"BOLA + JWT crack/alg:none, hijack any bulb (BULB-CLD)"| API
+    ATT -.->|"token spoof from serial (BULB-P04)"| TUN
+    ATT -.->|"re-provision onto attacker AP, no lockout (BULB-P07)"| BLE
+```
 
 ## WS2812 driving
 

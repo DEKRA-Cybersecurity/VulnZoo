@@ -30,7 +30,7 @@ cloud_api/
 
 | Lab | Path | Description | Primary Interface |
 |-----|------|-------------|-------------------|
-| **octobot** | `cloud_api/octobot/` | Industrial robot-arm operator console; Modbus/TCP master to the Pi gateway | HTTP :5003 |
+| **octobot** | `cloud_api/octobot/` | Industrial robot-arm operator console; Modbus/TCP master to the Pi gateway | HTTP :5002 |
 | **owlcam** | `cloud_api/owlcam/` | IP Camera cloud backend with JWT, C2, and SSRF vulnerabilities | HTTP :5000, :4999 |
 | **careotter** | `cloud_api/careotter/` | Medical device cloud gateway with IGP protocol bridge | HTTP :5002 |
 

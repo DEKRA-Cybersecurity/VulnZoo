@@ -11,7 +11,7 @@ Phase 0 stands up the functional environment only. A single vehicle function, ce
 |                       |                                                                         |
 | --------------------- | ----------------------------------------------------------------------- |
 | Domain                | Automotive, in-vehicle E/E (ICS-adjacent)                               |
-| Platform              | OpenWRT v24.10.2 on Raspberry Pi 3B+/4, target `bcm27xx`                |
+| Platform              | OpenWRT v24.10.3 on Raspberry Pi 3B+/4, target `bcm27xx`                |
 | CAN nodes             | 2x MCP2515 + TJA1050 on SPI0 (CE0 -> can0 CGW, CE1 -> can1 BCM)         |
 | CAN                   | classic CAN, 500 kbit/s, single bus shared by both nodes                |
 | Service layer         | SOME/IP over UDP, CentralLockingService on `:30509`                     |
@@ -121,7 +121,9 @@ Phase 0 promoted to `src/labs/canary/` and verified on the Pi in simulation (the
 
 ## Architecture diagram
 
-Solid arrows are the legitimate central-locking flow (SOME/IP SetLock -> CGW -> LOCK_CMD on CAN -> BCM -> actuator, and LOCK_STAT back to a LockStatus event). Dashed arrows are the Model A tester and the Jeep kill-chain surface (`AUTO-01/05/02`). Both the CGW and the BCM are processes on the Pi and are the two nodes on one shared CAN bus. The tester and AGL run on the PC. Values come from the protocol reference above and [`LAB_SETUP.md`](LAB_SETUP.md).
+![[CANary.svg]]
+
+The flowchart below is the detailed, vulnerability-annotated view of the same architecture. Solid arrows are the legitimate central-locking flow (SOME/IP SetLock -> CGW -> LOCK_CMD on CAN -> BCM -> actuator, and LOCK_STAT back to a LockStatus event). Dashed arrows are the Model A tester and the Jeep kill-chain surface (`AUTO-01/05/02`). Both the CGW and the BCM are processes on the Pi and are the two nodes on one shared CAN bus. The tester and AGL run on the PC. Values come from the protocol reference above and [`LAB_SETUP.md`](LAB_SETUP.md).
 
 ```mermaid
 flowchart TB
