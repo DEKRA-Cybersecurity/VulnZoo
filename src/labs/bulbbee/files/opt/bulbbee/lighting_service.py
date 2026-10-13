@@ -15,8 +15,10 @@ import colorsys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ws2812 import WS2812
+import session_token          # BULB-C1/C3: device serial + device-bound session
 
 CONFIG_PATH = os.environ.get("BULBBEE_CONFIG", "/opt/bulbbee/config.json")
+_START_TIME = time.time()     # BULB-C1: uptime for the recon-only /debug view
 
 DEFAULTS = {
     "use_real_hardware": False,
@@ -212,6 +214,18 @@ class Handler(BaseHTTPRequestHandler):
     def _authed(self):
         return self.headers.get("X-Auth-Token", "") == str(self.controller.cfg.get("auth_token", ""))
 
+    def _device_id(self):
+        return self.controller.cfg.get("device_id") or session_token.device_serial()
+
+    def _session_ok(self):
+        # BULB-02: a valid device-bound session in the X-Session header. In the
+        # chained default the session is signed with the forgeable serial-derived
+        # key (secure=False), so it is a real gate but a chain-breakable one.
+        tok = self.headers.get("X-Session", "")
+        if not tok:
+            return False
+        return session_token.confirm(tok, self._device_id(), secure=False) is not None
+
     def do_GET(self):
         c = self.controller
         if self.path == "/health":
@@ -219,30 +233,30 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/state":
             self._send(200, c.get_state())
         elif self.path == "/config":
+            secret_keys = ("prov_pin", "auth_token", "update_key")
             if self._secure() and not self._authed():
                 self._send(401, {"error": "unauthorized"})
+            elif self._secure() or not self._session_ok():
+                # secure redacts for an authed caller, and the chained default
+                # returns only the public view: the sensitive config (incl.
+                # prov_pin, BULB-02/05) needs a valid device-bound session.
+                self._send(200, {k: v for k, v in c.cfg.items() if k not in secret_keys})
             else:
-                cfg = dict(c.cfg)
-                if self._secure():   # BULB-05/BULB-02 fix: redact secrets in secure mode
-                    for k in ("prov_pin", "auth_token", "update_key"):
-                        cfg.pop(k, None)
-                self._send(200, cfg)
+                # a valid device-bound session: full config, incl. prov_pin (BULB-02/05)
+                self._send(200, dict(c.cfg))
         elif self.path == "/debug":
-            # BULB-06: diagnostic surface shipped enabled by default. Secure mode forces it off.
+            # BULB-06: diagnostic surface shipped enabled. Secure mode forces it off.
+            # The chained default exposes reconnaissance only (serial, command topic,
+            # firmware version), no secrets, which feeds BULB-01 and the cloud arm.
             if not c.cfg.get("debug", True) or self._secure():
                 self._send(404, {"error": "not found"})
             else:
-                prov = {}
-                try:
-                    with open("/tmp/bulbbee/provisioning.json") as f:
-                        prov = json.load(f)
-                except (OSError, ValueError):
-                    pass
+                dev = self._device_id()
                 self._send(200, {
-                    "config": c.cfg,                 # includes prov_pin
-                    "provisioning": prov,            # includes wifi_psk, pair_token
-                    "state": c.get_state(),
-                    "env": {k: os.environ.get(k) for k in ("PATH", "HOME", "BULBBEE_CONFIG")},
+                    "device_id": dev,
+                    "version": c.cfg.get("fw_version", "bulbbee-1.0"),
+                    "cmd_topic": "bulbbee/%s/cmd" % dev,
+                    "uptime": int(time.time() - _START_TIME),
                 })
         else:
             self._send(404, {"error": "not found"})
@@ -254,8 +268,15 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._send(400, {"error": "invalid json"})
             return
-        if self._secure() and not self._authed():
-            # BULB-02 fix: authenticated control in secure mode
+        if self._secure():
+            if not self._authed():      # BULB-SEC: authenticated control in secure mode
+                self._send(401, {"error": "unauthorized"})
+                return
+        elif not self._session_ok():
+            # BULB-02 (chained default): control converges on a device-bound session.
+            # This gate also covers /scene (BULB-07 DoS) and /update (BULB-04 OTA), so
+            # both are post-session links. The payloads stay unbounded/unsigned (the
+            # count is not clamped and the update is not signed unless secure is on).
             self._send(401, {"error": "unauthorized"})
             return
         try:

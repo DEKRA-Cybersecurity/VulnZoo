@@ -1,6 +1,6 @@
 ---
 id: BULB-APP
-title: "Android app: hardcoded pairing PIN (extractable) + plaintext credential storage"
+title: "Android app: serial-derivable pairing PIN routine (extractable) + plaintext credential storage"
 category: Mobile
 status: IN PROGRESS
 severity: Medium
@@ -23,15 +23,30 @@ verified_date: "2026-09-04"
 
 ## Why It Matters
 
-The BulbBee Android app is the device's controller over BLE. It embeds the factory pairing PIN `8080` in the source, so it ships inside the APK, is identical on every install, and is recovered by unzipping and reading the app (M1). The Setup screen no longer shows or prefills the PIN, so static analysis of the APK is the only way to recover it. This is the client side of BULB-01, the "the PIN is extractable from the app" claim made literal. The app also saves the home WiFi PSK and the cloud pairing token in plaintext `SharedPreferences` and writes them to Logcat (M9), so malware, a backup, or anyone with device access reads the home network credentials, the client side of BULB-05.
+The BulbBee Android app is the device's controller over BLE. It no longer embeds a usable PIN, it embeds the PIN derivation routine (`derivePin`) and the shared vendor salt, so static analysis of the APK yields the routine rather than a baked value (M1). Combined with the device serial, which the app reads over BLE before authenticating (and which is also exposed by recon, BULB-06 and the Auth-characteristic read), it computes the per-device PIN. This is the client side of BULB-01, the "the PIN is derivable from the app" claim made literal. The app also saves the home WiFi PSK and the cloud pairing token in plaintext `SharedPreferences` and writes them to Logcat (M9), so malware, a backup, or anyone with device access reads the home network credentials, the client side of BULB-05.
+
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is an entry link, not a standalone compromise.
+
+- Yields: the pairing-PIN and local-key derivation routines from static analysis, or, with a device foothold, the per-device key and the cloud JWT in cleartext.
+- Consumes: the APK (always available), or a foothold on the phone.
+- Unlocks: BULB-01 (compute the per-device PIN), BULB-R5 (local key), BULB-CLD (reuse the JWT).
 
 ## Root Cause
 
-Hardcoded credential (M1 / CWE-798):
+Derivable pairing PIN, the shared vendor salt and the routine ship in the app (M1 / CWE-798 on the salt, CWE-1391 on the derivable PIN):
 
 ```java
-// ui/SetupFragment.java
-private static final String PAIRING_PIN = "8080";   // extractable from the APK, same on every unit
+// ble/BleController.java
+private static final String VENDOR_SALT = "bulbbee-vendor-salt";   // shared, extractable from the APK
+public static String derivePin(String serial) {                    // mirrors the device _derive_pin
+    byte[] d = MessageDigest.getInstance("SHA-256")
+            .digest((VENDOR_SALT + ":" + serial).getBytes(StandardCharsets.UTF_8));
+    long v = ((long)(d[0]&0xff)<<24)|((d[1]&0xff)<<16)|((d[2]&0xff)<<8)|(d[3]&0xff);
+    return String.format(Locale.US, "%04d", v % 10000);            // 4-digit PIN = f(serial)
+}
+// SetupFragment passes "" as the pin, the controller reads the serial pre-auth and sends derivePin(serial)
 ```
 
 Cleartext storage + log leak (M9 / CWE-312):
@@ -64,9 +79,11 @@ prefs.edit().putString("cloud_jwt", token).putString("cloud_base", base)
 
 ## Steps to Reproduce
 
+Default build note: the app no longer ships the usable `8080`. It derives the per-device PIN from the serial read pre-auth over BLE (`BleController.derivePin`), so static analysis of the APK yields the derivation routine, not a baked value. The plaintext-storage leaks (M9) are unchanged. See [CHAINS.md](../CHAINS.md).
+
 ```sh
-# M1: recover the hardcoded PIN from the built APK
-unzip -p bulbbee_app.apk classes.dex | strings | grep 8080          # or apktool + read MainActivity
+# M1: recover the PIN derivation routine + vendor salt from the built APK (no usable baked PIN)
+unzip -p bulbbee_app.apk classes.dex | strings | grep -iE "bulbbee-vendor-salt|derivePin"   # or apktool + read BleController
 # M9: read the plaintext credentials from device storage (rooted / adb backup / malware)
 adb shell run-as com.vulnzoo.bulbbee_app cat shared_prefs/bulbbee.xml   # wifi_psk / cloud_token / cloud_jwt in cleartext
 adb logcat -s BulbBee                                                   # creds + cloud jwt printed to Logcat
@@ -75,7 +92,7 @@ adb logcat -s BulbBee                                                   # creds 
 
 ## Expected Result
 
-The PIN `8080` is present in the APK, and after onboarding the WiFi PSK and cloud token are readable in `shared_prefs/bulbbee.xml` and in Logcat.
+The PIN derivation routine (`derivePin`) and the vendor salt are present in the APK, no usable baked PIN is, and after onboarding the WiFi PSK and cloud token are readable in `shared_prefs/bulbbee.xml` and in Logcat.
 
 ## How It Should Be
 
@@ -87,14 +104,14 @@ The PIN `8080` is present in the APK, and after onboarding the WiFi PSK and clou
 
 | Layer | Measure | Objective |
 |-------|---------|-----------|
-| App (creds) | Per-device pairing code, no hardcoded PIN | Remove the extractable shared secret (CWE-798) |
+| App (creds) | Per-device pairing code, no derivation routine or salt in the app | Remove the extractable shared secret (CWE-798 / CWE-1391) |
 | App (storage) | Android Keystore / EncryptedSharedPreferences | Protect secrets at rest (CWE-312) |
 | App (logging) | Strip secrets from logs | No Logcat leak |
 | App (cloud) | HTTPS + cert pinning, JWT in the Keystore | Protect the remote leg on the wire and at rest (BULB-R4) |
 
 ## Verification Checklist
 
-- [x] `PAIRING_PIN = "8080"` is present in the app source / APK (M1). Verified in the debug APK: `strings classes3.dex | grep 8080`.
+- [x] The `derivePin` routine and `VENDOR_SALT` are present in `ble/BleController.java` (there is no `PAIRING_PIN = "8080"`), and the app sends `derivePin(serial)`, not a baked value (M1). The derivation mirrors the device `_derive_pin` byte-for-byte.
 - [x] the WiFi PSK and cloud token are written to plain SharedPreferences and Logcat (M9), in `ui/SetupFragment.storeCredentials`.
 - [ ] end-to-end BLE drive on a device is still pending hardware. The app builds (`assembleDebug` produces an APK) and implements BLE scan/connect, ring control (Control `0xFF31`, State notify `0xFF32`) and WiFi provisioning (Auth `0xFF41`, Config `0xFF42`) in `ble/BleController`. The UI is a fragment-based redesign (bottom nav: Light / Scenes / Routines / Setup) over `ble/BleRepository` + `ui/LightViewModel`.
 - [x] BULB-R4: the remote leg (`cloud/CloudClient`, dependency-free) logs in and drives a bulb over the cloud API, and `cloud/CloudRepository` stores the bearer JWT in plaintext (`shared_prefs/bulbbee.xml` key `cloud_jwt`) and logs it, over plain HTTP. `CloudClient` verified against the live stack (login, control, scene, state).

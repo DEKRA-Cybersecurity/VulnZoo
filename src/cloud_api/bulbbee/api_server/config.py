@@ -17,7 +17,11 @@ class Config:
     JWT_ALGORITHM = "HS256"
 
     # ── secure toggle (mirrors the device `secure` flag) ────────────────────
-    # Off by default: BOLA + plaintext MQTT + password ignored (the findings).
+    # Off by default (the chained vulnerabilities): the BOLA and the weak hardcoded
+    # secret remain, but the free `alg:none` forge and the password-free login are
+    # gone, so BULB-CLD runs as a chain link (a real credential or a device-harvested
+    # claim is needed before the BOLA pivots across the fleet). Secure closes the
+    # BOLA with per-object ownership.
     SECURE = os.getenv("BULBBEE_SECURE") == "1"
 
     # ── MQTT broker / relay ─────────────────────────────────────────────────

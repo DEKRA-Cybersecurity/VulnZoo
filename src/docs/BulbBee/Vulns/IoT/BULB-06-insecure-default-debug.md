@@ -18,6 +18,14 @@ verified_date: "2026-09-04"
 
 The bulb ships with a diagnostic endpoint enabled by default. `GET /debug` returns a rich dump to any unauthenticated caller: the running config (including `prov_pin`), the provisioning state (including the WiFi PSK and cloud token), the current lighting state, and a slice of the process environment. The weakness is the insecure default, `debug` is `true` out of the box, so a surface that should never exist on a production unit is live on every device. It also collapses BULB-02 (unauthenticated read) and BULB-05 (secret storage) into a single one-request dump of everything sensitive the device holds.
 
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the cheap reconnaissance link, recut to yield no secrets.
+
+- Yields: reconnaissance only, the device serial, the MQTT device id and command topic, and the firmware version.
+- Consumes: network reachability.
+- Unlocks: BULB-01 (serial for PIN derivation), BULB-CLD (topic), BULB-04 (version for a targeted payload).
+
 ## Root Cause
 
 The debug surface is gated by a config flag that defaults on:
@@ -41,6 +49,8 @@ elif self.path == "/debug":
 The missing control is a secure default: debug surfaces must be off unless explicitly enabled for development, and never expose secrets.
 
 ## Steps to Reproduce
+
+Default build note: `/debug` returns reconnaissance only (serial, command topic, firmware version), no secrets. It is the one independent link, feeding the serial to BULB-01 and the topic to the cloud arm. The secret-dumping output below is the pre-chain behavior, now gated to the recon view. See [CHAINS.md](../CHAINS.md).
 
 ```sh
 curl http://192.168.2.1:8082/debug     # unauthenticated, shipped enabled

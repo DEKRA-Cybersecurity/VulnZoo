@@ -18,7 +18,15 @@ verified_date: "2026-09-04"
 
 BulbBee has two control surfaces and neither authenticates the caller. The BLE Lighting Control characteristic (`0xFF31`) accepts writes over an unbonded link, and the local HTTP API on `:8082` accepts control and configuration requests with no credential. Anyone within Bluetooth range, or anyone on the LAN, can set power, brightness, colour and scene, and read the device state and the running configuration. There is no owner, session, token, or paired controller.
 
-For a light the direct impact is nuisance and, depending on where it is installed, a privacy or safety signal. The larger impact is that the unauthenticated read surface discloses the running configuration to any caller, which is the enabler for the other findings: the config carries the hardcoded provisioning PIN (BULB-01) and, once the bulb is provisioned, the stored WiFi PSK and cloud token (BULB-05). Missing authentication is what turns those into a remote, credential-free read.
+For a light the direct impact is nuisance and, depending on where it is installed, a privacy or safety signal. The larger impact is that the unauthenticated read surface discloses the running configuration to any caller, which is the enabler for the other findings: the config carries the `prov_pin` field (vestigial in the shipped build, where the effective onboarding PIN is derived per-device from the serial, BULB-01) and, once the bulb is provisioned, the stored WiFi PSK and cloud token (BULB-05). Missing authentication is what turns those into a remote, credential-free read.
+
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the convergence point of the chain: whoever has assembled a valid device-bound session from an upstream link can now drive control.
+
+- Yields: full runtime control of the ring, the authenticated sensitive config read, and the `/update` trigger.
+- Consumes: a device-bound session minted from the binding token (BULB-01), the static local key (BULB-R5), or a valid cloud token (BULB-CLD).
+- Unlocks: BULB-04 (OTA trigger), BULB-07 (scene DoS), BULB-05 (remote secret read).
 
 ## Root Cause
 
@@ -41,7 +49,7 @@ def do_GET(self):
         self._send(200, c.cfg)                    # whole running config to any caller
 ```
 
-The BLE Control characteristic uses plain `read` / `write` flags (not the `encrypt-authenticated-write` variants) and the adapter is non-pairable, so BlueZ enforces no bonding before a central writes:
+The BLE Control characteristic uses plain `read` / `write` flags (not the `encrypt-authenticated-write` variants), so BlueZ serves it to any central with no bonding required (the adapter offers only Just Works pairing, no MITM, and the characteristic does not require even that):
 
 ```python
 # ble_light.py
@@ -58,6 +66,8 @@ class ControlChrc(ServiceInterface):
 The missing control is any authentication at all: no per-device credential, no bonded link, no session on either surface.
 
 ## Steps to Reproduce
+
+Default build note: control converges on a device-bound session. The anonymous commands below return 401 in the shipped build, they succeed only with a valid `X-Session` token (minted by the derived-PIN onboarding BULB-01, or forged from the serial). See [CHAINS.md](../CHAINS.md).
 
 HTTP, from any host on the LAN, no credential:
 

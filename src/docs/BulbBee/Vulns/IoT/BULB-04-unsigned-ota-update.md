@@ -18,6 +18,14 @@ verified_date: "2026-09-04"
 
 The bulb fetches and applies a firmware / scene-pack update with no signature, origin, or version check. An attacker who can point it at a URL, over the unauthenticated `:8082` `/update` endpoint (chaining BULB-02) or by controlling the resolved host, runs arbitrary code on the device as the service user, which is root on OpenWRT. This is the highest-impact BulbBee finding: full device code execution from an unauthenticated position, and a direct break of the CRA secure-update essential requirement.
 
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the apex of the chain, not a standalone compromise.
+
+- Yields: root code execution on the device.
+- Consumes: the authenticated session (BULB-02), the firmware version for a targeted payload (BULB-06), and a reachable attacker-served URL.
+- Unlocks: persistence, the on-device plaintext loot (BULB-05), a lateral pivot onto the home network.
+
 ## Root Cause
 
 `update_agent.apply_update` downloads a URL and executes the bytes with no verification:
@@ -46,6 +54,8 @@ elif self.path == "/update":
 Missing controls: a cryptographic signature check on the payload, an origin allowlist, and a version / rollback guard.
 
 ## Steps to Reproduce
+
+Default build note: the payload is still unsigned, but the `/update` trigger needs a device-bound session (BULB-02) in the shipped build, so the anonymous trigger below returns 401. See [CHAINS.md](../CHAINS.md).
 
 ```sh
 # attacker serves a payload (writes a marker, or drops an SSH key, or opens a shell)

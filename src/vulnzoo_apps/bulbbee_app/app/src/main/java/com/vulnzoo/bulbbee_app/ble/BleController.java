@@ -48,6 +48,25 @@ public class BleController {
     static final UUID PROV_CONFIG   = UUID.fromString("0000ff42-0000-1000-8000-00805f9b34fb");
     static final UUID CCCD          = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
+    // BULB-01 (chained): the per-device PIN derives from the enumerable serial plus
+    // the shared vendor salt, mirroring the device session_token / _derive_pin. The
+    // app reads the serial from the Auth characteristic before authenticating and
+    // sends the derived PIN, so the APK leaks the routine, not a usable constant.
+    private static final String VENDOR_SALT = "bulbbee-vendor-salt";
+    private volatile String derivedPin;
+
+    public static String derivePin(String serial) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest((VENDOR_SALT + ":" + serial).getBytes(StandardCharsets.UTF_8));
+            long v = ((long) (d[0] & 0xff) << 24) | ((d[1] & 0xff) << 16)
+                    | ((d[2] & 0xff) << 8) | (d[3] & 0xff);
+            return String.format(java.util.Locale.US, "%04d", v % 10000);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return "";
+        }
+    }
+
     public interface Listener {
         void onConnectionChange(boolean connected, String message);
         void onStateJson(String json);
@@ -150,6 +169,7 @@ public class BleController {
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
             enableStateNotifications(g);
+            establishSession(g);
             main.post(() -> listener.onConnectionChange(true, "Connected to BulbBee"));
         }
 
@@ -168,6 +188,18 @@ public class BleController {
 
         @Override
         public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
+            // BULB-01 (chained): the Auth read exposes the serial before auth, so the
+            // app derives the per-device PIN to send next.
+            if (PROV_AUTH.equals(c.getUuid()) && status == BluetoothGatt.GATT_SUCCESS) {
+                byte[] v = c.getValue();
+                if (v != null) {
+                    try {
+                        String id = new org.json.JSONObject(new String(v, StandardCharsets.UTF_8))
+                                .optString("device_id", "");
+                        if (!id.isEmpty()) derivedPin = derivePin(id);
+                    } catch (Exception ignored) { }
+                }
+            }
             // BULB-R6: the provisioning read carries the device serial (device_id),
             // which the app uses to bind the real device to the account on sign-in.
             if (PROV_CONFIG.equals(c.getUuid()) && status == BluetoothGatt.GATT_SUCCESS) {
@@ -194,6 +226,23 @@ public class BleController {
             }
         }
     };
+
+    // BULB-02 (chained): control writes to 0xFF31 need a device-bound session. Read
+    // the serial from the Auth characteristic, derive the per-device PIN, and present
+    // it so the bulb mints the session. Idempotent and run on every connect, because
+    // the device's session is per-process and resets on reboot / service reload.
+    private void establishSession(BluetoothGatt g) {
+        BluetoothGattCharacteristic auth = characteristic(g, PROV_SERVICE, PROV_AUTH);
+        if (auth == null) return;
+        derivedPin = null;
+        enqueue(() -> g.readCharacteristic(auth));
+        enqueue(() -> {
+            String p = (derivedPin != null) ? derivedPin : "";
+            if (p.isEmpty()) { opDone(); return; }
+            auth.setValue(p.getBytes(StandardCharsets.UTF_8));
+            g.writeCharacteristic(auth);
+        });
+    }
 
     private void enableStateNotifications(BluetoothGatt g) {
         BluetoothGattCharacteristic state = characteristic(g, LIGHT_SERVICE, STATE_CHAR);
@@ -238,8 +287,14 @@ public class BleController {
             listener.onProvisionResult(false, "Provisioning service not available");
             return;
         }
+        // BULB-01 (chained): read the serial (pre-auth) to derive the per-device PIN,
+        // then write it. onCharacteristicRead runs before this write because the op
+        // queue is strictly sequential, so derivedPin is set by the time it fires.
+        derivedPin = null;
+        enqueue(() -> g.readCharacteristic(auth));
         enqueue(() -> {
-            auth.setValue(pin.getBytes(StandardCharsets.UTF_8));   // BULB-01: factory PIN
+            String p = (derivedPin != null && !derivedPin.isEmpty()) ? derivedPin : pin;
+            auth.setValue(p.getBytes(StandardCharsets.UTF_8));
             g.writeCharacteristic(auth);
         });
         // wifi_set also carries the real cloud server IP, which the BLE service

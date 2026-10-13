@@ -149,7 +149,9 @@ def run():
     secure = bool(cfg.get("secure"))
     srv = _Server(("0.0.0.0", LAN_PORT), _Handler)
     srv.key = derive_key(cfg["device_id"], secure)
-    srv.client = bulb_client.BulbClient(port=int(cfg.get("http_port", 8082)))
+    srv.client = bulb_client.BulbClient(port=int(cfg.get("http_port", 8082)),
+                                        device_id=cfg["device_id"], secure=secure,
+                                        auth_token=str(cfg.get("auth_token", "")))
     _log("LAN/TCP plane listening on :%d (secure=%s)" % (LAN_PORT, secure))
     srv.serve_forever()
 

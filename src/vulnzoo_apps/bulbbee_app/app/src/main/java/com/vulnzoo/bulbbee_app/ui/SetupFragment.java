@@ -47,9 +47,10 @@ public class SetupFragment extends Fragment {
 
     private static final String TAG = "BulbBee";
 
-    // VULNERABILITY M1 / CWE-798: hardcoded factory pairing PIN, identical on
-    // every unit, recoverable by unzipping the APK.
-    private static final String PAIRING_PIN = "8080";
+    // VULNERABILITY M1 / CWE-798: the app no longer ships a usable baked PIN. The
+    // per-device PIN is derived at onboarding from the device serial (read pre-auth
+    // over BLE) by BleController.derivePin, so static analysis of the APK yields the
+    // derivation routine, not a constant (BULB-01 / BULB-APP chain link).
     // Cloud pairing token shipped with the app (stored in the clear, M9).
     private static final String CLOUD_TOKEN = "cloud-token-abc";
     // Default cloud server IP, prefilled but editable (it depends on the network).
@@ -178,11 +179,12 @@ public class SetupFragment extends Fragment {
         }
         provStatus.setText(R.string.setup_sending);
         awaitingResult = true;   // a result from now on is ours to act on
-        // BULB-01: PIN is the only gate on an unbonded link. cloudHost is written
-        // into the bulb's config.json. BULB-R6: if signed in, fetch a claim token so
-        // the bulb binds to this account during onboarding.
+        // BULB-01 (chained): BleController reads the serial pre-auth and derives the
+        // per-device PIN, so no baked PIN is sent from here. cloudHost is written into
+        // the bulb's config.json. BULB-R6: if signed in, fetch a claim token so the
+        // bulb binds to this account during onboarding.
         vm.fetchClaim(claim ->
-                vm.provision(PAIRING_PIN, ssid, psk, cloudHost, claim == null ? "" : claim));
+                vm.provision("", ssid, psk, cloudHost, claim == null ? "" : claim));
     }
 
     private void onProvisionResult(BleRepository.ProvResult result) {

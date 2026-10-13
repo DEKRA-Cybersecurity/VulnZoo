@@ -17,7 +17,7 @@ The CRA Annex II items a manufacturer must provide with the product. Fictional, 
 
 - **Manufacturer contact / single point of contact**: `security@bulbbee.example`.
 - **Coordinated vulnerability disclosure**: report issues to `security@bulbbee.example`, acknowledged within 72 hours (claim, the assessor verifies the channel resolves and is monitored, EN 303 645 5.2).
-- **Intended use and secure setup**: onboard the light with the BulbBee app over Bluetooth, then it joins the home WiFi. *(Assessor note: onboarding is unauthenticated with a hardcoded PIN, BULB-01.)*
+- **Intended use and secure setup**: onboard the light with the BulbBee app over Bluetooth, then it joins the home WiFi. *(Assessor note: onboarding uses a per-device PIN derivable from the serial over an unbonded link, BULB-01.)*
 - **Security update policy**: automatic updates for a declared support period ending 2031-09. *(Assessor note: updates are unsigned, BULB-04.)*
 - **Handling of personal data**: the light processes no personal data.
 - **Decommissioning / factory reset**: a factory reset clears the stored WiFi and cloud credentials. *(Assessor note: those credentials are stored in cleartext while in use, BULB-05.)*

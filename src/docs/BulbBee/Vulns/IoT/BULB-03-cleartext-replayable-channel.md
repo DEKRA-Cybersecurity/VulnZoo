@@ -20,9 +20,17 @@ BulbBee's control traffic is unencrypted and replayable on both surfaces. The BL
 
 The confidentiality loss is small for colour and scene, but the same cleartext channel carries the provisioning and configuration reads (BULB-02), so a passive listener also recovers whatever those disclose. The replayability means an attacker who once observed a legitimate command can reissue it at will without ever authenticating.
 
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is a link, not a standalone compromise.
+
+- Yields: the device serial, the command structure, a live session or nonce window, and the binding token captured in transit during onboarding.
+- Consumes: Bluetooth range with a sniffer (nRF52840) or a LAN tap.
+- Unlocks: BULB-01 (serial), BULB-CLD (binding token), the replay window on BULB-02.
+
 ## Root Cause
 
-The BLE characteristic uses plain flags and a non-pairable adapter, so the link is never encrypted:
+The BLE characteristic uses plain flags that require no encryption, so a central reads and writes without pairing and the link carries cleartext (the adapter only offers Just Works pairing, which gives no MITM protection even when a client does pair):
 
 ```python
 # ble_light.py
@@ -43,6 +51,8 @@ def do_POST(self):
 The missing controls are transport encryption (TLS on HTTP, LE Secure Connections on BLE) and per-command freshness (a nonce or monotonic sequence).
 
 ## Steps to Reproduce
+
+Default build note: the channels stay cleartext and sniffable (this finding is the chain link that harvests the serial and the pair_token in transit), but a raw replay only re-applies the captured command, crafting a new one needs the session (BULB-02). See [CHAINS.md](../CHAINS.md).
 
 HTTP capture and replay (works on the LAN with no credential):
 

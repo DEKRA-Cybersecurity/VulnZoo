@@ -16,7 +16,15 @@ verified_date: "2026-09-04"
 
 ## Why It Matters
 
-The security-sensitive parameters the bulb holds are stored in cleartext with no protection. The home WiFi PSK and the cloud pairing token land in `/tmp/bulbbee/provisioning.json` in plaintext, written by the BULB-01 provisioning path, and the hardcoded provisioning PIN sits in `/opt/bulbbee/config.json`. None are encrypted and none carry a restrictive file mode, so any local process reads them, and they are returned over the unauthenticated read surfaces (the BLE Config characteristic and `GET /config`, BULB-02). An attacker who reaches the device, over the onboarding weakness (BULB-01), the unauthenticated read (BULB-02), or an SSH foothold from the unsigned update (BULB-04), walks away with the home network credentials.
+The security-sensitive parameters the bulb holds are stored in cleartext with no protection. The home WiFi PSK and the cloud pairing token land in `/tmp/bulbbee/provisioning.json` in plaintext, written by the BULB-01 provisioning path, and the provisioning PIN field (`prov_pin`, vestigial in the shipped build where the effective PIN is derived per-device from the serial) sits in `/opt/bulbbee/config.json`. None are encrypted and none carry a restrictive file mode, so any local process reads them, and they are returned over the unauthenticated read surfaces (the BLE Config characteristic and `GET /config`, BULB-02). An attacker who reaches the device, over the onboarding weakness (BULB-01), the unauthenticated read (BULB-02), or an SSH foothold from the unsigned update (BULB-04), walks away with the home network credentials.
+
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the loot of a completed chain, not a standalone compromise.
+
+- Yields: the home WiFi PSK and the cloud pairing/binding token.
+- Consumes: the authenticated sensitive read (BULB-02) for the remote path, or a device foothold (BULB-04) for the on-disk read.
+- Unlocks: lateral movement onto the home network, the cloud binding (BULB-CLD), persistence.
 
 ## Root Cause
 
@@ -42,6 +50,8 @@ def _prov_read() -> dict:
 
 ## Steps to Reproduce
 
+Default build note: the secrets are still plaintext at rest, but the remote read is behind the device-bound session (BULB-02) and the on-disk read behind a foothold (BULB-04). An anonymous `GET /config` returns the public view only. See [CHAINS.md](../CHAINS.md).
+
 ```sh
 # on the device (or via any local process, SSH foothold, etc.)
 cat /tmp/bulbbee/provisioning.json     # {"wifi_ssid":"home","wifi_psk":"<cleartext>","pair_token":"<cleartext>",...}
@@ -49,7 +59,7 @@ cat /opt/bulbbee/config.json           # prov_pin in cleartext
 
 # remotely, over the unauthenticated reads (BULB-02)
 curl http://192.168.2.1:8082/config    # discloses prov_pin
-# and the BLE Config characteristic 0xFF42 returns wifi_psk in cleartext after the weak PIN gate
+# and the BLE Config characteristic 0xFF42 returns wifi_psk in cleartext after the derived-PIN gate
 ```
 
 ## Expected Result

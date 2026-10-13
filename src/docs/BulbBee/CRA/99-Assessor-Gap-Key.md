@@ -17,7 +17,7 @@ The trainer's answer key: each manufacturer claim in the dossier, the device gro
 
 | # | Dossier claim (where) | Contradicted by | How the assessor proves it |
 |---|-----------------------|-----------------|----------------------------|
-| 1 | "per-device pairing secret" (BB-ERM-002, BB-UM-004 setup) | Hardcoded PIN `8080`, no lockout (**BULB-01**) | Connect over BLE with no bonding, unlock provisioning with `8080` on any unit, brute-force with no lockout. |
+| 1 | "per-device pairing secret" (BB-ERM-002, BB-UM-004 setup) | Per-device PIN derived from the enumerable serial via the app's routine, lockout after 5 (**BULB-01**) | Reverse `derivePin` from the APK, read the serial over BLE (`0xFF41`) or recon, compute the PIN, unlock provisioning over the unbonded link. |
 | 2 | "control interfaces require authentication" (BB-ERM-002) | No auth on BLE `0xFF31` / HTTP `:8082` (**BULB-02**) | `curl :8082/set` and a BLE write from an unpaired central both succeed. |
 | 3 | "traffic is encrypted" (BB-ERM-002) | Cleartext, replayable BLE + HTTP (**BULB-03**) | Sniff a command and replay it, plain-HTTP capture, unencrypted BLE ATT write. |
 | 4 | "updates are signed and verified" (BB-ERM-002, BB-UM-004 update policy) | Unsigned OTA runs attacker code (**BULB-04**) | `POST /update` an attacker URL, the payload executes on the device. |

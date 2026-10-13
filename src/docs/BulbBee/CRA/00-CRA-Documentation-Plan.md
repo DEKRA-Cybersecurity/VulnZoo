@@ -55,7 +55,7 @@ BulbBee is deliberately non-conformant. The dossier is a plausible, internally c
 
 Two mechanisms produce the divergences:
 
-- **Claimed-but-absent controls.** BB-ERM-002 asserts controls the device contradicts. Example: it claims onboarding uses per-device credentials and encrypted transport, while the device ships a hardcoded pairing PIN over an unbonded, unencrypted BLE link (BULB-01, BULB-03).
+- **Claimed-but-absent controls.** BB-ERM-002 asserts controls the device contradicts. Example: it claims onboarding uses per-device credentials and encrypted transport, while the device derives the pairing PIN from the enumerable serial (predictable, not a secret) over an unbonded, unencrypted BLE link (BULB-01, BULB-03).
 - **Under-treated risk / optimistic self-declaration.** The EU DoC (BB-DOC-001) self-declares conformity with the Annex I essential requirements, which the finding catalogue shows is false, exactly the kind of over-confident Module A self-assessment a market-surveillance authority would challenge.
 
 The assessor gap key (`99-Assessor-Gap-Key.md`) tags each divergence to the finding that disproves it, so the trainer has an answer key.

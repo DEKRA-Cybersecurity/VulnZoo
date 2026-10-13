@@ -79,9 +79,16 @@ _CFG = _load_config()
 HTTP_PORT = int(_CFG.get("http_port", 8082))
 BLE_NAME = str(_CFG.get("ble_name", "BulbBee"))
 BLE_INTERVAL = int(os.environ.get("BLE_INTERVAL", _CFG.get("ble_interval", 1)))
-# BULB-01: hardcoded factory pairing PIN, identical across every device.
+# BULB-01: legacy shared PIN value. The default build uses a per-device PIN
+# derived from the serial (_derive_pin), not this value, which it rejects.
 PROV_PIN = str(_CFG.get("prov_pin", "8080"))
-# BULB-SEC: secure-mode toggle (neutralizes the provisioning + storage findings).
+# Credential the BLE plane presents to the single-owner :8082 daemon when it
+# forwards a command: in secure mode the daemon gates on this auth token.
+AUTH_TOKEN = str(_CFG.get("auth_token", ""))
+# BULB-SEC: secure-mode toggle, the ONE defensive option. With secure off (the
+# default) the vulnerabilities run as a chain (see docs CHAINS.md): each finding
+# yields an artifact and control of the bulb requires composing the links. With
+# secure on, every link is closed. There is no instant-win posture.
 SECURE = bool(_CFG.get("secure"))
 
 LIGHT_SERVICE_UUID = "0000ff30-0000-1000-8000-00805f9b34fb"
@@ -112,9 +119,9 @@ _ad_is_registered = False
 _ad_reregister_lock = None
 notifying_state = False
 
-# BULB-01: provisioning state. authenticated never auto-clears, pin_attempts
-# never locks out (no rate limiting), wifi_psk is stored in cleartext (read
-# back by BULB-05).
+# BULB-01: provisioning state. In the chained default a per-device derived PIN
+# (not the shared 8080) authenticates, pin_attempts locks out after 5, a session
+# is minted on success, and wifi_psk is stored in cleartext (read back by BULB-05).
 _prov_state = {
     "authenticated": False,
     "pin_attempts": 0,
@@ -122,6 +129,7 @@ _prov_state = {
     "wifi_psk": "",
     "cloud_url": "",
     "pair_token": "",
+    "session": "",          # BULB-C2: device-bound session minted on chain-mode auth
 }
 
 
@@ -135,6 +143,17 @@ def _gen_passkey() -> int:
     """A fresh random 6-digit Passkey Entry value per pairing. BlueZ expects a
     uint32 in [0, 999999]."""
     return secrets.randbelow(1000000)
+
+
+def _derive_pin(device_id):
+    """BULB-C2 (chain mode): a per-device provisioning PIN derived from the
+    enumerable serial plus the shared vendor salt. Not the global 8080, but
+    derivable by an attacker who has the serial (BULB-06 recon or a BULB-03 sniff)
+    and the derivation routine (reversed from the app, BULB-APP). Pure, so it is
+    unit-checkable and the app can mirror it."""
+    import hashlib
+    h = hashlib.sha256(("%s:%s" % (session_token.VENDOR_SALT, device_id)).encode()).hexdigest()
+    return "%04d" % (int(h[:8], 16) % 10000)
 
 
 def _prov_flags(base, secure):
@@ -163,8 +182,16 @@ def _get_state_bytes() -> bytes:
 
 def _post(path: str, obj: dict):
     data = json.dumps(obj).encode()
+    # BULB-02: the :8082 owner now requires a device-bound session (default build)
+    # or the auth token (secure). The BLE plane has already authenticated the
+    # central (derived-PIN provisioning, or LE SC bonding) before a write reaches
+    # here, so it presents the device's own credentials to the owner. The session
+    # is minted fresh (serial-derived key in default, the chain-forgeable one).
     req = urllib.request.Request(
-        "http://127.0.0.1:%d%s" % (HTTP_PORT, path), data=data, method="POST")
+        "http://127.0.0.1:%d%s" % (HTTP_PORT, path), data=data, method="POST",
+        headers={"Content-Type": "application/json",
+                 "X-Session": session_token.issue(session_token.device_serial(), secure=False),
+                 "X-Auth-Token": AUTH_TOKEN})
     with urllib.request.urlopen(req, timeout=2) as r:
         return r.read()
 
@@ -274,7 +301,7 @@ def _write_cloud_host(host: str, config_path: str = CONFIG_PATH) -> bool:
 
 def _apply_cloud_host(host: str):
     """Write cloud_host into config.json and restart the tunnel so it reconnects
-    to the real cloud. Gated by the same (hardcoded) PIN as the rest of
+    to the real cloud. Gated by the same (derived) PIN as the rest of
     provisioning, so an attacker in range can also point the bulb at their own
     cloud (the re-provisioning surface, BULB-01 / BULB-P07)."""
     if not _write_cloud_host(host):
@@ -294,21 +321,39 @@ def _apply_cloud_host(host: str):
 
 
 def _prov_auth(pin: str) -> bool:
-    """Check the factory PIN. Default (vulnerable): no lockout, the counter only
-    climbs, the hardcoded PIN always works (BULB-01). Secure (BULB-SEC): lock out
-    after 5 attempts and refuse the shared default PIN."""
+    """Check the provisioning PIN. Default (vulnerable, BULB-01): a per-device PIN
+    derived from the enumerable serial (_derive_pin), lockout after 5 tries, the
+    shared 8080 rejected. Secure (BULB-SEC): lock out after 5 and refuse the shared default."""
     if SECURE:
-        if _prov_state["pin_attempts"] >= 5:        # BULB-01 fix: lockout
+        if _prov_state["pin_attempts"] >= 5:        # BULB-SEC: lockout
             _log("Provisioning AUTH locked out")
             return False
-        if pin == "8080":                           # BULB-01 fix: refuse the shared default
+        if pin == "8080":                           # BULB-SEC: refuse the shared default
             _prov_state["pin_attempts"] += 1
             _log("Provisioning AUTH refused (default PIN not allowed in secure mode)")
             return False
-    if pin == PROV_PIN:
+        if pin == PROV_PIN:
+            _prov_state["authenticated"] = True
+            _prov_state["pin_attempts"] = 0
+            _log("Provisioning AUTH success")
+        else:
+            _prov_state["pin_attempts"] += 1
+            _log("Provisioning AUTH failed (attempts=%d)" % _prov_state["pin_attempts"])
+        return _prov_state["authenticated"]
+    # BULB-01 (chained default): a per-device PIN derived from the serial, not the
+    # shared 8080, with a lockout after 5 tries. The PIN must be derived (serial
+    # from BULB-06 recon or a sniff, plus the routine reversed from the app), so
+    # onboarding is a chain link, not a free step. A success mints the device-bound
+    # session the control surfaces (BULB-02) require. secure closes this above.
+    if _prov_state["pin_attempts"] >= 5:
+        _log("Provisioning AUTH locked out")
+        return False
+    dev = session_token.device_serial()
+    if pin != "8080" and pin == _derive_pin(dev):
         _prov_state["authenticated"] = True
         _prov_state["pin_attempts"] = 0
-        _log("Provisioning AUTH success")
+        _prov_state["session"] = session_token.issue(dev, secure=False)
+        _log("Provisioning AUTH success (session issued)")
     else:
         _prov_state["pin_attempts"] += 1
         _log("Provisioning AUTH failed (attempts=%d)" % _prov_state["pin_attempts"])
@@ -316,7 +361,7 @@ def _prov_auth(pin: str) -> bool:
 
 
 def _prov_apply(cmd: dict):
-    """Handle a provisioning command, gated only by the (hardcoded) PIN."""
+    """Handle a provisioning command, gated only by the derived-PIN auth."""
     if not _prov_state["authenticated"]:
         _log("Provisioning command rejected — PIN not verified")
         return
@@ -351,11 +396,14 @@ def _prov_read() -> dict:
     if SECURE:                                       # BULB-05 fix: never return the PSK
         return {"device_id": session_token.device_serial(),
                 "wifi_ssid": _prov_state["wifi_ssid"], "cloud_url": _prov_state["cloud_url"]}
+    # BULB-05 (chained default): hand the minted session to the controller and
+    # still disclose the WiFi PSK in cleartext, but only after the derived-PIN auth.
     return {
         "device_id": session_token.device_serial(),  # the app reads this to bind the real device
         "wifi_ssid": _prov_state["wifi_ssid"],
         "wifi_psk": _prov_state["wifi_psk"],
         "cloud_url": _prov_state["cloud_url"],
+        "session": _prov_state.get("session", ""),
     }
 
 
@@ -490,6 +538,13 @@ class ControlChrc(ServiceInterface):
         except (ValueError, UnicodeDecodeError):
             _log("Control WriteValue: bad JSON %r" % raw[:64])
             return
+        if not SECURE and not _prov_state.get("authenticated"):
+            # BULB-02 (chained default): control converges on a device-bound session,
+            # established by the derived-PIN provisioning auth (BULB-01), so an
+            # unprovisioned central in range cannot drive the ring. (secure gates
+            # on LE SC bonding instead.)
+            _log("Control WriteValue dropped (no device-bound session)")
+            return
         _log("Control WriteValue: %s" % command)
         _apply_command(command)
         if notifying_state:
@@ -541,12 +596,13 @@ class StateChrc(ServiceInterface):
 
 
 class ProvisioningAuthChrc(ServiceInterface):
-    """BULB-01: factory pairing PIN (0xFF41).
+    """BULB-01: provisioning auth (0xFF41), the per-device PIN gate.
 
-    Weaknesses: the PIN is hardcoded and identical across devices, there is no
-    rate limiting or lockout (the counter never locks), and the link is not
-    bonded, so the PIN is the only gate and it is trivially brute-forced or
-    extracted from the app.
+    Chained default: the PIN is derived per-device from the enumerable serial plus
+    a shared vendor salt (not the old global 8080), with a lockout after 5 tries.
+    The link is not bonded, and an unauthenticated read of this characteristic
+    exposes the serial, so the PIN is derivable (the chain link, with the routine
+    reversed from the app) rather than free. secure requires an LE SC bonded link.
     """
 
     def __init__(self):
@@ -573,8 +629,13 @@ class ProvisioningAuthChrc(ServiceInterface):
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
-        return json.dumps({"attempts": _prov_state["pin_attempts"],
-                           "locked": False}).encode()
+        # BULB-01 (chained): the serial is readable before auth (it is enumerable /
+        # on the device label), so the per-device PIN is derivable. This is both the
+        # legitimate app's and the attacker's way to compute the PIN. secure refuses
+        # this read on an unbonded link (encrypt-authenticated flags).
+        return json.dumps({"device_id": session_token.device_serial(),
+                           "attempts": _prov_state["pin_attempts"],
+                           "locked": _prov_state["pin_attempts"] >= 5}).encode()
 
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
@@ -582,7 +643,7 @@ class ProvisioningAuthChrc(ServiceInterface):
 
 
 class ProvisioningConfigChrc(ServiceInterface):
-    """BULB-01: provisioning commands (0xFF42), gated only by the hardcoded PIN.
+    """BULB-01: provisioning commands (0xFF42), gated only by the derived-PIN auth.
 
     wifi_set reconfigures the station WiFi (a clean uci write, no shell), so an
     attacker in range re-provisions the bulb onto their network. ReadValue
@@ -723,11 +784,11 @@ class ObjectManager(ServiceInterface):
 
 
 class Agent(ServiceInterface):
-    """BULB-A2: BlueZ pairing agent (secure mode only). Registered with the
-    KeyboardDisplay capability so pairing negotiates LE Secure Connections +
-    Passkey Entry / Numeric Comparison instead of Just Works. A fresh random
-    passkey is generated per pairing. Never registered in the default
-    (vulnerable) path, where BULB-01's no-bonding substrate is preserved."""
+    """BlueZ pairing agent. The capability chosen at registration selects the
+    method: NoInputNoOutput -> Just Works (no MITM) in the default build (BULB-P01),
+    KeyboardDisplay -> LE Secure Connections + Passkey Entry / Numeric Comparison in
+    secure mode (BULB-A2). A fresh random passkey is generated per pairing when one
+    is requested (KeyboardDisplay); Just Works requests none."""
 
     def __init__(self):
         super().__init__("org.bluez.Agent1")
@@ -789,12 +850,14 @@ async def setup_adapter(bus):
     await adapter.set_alias(BLE_NAME)
     await adapter.set_powered(True)
     await adapter.set_discoverable(True)
-    # BULB-A2: secure mode makes the adapter pairable so LE SC + Passkey pairing
-    # can complete. Default (vulnerable) keeps set_pairable(False) — the no-bonding
-    # substrate of BULB-01.
-    await adapter.set_pairable(bool(SECURE))
+    # BULB-P01: the adapter is pairable in both modes. Default (vulnerable) pairs
+    # with a NoInputNoOutput agent -> Just Works (no MITM), so a central that insists
+    # on pairing can bond while the link still has no real protection. Secure pairs
+    # with the LE SC + Passkey agent (BULB-A2).
+    await adapter.set_pairable(True)
     _force_random_static_address()
-    _log("Adapter configured: %s (pairable=%s)" % (BLE_NAME, bool(SECURE)))
+    _log("Adapter configured: %s (pairable=True, %s)" % (
+        BLE_NAME, "LE SC + Passkey" if SECURE else "Just Works"))
 
 
 async def register_app(bus):
@@ -805,15 +868,16 @@ async def register_app(bus):
     _log("GATT application registered")
 
 
-async def register_agent(bus):
-    """BULB-A2: register the pairing agent as the default agent (secure mode).
-    KeyboardDisplay capability drives LE Secure Connections + Passkey Entry."""
+async def register_agent(bus, capability):
+    """Register the pairing agent as the default agent. The capability selects the
+    method: NoInputNoOutput -> Just Works (no MITM, the BULB-P01 default),
+    KeyboardDisplay -> LE Secure Connections + Passkey Entry (BULB-A2 secure)."""
     introspection = await bus.introspect(BUS_NAME, "/org/bluez")
     manager_obj = bus.get_proxy_object(BUS_NAME, "/org/bluez", introspection)
     agent_manager = manager_obj.get_interface("org.bluez.AgentManager1")
-    await agent_manager.call_register_agent(AGENT_PATH, "KeyboardDisplay")
+    await agent_manager.call_register_agent(AGENT_PATH, capability)
     await agent_manager.call_request_default_agent(AGENT_PATH)
-    _log("Pairing agent registered as default (LE Secure Connections + Passkey)")
+    _log("Pairing agent registered as default (%s)" % capability)
 
 
 async def main():
@@ -881,13 +945,15 @@ async def main():
 
     await setup_adapter(bus)
     await register_app(bus)
-    if SECURE:                                        # BULB-A2: robust pairing
-        agent = Agent()
-        bus.export(AGENT_PATH, agent)
-        try:
-            await register_agent(bus)
-        except Exception as e:
-            _log("Pairing agent registration failed (%s)" % e)
+    # Always register a pairing agent so the adapter is actually pairable. Default
+    # (vulnerable) uses NoInputNoOutput -> Just Works (no MITM, BULB-P01). Secure
+    # uses KeyboardDisplay -> LE SC + Passkey (BULB-A2).
+    agent = Agent()
+    bus.export(AGENT_PATH, agent)
+    try:
+        await register_agent(bus, "KeyboardDisplay" if SECURE else "NoInputNoOutput")
+    except Exception as e:
+        _log("Pairing agent registration failed (%s)" % e)
     await _ensure_advertisement_registered()
 
     _log("Server started, advertising as '%s' (service %s)" % (BLE_NAME, LIGHT_SERVICE_UUID))
@@ -907,20 +973,31 @@ def _demo():
     assert both == [("/set", {"power": True}), ("/scene", {"scene": "solid"})]
     assert _plan_calls({}) == []
 
-    # BULB-01: wifi_set argv is a clean list (no shell), and the PIN gate has no lockout
+    # BULB-01 (chained default): wifi_set argv is a clean list (no shell), the PIN
+    # is per-device derived (not 8080), locks out after 5, a success mints a session.
     argv = _wifi_set_argv("evil-ap", "p@ss")
     assert argv[1] == ["uci", "set", "bulbbee_wifi.sta.ssid=evil-ap"]
     assert ["uci", "commit", "bulbbee_wifi"] in argv
-    _prov_state.update({"authenticated": False, "pin_attempts": 0,
+    _prov_state.update({"authenticated": False, "pin_attempts": 0, "session": "",
                         "wifi_ssid": "", "wifi_psk": "", "cloud_url": "", "pair_token": ""})
     assert _prov_read() == {"error": "PIN_REQUIRED"}          # gated before auth
-    for _ in range(20):
-        assert _prov_auth("0000") is False                   # 20 wrong PINs
-    assert _prov_state["pin_attempts"] == 20                  # counter climbs, never locks
-    assert _prov_auth(PROV_PIN) is True                      # correct PIN still accepted
+    dev = session_token.device_serial()
+    good = _derive_pin(dev)
+    assert good != "8080" and len(good) == 4                  # per-device PIN, not the shared default
+    assert _derive_pin("other-serial-xyz") != good or dev == "other-serial-xyz"  # differs by serial
+    assert _prov_auth("8080") is False                       # the shared default is refused
+    _prov_state["pin_attempts"] = 0
+    for _ in range(5):
+        assert _prov_auth("0000") is False                   # 5 wrong PINs
+    assert _prov_auth(good) is False                         # locked out after 5 attempts
+    _prov_state["pin_attempts"] = 0                          # reset the lockout
+    assert _prov_auth(good) is True                          # the derived PIN authenticates
+    tok = _prov_state["session"]
+    assert session_token.confirm(tok, dev, secure=False) is not None   # a real session was minted
     _prov_apply({"cmd": "wifi_set", "ssid": "evil-ap", "psk": "p@ss"})
     assert _prov_state["wifi_ssid"] == "evil-ap" and _prov_state["wifi_psk"] == "p@ss"
-    assert _prov_read()["wifi_psk"] == "p@ss"                # BULB-05 chain: PSK in cleartext
+    assert _prov_read()["wifi_psk"] == "p@ss"                # BULB-05: PSK in cleartext after auth
+    assert _prov_read()["session"] == tok                    # BULB-02: controller receives the session
 
     # cloud_host provisioning: the real cloud IP is written into config.json
     import tempfile
@@ -942,7 +1019,12 @@ def _demo():
     assert _prov_flags(["write-without-response"], True) == ["write-without-response"]
     for _ in range(1000):
         assert 0 <= _gen_passkey() <= 999999                 # passkey in the uint32 6-digit range
-    print("ble_light self-check OK (_plan_calls + BULB-01 provisioning + BULB-A2 pairing)")
+
+    # BULB-03: the provisioning/control flags stay plain in the chained default
+    # (SECURE False), so the link is sniffable. Asserted above (_prov_flags(base, False) == base).
+    _prov_state.update({"authenticated": False, "pin_attempts": 0, "session": ""})
+
+    print("ble_light self-check OK (_plan_calls + BULB-01/02/05 chained default + BULB-A2 pairing)")
 
 
 if __name__ == "__main__":

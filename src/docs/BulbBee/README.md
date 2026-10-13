@@ -45,7 +45,7 @@ One daemon (`lighting_service.py`) owns the ring and the lighting state on `:808
 
 | Plane | Where | Transport | Auth (default vs secure) |
 |-------|-------|-----------|--------------------------|
-| BLE GATT (app) | `ble_light.py` | BLE, service `0xFF30` (control) + `0xFF40` (provisioning) | Just Works / hardcoded PIN vs LE SC + Passkey (BULB-A2) |
+| BLE GATT (app) | `ble_light.py` | BLE, service `0xFF30` (control) + `0xFF40` (provisioning) | Just Works / serial-derived PIN vs LE SC + Passkey (BULB-A2) |
 | Cloud tunnel | `cloud_tunnel.py` + `cloud_api/bulbbee/` | outbound MQTT `:1883` / TLS `:8883` | serial-derived token, plaintext vs per-device HMAC token, TLS (BULB-A3) |
 | LAN/TCP | `local_tcp.py` | TCP `:6668`, AES-CCM frames | static firmware key vs per-device key (BULB-A4) |
 | HTTP (diagnostics) | `lighting_service.py` | HTTP `:8082` | unauthenticated vs authenticated + `/debug` off |
@@ -65,7 +65,7 @@ flowchart TB
         APP["Android app (BulbBee)<br/>BLE + cloud REST + LAN client<br/>JWT/PSK plaintext in prefs (BULB-APP / M9)"]
 
         subgraph PI["Smart light - RPi/OpenWRT, WS2812 ring (labs/bulbbee)<br/>provisioned onto the home WiFi"]
-            BLE["ble_light.py - GATT hci0<br/>0xFF30 control (0xFF31/0xFF32) + 0xFF40 prov (0xFF41/0xFF42)<br/>Just Works + PIN 8080 (BULB-P01/P02)"]
+            BLE["ble_light.py - GATT hci0<br/>0xFF30 control (0xFF31/0xFF32) + 0xFF40 prov (0xFF41/0xFF42)<br/>Just Works + serial-derived PIN (BULB-P01/P02)"]
             TUN["cloud_tunnel.py<br/>outbound MQTT client, serial-derived token (BULB-P04)"]
             TCP["local_tcp.py - AES-CCM :6668<br/>static key bulbbee-local-16 (BULB-P03/P06)"]
             SEC["session_token.py + secret_store.py<br/>sim-flash secrets, owner binding unenforced (BULB-P05)"]
@@ -95,12 +95,12 @@ flowchart TB
     WS -->|"SPI ~2.4 MHz, GRB"| RING
 
     %% attacker paths (dashed)
-    ATT -.->|"Just Works pairing / PIN 8080 / read PSK (BULB-P01/P02/01/03)"| BLE
+    ATT -.->|"Just Works pairing / serial-derived PIN / read PSK (BULB-P01/P02/01/03)"| BLE
     ATT -.->|"unauth control, /debug secrets, scene DoS (BULB-02/06/07/P07)"| OWN
     ATT -.->|"AES-CCM static key, proximity = control (BULB-P03/P06)"| TCP
     ATT -.->|"BOLA + JWT crack/alg:none, hijack any bulb (BULB-CLD)"| API
     ATT -.->|"token spoof from serial (BULB-P04)"| TUN
-    ATT -.->|"re-provision onto attacker AP, no lockout (BULB-P07)"| BLE
+    ATT -.->|"re-provision onto attacker AP after deriving the PIN (BULB-P07)"| BLE
 ```
 
 ## WS2812 driving
@@ -126,18 +126,20 @@ Every service reads `secure` from `/opt/bulbbee/config.json` (bake it into the t
 
 | Mechanism | Degraded default (finding) | Robust secure branch | Code |
 |-----------|----------------------------|----------------------|------|
-| BLE pairing | Just Works, no bonding, plain prov chars (BULB-P01) | LE SC + Passkey agent, `encrypt-authenticated-*` (BULB-A2) | `ble_light.py` |
+| BLE pairing | Just Works (NoInputNoOutput agent, no MITM), plain prov chars (BULB-P01) | LE SC + Passkey agent, `encrypt-authenticated-*` (BULB-A2) | `ble_light.py` |
 | WiFi PSK delivery | cleartext over unbonded link, PSK read back (BULB-P02) | LE-SC-encrypted link, PSK not returned (BULB-A2) | `ble_light.py` |
-| Provisioning PIN | hardcoded `8080`, no lockout (BULB-P07) | reject default PIN, lockout after 5 | `ble_light.py` |
+| Provisioning PIN | per-device PIN derived from the enumerable serial (forgeable), lockout after 5 (BULB-01) | LE SC bonding + reject the shared default, lockout after 5 | `ble_light.py` |
 | Local (LAN/TCP) key | static `bulbbee-local-16` in firmware (BULB-P03) | per-device HMAC key (BULB-A4) | `local_tcp.py` |
 | Session token | key from vendor salt + serial (BULB-P04) | random per-device secret, rotatable (BULB-A3) | `session_token.py` |
 | Cloud tunnel transport | plaintext MQTT `:1883` (BULB-P02) | MQTT over TLS `:8883` (BULB-A3) | `cloud_tunnel.py` |
 | Owner binding | recorded but not enforced, app + cloud (BULB-P05) | write-once, device-enforced + cloud `owner==caller` (BULB-A5) | `secret_store.py`, cloud `/api/register` |
 | LAN proximity = control | shared key + no owner check (BULB-P06) | per-device key + enforced binding | `local_tcp.py` + `secret_store.py` |
-| Debug surface | `GET /debug` dumps secrets (BULB-P07) | `/debug` refused | `lighting_service.py` |
-| Control surface | unauthenticated (classic BULB-02) | authenticated, secrets redacted | `lighting_service.py` |
-| Scene payload | unbounded LED count (classic BULB-07) | count clamped | `lighting_service.py` |
-| OTA update | unsigned (classic BULB-04) | signature/verification branch | `update_agent.py` |
+| Debug surface | `GET /debug` returns recon only (serial, topic, version), no secrets (BULB-06) | `/debug` refused | `lighting_service.py` |
+| Control surface | device-bound session required (serial-derived, forgeable), secrets behind it (BULB-02) | `X-Auth-Token`, secrets redacted | `lighting_service.py` |
+| Scene payload | unbounded LED count, behind the session (BULB-07) | count clamped | `lighting_service.py` |
+| OTA update | unsigned, trigger behind the session (BULB-04) | signature/verification branch | `update_agent.py` |
+
+The degraded default is a single attack chain: each finding yields an artifact and control of the bulb is the composition of links, only reconnaissance (BULB-06) is independent. The `secure` toggle is the one defensive option, it closes every link. There is no instant-win posture. The per-finding chain matrix is in [`Vulns/README.md`](Vulns/README.md), the model and worked chains are in [`Vulns/CHAINS.md`](Vulns/CHAINS.md).
 
 ## Three-plane findings (BULB-P01..P07)
 
@@ -145,13 +147,13 @@ The weaknesses along the BLE three-plane architecture, each the shipped default 
 
 | ID | Plane finding | Substrate (default) | Baseline degraded | Classic overlap | EN 303 645 |
 |----|---------------|---------------------|-------------------|-----------------|------------|
-| BULB-P01 | BLE pairing MITM (Just Works / broken passkey) | `ble_light.py` no bonding | BULB-A2 | BULB-01 | 5.5 |
+| BULB-P01 | BLE pairing MITM (Just Works / broken passkey) | `ble_light.py` Just Works agent (no MITM) | BULB-A2 | BULB-01 | 5.5 |
 | BULB-P02 | WiFi PSK over BLE in cleartext | `ble_light.py` `_prov_read` PSK | BULB-A2 | BULB-03 + 05 | 5.4 |
 | BULB-P03 | Static local key recoverable from firmware | `local_tcp.py` `STATIC_LOCAL_KEY` | BULB-A4 | net-new | 5.5 |
 | BULB-P04 | Session token static / derivable from serial | `session_token.py` `_static_key` | BULB-A3 | net-new (rel. BULB-05) | 5.1 |
 | BULB-P05 | Owner binding only in the app, and cloud-recorded but unenforced | `secret_store.py` `check_owner` True + cloud `/api/register` (BULB-R2) | BULB-A5 | net-new | 5.6 |
 | BULB-P06 | LAN/TCP proximity = control | `local_tcp.py` key-only gate | BULB-A4 + A5 | BULB-02 + 06 | 5.6 |
-| BULB-P07 | Secure-by-default violations (debug, logging, re-provisioning) | `config.json` `debug:true`, no lockout | all A-series | BULB-06 | 5.6 |
+| BULB-P07 | Secure-by-default violations (debug, logging, re-provisioning) | `config.json` `debug:true`, re-provisioning window open | all A-series | BULB-06 | 5.6 |
 
 ## Classic vulnerability catalogue
 
@@ -167,10 +169,10 @@ A single guided run against the live device, in default mode then re-run with `s
 | 1 | Debug dump | `curl http://192.168.2.1:8082/debug` | BULB-P07 / BULB-06 | 5.6 | yes |
 | 2 | Unauth LAN control | `curl -X POST http://192.168.2.1:8082/scene -d '{"scene":"rainbow"}'` and an AES-CCM frame to `:6668` under `b"bulbbee-local-16"` | BULB-P06 / P03 / BULB-02 | 5.6 | yes |
 | 3 | Pairing MITM | `bluetoothctl scan le` + connect with no passkey prompt (Just Works), sniff the pairing | BULB-P01 / BULB-01 | 5.5 | yes |
-| 4 | Secret recovery | write PIN `8080` to `0xFF41`, read `0xFF42` (PSK cleartext); `cat /tmp/bulbbee/provisioning.json` | BULB-P02 / P03 / BULB-05 | 5.4 | yes |
+| 4 | Secret recovery | derive the per-device PIN from the serial (read `0xFF41`), write it to `0xFF41`, read `0xFF42` (PSK cleartext); `cat /tmp/bulbbee/provisioning.json` | BULB-P02 / P03 / BULB-05 | 5.4 | yes |
 | 5 | Token spoof | reproduce `session_token._static_key(serial)`, forge a confirming token | BULB-P04 | 5.1 | yes |
 | 6 | Device hijack | drive the device from a non-owner client (any of 2/3) | BULB-P05 | 5.6 | yes |
-| 7 | Abusive re-provisioning | re-issue `wifi_set` over BLE onto an attacker AP (no lockout, window never closes) | BULB-P01 / P07 | 5.1 / 5.6 | yes |
+| 7 | Abusive re-provisioning | re-issue `wifi_set` over BLE onto an attacker AP (derive the PIN first, the window never closes) | BULB-P01 / P07 | 5.1 / 5.6 | yes |
 
 Test 5, runnable and selfcheck-proven:
 

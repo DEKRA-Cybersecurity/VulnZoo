@@ -113,7 +113,9 @@ def run():
     cfg = _load_config()
     dev = cfg["device_id"]
     secure = bool(cfg.get("secure"))
-    client = bulb_client.BulbClient(port=int(cfg.get("http_port", 8082)))
+    client = bulb_client.BulbClient(port=int(cfg.get("http_port", 8082)),
+                                    device_id=dev, secure=secure,
+                                    auth_token=str(cfg.get("auth_token", "")))
     token = session_token.issue(dev, secure=secure)
 
     c = mqtt.Client(client_id="bulbbee-%s" % dev)

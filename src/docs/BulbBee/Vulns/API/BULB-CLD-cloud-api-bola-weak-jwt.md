@@ -17,6 +17,14 @@ verified_date: "2026-09-04"
 
 The BulbBee cloud lets the app control bulbs remotely. Two API weaknesses make that remote channel a free-for-all. First, the per-bulb control endpoints authorize by "is there a valid token", never by who owns the bulb (BOLA / API1), so any authenticated user drives any user's light. Second, the token validator honours the `none` algorithm and a weak hardcoded HS256 secret (API2), so an attacker forges an admin token with no key at all. Together they let a remote attacker enumerate and control every bulb in the fleet. With the BULB-R1 relay wired, `POST /state` and `/scene` publish the command to the device's MQTT topic (`bulbbee/<device_id>/cmd`), so this is no longer a paper finding against an in-memory dict, the forged or borrowed token drives the real ring over the Internet (remote physical hijack).
 
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the remote arm of the chain, joined to the device arm by the binding token.
+
+- Yields: remote control of the target bulb and, through the BOLA, the rest of the fleet.
+- Consumes: a valid account token, or in the chained model the device binding/claim token harvested on the device (BULB-01, BULB-03, or BULB-APP).
+- Unlocks: remote physical control over the MQTT relay (BULB-R1), a fleet-wide pivot.
+
 ## Root Cause
 
 Broken object-level authorization, the route checks the token decodes but never that the caller owns the bulb:
@@ -78,6 +86,8 @@ This is where BULB-P05 (owner binding kept only in the app, unenforced) moves to
 A bulb is assigned to a user by a cloud-issued claim token, not by name. The app signs in (`POST /api/login {user, password}`, the default ignores the password), asks for a single-use claim (`POST /api/claim`), and hands it to the bulb over BLE (`pair_set`). The bulb presents it on activation (`bulbbee/<device_id>/register`), and the cloud binds `device -> user`. Default weaknesses: the login does not verify the password (API2), the claim endpoint is open to any authenticated caller (and the login is weak), and the activation binds on any named claim with no single-use, no device authenticity, and no write-once, over plaintext MQTT and an unbonded BLE link, so a nearby or forging attacker claims the bulb to their account (the app-driven `/api/register` still takes over someone else's, BULB-P05). `/api/mybulbs` is owner-scoped, but the per-bulb control routes stay BOLA. Secure mode verifies the password, makes claims single-use + TTL, and refuses a cross-owner re-bind (write-once).
 
 ## Steps to Reproduce
+
+Default build note: `alg:none` is rejected and the login verifies the password, so the keyless forge and the password-free login below do not work in the shipped build. The BOLA and the weak hardcoded secret remain, so the entry is a real credential or a device-harvested claim, then the BOLA pivots across the fleet. See [CHAINS.md](../CHAINS.md).
 
 ```sh
 # NOTE: the API parses JSON bodies, pass -H 'Content-Type: application/json' on every POST.

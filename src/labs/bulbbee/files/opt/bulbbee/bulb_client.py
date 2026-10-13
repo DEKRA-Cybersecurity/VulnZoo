@@ -11,7 +11,12 @@ color ([r,g,b]), scene (str). It is split into the daemon's /set (state
 fields) and /scene (named scene) calls, /set first.
 """
 import json
+import os
+import sys
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import session_token
 
 SET_KEYS = ("power", "brightness", "color")
 
@@ -28,14 +33,26 @@ def plan_calls(command):
 
 
 class BulbClient:
-    def __init__(self, port=8082, host="127.0.0.1", timeout=2):
+    def __init__(self, port=8082, host="127.0.0.1", timeout=2,
+                 device_id=None, secure=False, auth_token=""):
         self.base = "http://%s:%d" % (host, port)
         self.timeout = timeout
+        self.device_id = device_id or session_token.device_serial()
+        self.secure = secure
+        self.auth_token = auth_token
 
     def _post(self, path, body):
+        # BULB-02: the :8082 owner requires a device-bound session (default build)
+        # or the auth token (secure). This plane authenticated its own transport
+        # before applying, so it presents the device's own credentials to the owner.
+        # The session uses the serial-derived key (secure=False), the chain-forgeable
+        # one the default gate checks.
+        headers = {"Content-Type": "application/json",
+                   "X-Session": session_token.issue(self.device_id, secure=False),
+                   "X-Auth-Token": self.auth_token}
         req = urllib.request.Request(
             self.base + path, data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"}, method="POST")
+            headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return r.read()
 

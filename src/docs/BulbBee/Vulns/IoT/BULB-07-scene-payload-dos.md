@@ -17,6 +17,14 @@ verified_date: "2026-09-04"
 
 A crafted scene payload with an unbounded LED count makes the lighting service allocate a frame buffer proportional to an attacker-supplied number, with no upper bound. A large enough count exhausts memory and hangs or kills the service, so the light stops responding. It is reachable unauthenticated over the same control surface as BULB-02, and it is the CRA resilience-to-denial-of-service essential requirement made concrete on the WS2812 buffer.
 
+## Chain role
+
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is a post-session branch, not a standalone compromise.
+
+- Yields: loss of availability, or a forced reboot that can reopen the provisioning window.
+- Consumes: the authenticated session (BULB-02).
+- Unlocks: denial as an end state, or a loop back to BULB-01 through the reopened onboarding window.
+
 ## Root Cause
 
 The `custom` scene builds a list of `count` pixels from the request with no bound check:
@@ -32,6 +40,8 @@ if name == "custom":
 The driver later truncates to `led_count`, but the oversized list is already built in the request-handling thread, so the memory is consumed before truncation. There is no validation that `count` is within a sane range.
 
 ## Steps to Reproduce
+
+Default build note: the `count` is still unbounded, but `/scene` needs a device-bound session (BULB-02) in the shipped build, so the anonymous request below returns 401. See [CHAINS.md](../CHAINS.md).
 
 ```sh
 # a moderate count shows the allocation is proportional and unbounded-by-design

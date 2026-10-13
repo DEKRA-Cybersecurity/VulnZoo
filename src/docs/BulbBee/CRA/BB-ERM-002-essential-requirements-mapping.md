@@ -20,7 +20,7 @@ This is the requirements-evidence document for the Module A self-assessment. For
 
 | Annex I Part I requirement (theme) | EN 303 645 | Manufacturer claim | Device ground truth |
 |------------------------------------|-----------|--------------------|---------------------|
-| Secure by default, no universal default credentials | 5.1 | "Each unit is provisioned with a per-device pairing secret." | **False.** Hardcoded factory PIN `8080`, identical across units, no lockout (**BULB-01**). |
+| Secure by default, no universal default credentials | 5.1 | "Each unit is provisioned with a per-device pairing secret." | **Misleading.** The PIN is per-device but derived from the enumerable serial and a vendor salt baked into the app and firmware, so it is predictable, not a secret. A lockout after 5 tries is present, the weakness is derivability, not brute force (**BULB-01**). |
 | Protection from unauthorised access (authentication) | 5.6 | "Control interfaces require authentication." | **False.** BLE Control `0xFF31` (no bonding) and HTTP `:8082` accept commands and config reads with no credential (**BULB-02**). |
 | Confidentiality of data in transit | 5.5 | "Control and configuration traffic is encrypted." | **False.** BLE link unencrypted, HTTP plain, commands replayable (**BULB-03**). |
 | Secure updates / software integrity | 5.7, 5.3 | "Updates are cryptographically signed and verified before applying." | **False.** The update agent fetches and executes an unsigned payload from an attacker-suppliable URL (**BULB-04**). |
