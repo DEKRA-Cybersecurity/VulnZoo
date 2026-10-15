@@ -44,8 +44,8 @@ src/
 ├── CLAUDE.md / KIMI.md ← Layer 1 entry points
 ├── MWP_README.md      ← MWP methodology guide
 ├── labs/              ← OpenWRT image + lab overlays (.tar.gz): vulnzoo, careotter, routcoon, owlcam, octobot, canary, bulbbee
-├── cloud_api/         ← Dockerized Flask backends: careotter (SQLite+IGP), owlcam (MongoDB+C2/SSE)
-├── vulnzoo_apps/      ← Android apps: careotter_app (Java/BLE), owlcam_app (Kotlin/Compose), octobot_app (Java, cloud REST control)
+├── cloud_api/         ← Dockerized Flask backends: careotter (SQLite+IGP), owlcam (MongoDB+C2/SSE), octobot (SQLite operator console), bulbbee (JWT/session + MQTT)
+├── vulnzoo_apps/      ← Android apps: careotter_app (Java/BLE), owlcam_app (Kotlin/Compose), octobot_app (Java, cloud REST control), bulbbee_app (Java/BLE)
 └── docs/              ← Layer 3 reference: per-device vulnerability docs (OWASP-mapped)
 ```
 

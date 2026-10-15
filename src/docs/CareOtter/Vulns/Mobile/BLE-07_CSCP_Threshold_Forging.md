@@ -2,7 +2,7 @@
 id: BLE-07
 title: "Factory Provisioning Channel — Hidden Administrative Backdoor (M3)"
 category: Mobile
-status: COMPLETADA
+status: DONE
 severity: Critical
 owasp: "Mobile M3 — Insecure Authentication/Authorization"
 cwe: "CWE-798 (Hardcoded Credentials) + CWE-307 (Improper Restriction of Excessive Authentication Attempts) + CWE-613 (Insufficient Session Expiration) + CWE-312 (Cleartext Storage of Sensitive Information) + CWE-78 (OS Command Injection) + CWE-918 (SSRF)"

@@ -40,6 +40,7 @@
 | canary | CAN bus (can0/can1) | - | CAN |
 | owlcam | C2 Server | 4999 | HTTP |
 | octobot | MQTT Broker (on-Pi) | 1883 | MQTT |
+| bulbbee | Local Control Surface | 8082 | HTTP |
 | bulbbee | Cloud API | 5004 | HTTP |
 | bulbbee | Cloud MQTT Broker | 1883 / 8883 | MQTT |
 
