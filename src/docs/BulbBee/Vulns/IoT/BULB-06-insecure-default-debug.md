@@ -2,7 +2,7 @@
 id: BULB-06
 title: "Insecure default settings / exposed debug surface"
 category: IoT
-status: IN PROGRESS
+status: DONE
 severity: Medium
 owasp: "OWASP IoT Top 10 (2018) I9 - Insecure Default Settings"
 standard: "ETSI EN 303 645 5.6 (minimise exposed attack surfaces)"
@@ -11,7 +11,7 @@ cwe: "CWE-1188 (Insecure Default Initialization) / CWE-489 (Active Debug Code)"
 affected_components:
   - "labs/bulbbee/files/opt/bulbbee/lighting_service.py"
   - "labs/bulbbee/files/opt/bulbbee/config.json"
-verified_date: "2026-09-04"
+verified_date: "2026-10-19"
 ---
 
 ## Why It Matters
@@ -111,9 +111,9 @@ With the key in hand, the direct `curl` above returns the reconnaissance JSON.
 
 Past the gate the response is the reconnaissance-only JSON (`device_id`, firmware `version`, the MQTT `cmd_topic` and `uptime`), with no authentication, because `debug` ships `true` and the key is baked in the clear. No config, secrets or environment are included, those sit behind a device-bound session (`/config`, BULB-02/BULB-05). The captures below are from the pre-hardening baseline (a bare `GET /debug`), the payload is identical, only the request now carries the `diag` key.
 
-![[Pasted image 20261016162133.png]]
+![[bulb-06-fuzzing_http_service.png]]
 
-![[Pasted image 20261016162149.png]]
+![[bulb-06-curling-debug.png]]
 
 ## How It Should Be
 
@@ -134,7 +134,7 @@ These land behind the `secure` UCI toggle (BULB-SEC), which ships `debug=false`.
 ## Verification Checklist
 
 - [x] Gate verified in-process (`python3 lighting_service.py --selfcheck`): `/debug` 404s with no key and with a wrong key, returns recon-only JSON with `?diag=bulbbee-diag`, and 404s in secure mode even with the key.
-- [ ] On hardware: `GET /debug?diag=bulbbee-diag` returns the recon-only JSON (`device_id`, `version`, `cmd_topic`, `uptime`), no secrets.
-- [ ] On hardware: `GET /debug` without the key returns 404.
+- [x] On hardware: `GET /debug?diag=bulbbee-diag` returns the recon-only JSON (`device_id`, `version`, `cmd_topic`, `uptime`), no secrets.
+- [x] On hardware: `GET /debug` without the key returns 404.
 - [ ] With `debug=false` the endpoint is disabled (404).
 - [ ] In `secure` mode `debug` defaults off (BULB-SEC).

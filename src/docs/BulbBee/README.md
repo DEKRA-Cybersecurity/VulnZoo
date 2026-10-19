@@ -134,7 +134,7 @@ Every service reads `secure` from `/opt/bulbbee/config.json` (bake it into the t
 | Cloud tunnel transport | plaintext MQTT `:1883` (BULB-P02) | MQTT over TLS `:8883` (BULB-A3) | `cloud_tunnel.py` |
 | Owner binding | recorded but not enforced, app + cloud (BULB-P05) | write-once, device-enforced + cloud `owner==caller` (BULB-A5) | `secret_store.py`, cloud `/api/register` |
 | LAN proximity = control | shared key + no owner check (BULB-P06) | per-device key + enforced binding | `local_tcp.py` + `secret_store.py` |
-| Debug surface | `GET /debug` returns recon only (serial, topic, version), no secrets (BULB-06) | `/debug` refused | `lighting_service.py` |
+| Debug surface | `GET /debug?diag=bulbbee-diag` returns recon only (serial, topic, version), no secrets, bare `/debug` 404s (BULB-06) | `/debug` refused | `lighting_service.py` |
 | Control surface | device-bound session required (serial-derived, forgeable), secrets behind it (BULB-02) | `X-Auth-Token`, secrets redacted | `lighting_service.py` |
 | Scene payload | unbounded LED count, behind the session (BULB-07) | count clamped | `lighting_service.py` |
 | OTA update | unsigned, trigger behind the session (BULB-04) | signature/verification branch | `update_agent.py` |
@@ -166,7 +166,7 @@ A single guided run against the live device, in default mode then re-run with `s
 | # | Test | Command (default mode) | Weakness | EN 303 645 | Secure refuses |
 |---|------|------------------------|----------|------------|----------------|
 | 0 | Surface scan | `nmap -sS -sV -p- 192.168.2.1` (expect :22/:53/:67/:8080/:8082/:6668 + BLE) | attack surface | 5.6 | n/a |
-| 1 | Debug dump | `curl http://192.168.2.1:8082/debug` | BULB-P07 / BULB-06 | 5.6 | yes |
+| 1 | Debug dump | `curl 'http://192.168.2.1:8082/debug?diag=bulbbee-diag'` (bare `/debug` 404s, key from firmware `strings`) | BULB-P07 / BULB-06 | 5.6 | yes |
 | 2 | Unauth LAN control | `curl -X POST http://192.168.2.1:8082/scene -d '{"scene":"rainbow"}'` and an AES-CCM frame to `:6668` under `b"bulbbee-local-16"` | BULB-P06 / P03 / BULB-02 | 5.6 | yes |
 | 3 | Pairing MITM | `bluetoothctl scan le` + connect with no passkey prompt (Just Works), sniff the pairing | BULB-P01 / BULB-01 | 5.5 | yes |
 | 4 | Secret recovery | derive the per-device PIN from the serial (read `0xFF41`), write it to `0xFF41`, read `0xFF42` (PSK cleartext); `cat /tmp/bulbbee/provisioning.json` | BULB-P02 / P03 / BULB-05 | 5.4 | yes |
