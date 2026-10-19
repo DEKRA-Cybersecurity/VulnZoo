@@ -13,6 +13,7 @@ import time
 import threading
 import colorsys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit, parse_qs
 
 from ws2812 import WS2812
 import session_token          # BULB-C1/C3: device serial + device-bound session
@@ -228,11 +229,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         c = self.controller
-        if self.path == "/health":
+        parts = urlsplit(self.path)
+        path = parts.path
+        if path == "/health":
             self._send(200, {"status": "ok"})
-        elif self.path == "/state":
+        elif path == "/state":
             self._send(200, c.get_state())
-        elif self.path == "/config":
+        elif path == "/config":
             secret_keys = ("prov_pin", "auth_token", "update_key")
             if self._secure() and not self._authed():
                 self._send(401, {"error": "unauthorized"})
@@ -244,11 +247,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 # a valid device-bound session: full config, incl. prov_pin (BULB-02/05)
                 self._send(200, dict(c.cfg))
-        elif self.path == "/debug":
-            # BULB-06: diagnostic surface shipped enabled. Secure mode forces it off.
-            # The chained default exposes reconnaissance only (serial, command topic,
-            # firmware version), no secrets, which feeds BULB-01 and the cloud arm.
-            if not c.cfg.get("debug", True) or self._secure():
+        elif path == "/debug":
+            # BULB-06: diagnostic surface shipped enabled, gated by a discoverable
+            # diag key (not a secret: baked in the firmware, findable by param
+            # fuzzing). Secure mode forces it off. Past the gate the chained default
+            # exposes reconnaissance only (serial, command topic, firmware version),
+            # no secrets, which feeds BULB-01 and the cloud arm.
+            diag = parse_qs(parts.query).get("diag", [""])[0]
+            if not c.cfg.get("debug", True) or self._secure() \
+               or diag != c.cfg.get("diag_key", "bulbbee-diag"):
                 self._send(404, {"error": "not found"})
             else:
                 dev = self._device_id()
@@ -320,5 +327,36 @@ def main():
         controller.stop()
 
 
+def _selfcheck():
+    """BULB-06 Option A gate: /debug needs the discoverable diag key, and secure
+    mode keeps it 404. Drives the handler in-process, no socket, no hardware."""
+    class _Stub:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+    def probe(cfg, path):
+        h = Handler.__new__(Handler)
+        h.controller = _Stub(cfg)
+        h.path = path
+        h.headers = {}
+        captured = {}
+        h._send = lambda code, obj: captured.update(code=code, obj=obj)
+        h.do_GET()
+        return captured
+
+    base = {"debug": True, "secure": False, "device_id": "deadbeef", "fw_version": "bulbbee-1.0"}
+    assert probe(dict(base), "/debug")["code"] == 404                      # no key -> hidden
+    assert probe(dict(base), "/debug?diag=wrong")["code"] == 404           # wrong key -> hidden
+    ok = probe(dict(base), "/debug?diag=bulbbee-diag")
+    assert ok["code"] == 200 and ok["obj"]["device_id"] == "deadbeef", ok  # key -> recon
+    sec = dict(base, secure=True)
+    assert probe(sec, "/debug?diag=bulbbee-diag")["code"] == 404           # secure -> still 404
+    print("[bulbbee] selfcheck OK: /debug diag gate + secure 404")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--selfcheck" in sys.argv:
+        _selfcheck()
+    else:
+        main()

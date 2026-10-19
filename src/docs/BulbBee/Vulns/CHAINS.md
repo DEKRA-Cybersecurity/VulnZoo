@@ -81,7 +81,7 @@ The same roles are recorded in each finding's "Chain role" section. This table i
 | Finding | Yields | Consumes | Unlocks |
 |---------|--------|----------|---------|
 | [BULB-APP](Mobile/BULB-APP-hardcoded-pin-and-plaintext-storage.md) | the derivation routines (static analysis), or the per-device key and cloud JWT with a phone foothold | the APK, or a foothold on the phone | BULB-01, BULB-R5, BULB-CLD |
-| [BULB-06](IoT/BULB-06-insecure-default-debug.md) | reconnaissance only: serial, MQTT topic, firmware version (no secrets) | network reachability | BULB-01, BULB-CLD, BULB-04 |
+| [BULB-06](IoT/BULB-06-insecure-default-debug.md) | reconnaissance only: serial, MQTT topic, firmware version (no secrets) | network reachability, plus the firmware-baked `diag` key for the HTTP `/debug` path (the serial stays free over the BLE advertisement) | BULB-01, BULB-CLD, BULB-04 |
 | [BULB-03](IoT/BULB-03-cleartext-replayable-channel.md) | serial, command structure, a live session window, the binding token in transit | Bluetooth range with a sniffer, or a LAN tap | BULB-01, BULB-CLD, the BULB-02 replay window |
 | [BULB-01](IoT/BULB-01-unauthenticated-ble-onboarding.md) | a provisioning unlock, the binding token, the WiFi PSK (authenticated read) | the per-device PIN (BULB-APP routine plus the serial) | BULB-02, BULB-05, BULB-CLD |
 | [BULB-02](IoT/BULB-02-unauthenticated-control-surface.md) | full runtime control, the sensitive config read, the `/update` trigger | a device-bound session (BULB-01, BULB-R5, or BULB-CLD) | BULB-04, BULB-07, BULB-05 |

@@ -16,52 +16,104 @@ verified_date: "2026-09-04"
 
 ## Why It Matters
 
-The bulb ships with a diagnostic endpoint enabled by default. `GET /debug` returns a rich dump to any unauthenticated caller: the running config (including `prov_pin`), the provisioning state (including the WiFi PSK and cloud token), the current lighting state, and a slice of the process environment. The weakness is the insecure default, `debug` is `true` out of the box, so a surface that should never exist on a production unit is live on every device. It also collapses BULB-02 (unauthenticated read) and BULB-05 (secret storage) into a single one-request dump of everything sensitive the device holds.
+The bulb ships with a diagnostic endpoint enabled by default (`debug` is `true` out of the box), gated only by a discoverable diagnostic key. `GET /debug?diag=bulbbee-diag` answers any unauthenticated caller with device reconnaissance: the device serial (`device_id`), the firmware version, the MQTT command topic (`bulbbee/<serial>/cmd`) and uptime. The `diag` key is not a secret, it is a static string baked into the firmware (`lighting_service.py`), so it is recovered by reversing the image, not by guessing a credential. Without it the endpoint returns `404`, identical to an unknown path, so it no longer shows up in a naive path scan, which is the raised recon bar. No secrets cross it, the sensitive config (`prov_pin`), the WiFi PSK and the pairing token sit behind a device-bound session (`/config`, BULB-02/BULB-05), not here. The weakness is the insecure default, a production unit should not ship a live diagnostic surface keyed by one hardcoded string, and once that string is read from the firmware the endpoint hands an attacker the serial that seeds the per-device PIN derivation (BULB-01) and the topic that drives the cloud arm (BULB-CLD).
 
 ## Chain role
 
-In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the cheap reconnaissance link, recut to yield no secrets.
+In the chained model (see [CHAINS.md](../CHAINS.md)) this finding is the reconnaissance link, recut to yield no secrets and gated behind a discoverable diag key.
 
 - Yields: reconnaissance only, the device serial, the MQTT device id and command topic, and the firmware version.
-- Consumes: network reachability.
+- Consumes: network reachability, plus the firmware-baked `diag` key to open the HTTP path. The serial is also readable pre-auth over BLE (`0xFF41`, BULB-01), so the chain does not depend on this HTTP path, the key gate only adds a reversing step to the HTTP avenue.
 - Unlocks: BULB-01 (serial for PIN derivation), BULB-CLD (topic), BULB-04 (version for a targeted payload).
 
 ## Root Cause
 
-The debug surface is gated by a config flag that defaults on:
+The debug surface ships enabled and is gated by a static, firmware-baked diag key:
 
 ```python
 # config.json
-"debug": true
+"debug": true                      # ships enabled
 
 # lighting_service.py
-elif self.path == "/debug":
-    if not c.cfg.get("debug", True):        # defaults ON, ships enabled
+elif path == "/debug":
+    diag = parse_qs(parts.query).get("diag", [""])[0]
+    if not c.cfg.get("debug", True) or self._secure() \
+       or diag != c.cfg.get("diag_key", "bulbbee-diag"):   # static key, baked in firmware
         self._send(404, {"error": "not found"})
     else:
-        prov = _read_provisioning()          # wifi_psk, pair_token
-        self._send(200, {"config": c.cfg,    # prov_pin
-                         "provisioning": prov,
-                         "state": c.get_state(),
-                         "env": {...}})
+        dev = self._device_id()                            # recon only, no secrets
+        self._send(200, {"device_id": dev,
+                         "version": c.cfg.get("fw_version", "bulbbee-1.0"),
+                         "cmd_topic": "bulbbee/%s/cmd" % dev,
+                         "uptime": int(time.time() - _START_TIME)})
 ```
 
-The missing control is a secure default: debug surfaces must be off unless explicitly enabled for development, and never expose secrets.
+The `diag` key raises the discovery bar but is not a control, it is one static string compiled into every unit, so firmware reversing recovers it once and it works on the whole fleet. The missing control is a secure default: diagnostic surfaces must be off unless explicitly enabled for development, and even then must not expose device identifiers that seed the rest of the chain.
 
 ## Steps to Reproduce
 
-Default build note: `/debug` returns reconnaissance only (serial, command topic, firmware version), no secrets. It is the one independent link, feeding the serial to BULB-01 and the topic to the cloud arm. The secret-dumping output below is the pre-chain behavior, now gated to the recon view. See [CHAINS.md](../CHAINS.md).
+Default build: `/debug` is unauthenticated and shipped enabled, but it is gated by a discoverable diag key and returns reconnaissance only (serial, command topic, firmware version), no secrets. It is the one independent chain link, feeding the serial to BULB-01 and the command topic to the cloud arm. See [CHAINS.md](../CHAINS.md).
+
+Direct hit, once the path and the `diag` key are known:
 
 ```sh
-curl http://192.168.2.1:8082/debug     # unauthenticated, shipped enabled
-# -> {"config": {... "prov_pin":"8080" ...},
-#     "provisioning": {"wifi_psk":"...", "pair_token":"..."},
-#     "state": {...}, "env": {...}}
+curl 'http://192.168.2.1:8082/debug?diag=bulbbee-diag'   # unauthenticated, key-gated
+# -> {"device_id":"<serial>","version":"bulbbee-1.0",
+#     "cmd_topic":"bulbbee/<serial>/cmd","uptime":<seconds>}
+
+curl -s http://192.168.2.1:8082/debug                    # no key -> hidden
+# -> {"error":"not found"}   (HTTP 404)
 ```
 
-## Expected Result
+### Active endpoint discovery (fuzzing)
 
-`GET /debug` returns the full diagnostic dump, including `prov_pin` and the provisioning secrets, with no authentication, because `debug` ships `true`.
+An assessor first fuzzes the path with a classic CLI fuzzer and a common web-content wordlist. The service answers `404 {"error":"not found"}` on an unknown path and `200` on a real one, so a status-code filter isolates the live routes cleanly.
+
+ffuf, match on the 200 responses:
+
+```sh
+ffuf -u http://192.168.2.1:8082/FUZZ \
+  -w /usr/share/seclists/Discovery/Web-Content/common.txt \
+  -mc 200 -t 40
+# live GET routes: health, state, config
+```
+
+gobuster, whose default already hides the 404s so the hits are the live routes:
+
+```sh
+gobuster dir -u http://192.168.2.1:8082 \
+  -w /usr/share/wordlists/dirb/common.txt --no-error
+```
+
+wfuzz, match on 200 (or `--hc 404` to hide the misses):
+
+```sh
+wfuzz -z file,/usr/share/seclists/Discovery/Web-Content/common.txt \
+  --sc 200 http://192.168.2.1:8082/FUZZ
+```
+
+A GET fuzz surfaces `health`, `state` and `config`. `/debug` does not appear: without the `diag` key it answers `404`, identical to an unknown path, which is the raised recon bar (target BULB-06 hardening). A param fuzz against a guessed `/debug` (`-u .../debug?FUZZ=1`) also stays dark, because the gate checks the key's value, not the mere presence of a parameter. The control routes (`/set`, `/scene`, `/update`) are POST-only and answer `404` to a GET probe, so they stay hidden under a GET wordlist scan too (they are covered under BULB-02).
+
+### Recovering the diag key (firmware reversing)
+
+The `diag` key is one static string baked into the firmware, not a per-device secret, so it is recovered once from the lab image (the same firmware access the BULB-APP reversing track assumes) and then works on every unit:
+
+```sh
+# from the extracted device filesystem / tarball
+grep -ern 'diag' opt/bulbbee/lighting_service.py
+strings opt/bulbbee/lighting_service.py | grep -i diag
+# -> diag != c.cfg.get("diag_key", "bulbbee-diag")
+```
+
+With the key in hand, the direct `curl` above returns the reconnaissance JSON.
+
+### Recon payload
+
+Past the gate the response is the reconnaissance-only JSON (`device_id`, firmware `version`, the MQTT `cmd_topic` and `uptime`), with no authentication, because `debug` ships `true` and the key is baked in the clear. No config, secrets or environment are included, those sit behind a device-bound session (`/config`, BULB-02/BULB-05). The captures below are from the pre-hardening baseline (a bare `GET /debug`), the payload is identical, only the request now carries the `diag` key.
+
+![[Pasted image 20261016162133.png]]
+
+![[Pasted image 20261016162149.png]]
 
 ## How It Should Be
 
@@ -81,6 +133,8 @@ These land behind the `secure` UCI toggle (BULB-SEC), which ships `debug=false`.
 
 ## Verification Checklist
 
-- [ ] `GET /debug` returns the diagnostic dump (config + secrets) with the shipped default.
+- [x] Gate verified in-process (`python3 lighting_service.py --selfcheck`): `/debug` 404s with no key and with a wrong key, returns recon-only JSON with `?diag=bulbbee-diag`, and 404s in secure mode even with the key.
+- [ ] On hardware: `GET /debug?diag=bulbbee-diag` returns the recon-only JSON (`device_id`, `version`, `cmd_topic`, `uptime`), no secrets.
+- [ ] On hardware: `GET /debug` without the key returns 404.
 - [ ] With `debug=false` the endpoint is disabled (404).
 - [ ] In `secure` mode `debug` defaults off (BULB-SEC).
