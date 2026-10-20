@@ -17,12 +17,12 @@ The trainer's answer key: each manufacturer claim in the dossier, the device gro
 
 | # | Dossier claim (where) | Contradicted by | How the assessor proves it |
 |---|-----------------------|-----------------|----------------------------|
-| 1 | "per-device pairing secret" (BB-ERM-002, BB-UM-004 setup) | Per-device PIN derived from the enumerable serial via the app's routine, lockout after 5 (**BULB-01**) | Reverse `derivePin` from the APK, read the serial over BLE (`0xFF41`) or recon, compute the PIN, unlock provisioning over the unbonded link. |
-| 2 | "control interfaces require authentication" (BB-ERM-002) | No auth on BLE `0xFF31` / HTTP `:8082` (**BULB-02**) | `curl :8082/set` and a BLE write from an unpaired central both succeed. |
+| 1 | "per-device pairing secret" (BB-ERM-002, BB-UM-004 setup) | Per-device PIN derived from the enumerable serial via the app's routine, lockout after 5 (**BULB-01**) | Reverse `derivePin` from the APK, read the serial over BLE (`0xFF41`) or from `/debug?diag=bulbbee-diag`, compute the PIN, unlock provisioning over the unbonded link. |
+| 2 | "control interfaces require authentication" (BB-ERM-002) | Session forgeable from the serial, not a real secret (**BULB-02**) | Anonymous `curl :8082/set` returns 401, but a session forged from the serial (**BULB-01** derivation) drives it, and a BLE write from an unpaired central applies on `0xFF31`. |
 | 3 | "traffic is encrypted" (BB-ERM-002) | Cleartext, replayable BLE + HTTP (**BULB-03**) | Sniff a command and replay it, plain-HTTP capture, unencrypted BLE ATT write. |
 | 4 | "updates are signed and verified" (BB-ERM-002, BB-UM-004 update policy) | Unsigned OTA runs attacker code (**BULB-04**) | `POST /update` an attacker URL, the payload executes on the device. |
 | 5 | "sensitive parameters stored protected" (BB-ERM-002, BB-UM-004 reset) | Cleartext world-readable secrets (**BULB-05**) | Read the WiFi PSK / cloud token from `provisioning.json` or the BLE Config read. |
-| 6 | "no debug interfaces in production" (BB-ERM-002) | `/debug` shipped enabled, dumps secrets (**BULB-06**) | `curl :8082/debug` returns config + secrets. |
+| 6 | "no debug interfaces in production" (BB-ERM-002) | `/debug` shipped enabled, diag-key gated, returns recon only (**BULB-06**) | Recover the diag key from firmware `strings`, then `curl ':8082/debug?diag=bulbbee-diag'` returns the serial, MQTT topic and firmware version (bare `/debug` 404s). |
 | 7 | "inputs validated, resource use bounded" (BB-ERM-002) | Unbounded scene count DoS (**BULB-07**) | `POST /scene {custom, count: huge}` exhausts memory. |
 | 8 | "no known exploitable vulnerabilities" + self-declared DoC (BB-DOC-001) | Seven documented findings | The catalogue in `../Vulns/` and gaps 1-7 above. |
 | 9 | "coordinated disclosure channel published/monitored" (BB-UM-004) | To be tested | Verify `security@bulbbee.example` resolves and is monitored (process gap, not a code finding). |
@@ -39,7 +39,7 @@ The same dossier claims are also broken along the BLE three-plane architecture (
 | P4 | "device identity is unforgeable" | Token derivable from serial+salt (**BULB-P04**) | Reproduce `_static_key(serial)`, forge a confirming token (battery test 5). |
 | P5 | "only the owner controls the device" | Owner binding app-only (**BULB-P05**) | Drive the device from a non-owner client (battery test 6). |
 | P6 | "control interfaces require authentication" | LAN proximity = control (**BULB-P06**) | Any LAN host with the shared key drives `:6668` (battery test 2). |
-| P7 | "secure by default, no debug in production" | Debug on, secret logging, open re-provisioning (**BULB-P07**) | `curl :8082/debug`, re-provision repeatedly (battery tests 1, 7). |
+| P7 | "secure by default, no debug in production" | Debug on, secret logging, open re-provisioning (**BULB-P07**) | `curl ':8082/debug?diag=bulbbee-diag'`, re-provision repeatedly (battery tests 1, 7). |
 
 Every P-row is neutralized by `secure=true`, so the assessor's report can state both the gap and the remediation (flip to the robust baseline the manufacturer already shipped but did not default to).
 
