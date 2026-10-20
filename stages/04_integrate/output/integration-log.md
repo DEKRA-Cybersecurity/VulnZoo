@@ -1898,3 +1898,47 @@ Docs (03_document): BULB-CLD doc, app `README.md`, `labs/bulbbee/CONTEXT.md`.
 Non-destructive: the existing findings stay (BOLA control, unenforced `/api/register`, plaintext MQTT, unbonded BLE, serial-derived token). R6 adds the robust claim path behind `BULBBEE_SECURE=1` and the sign-in UX. `ble_light.py` `pair_set` was already present (stores `pair_token`), no device-side change beyond the tunnel.
 
 Verified (05_verify): backend `--selfcheck` + live (default + secure), tunnel `--selfcheck`, app `assembleDebug` BUILD SUCCESSFUL, and an end-to-end live run (sign-in -> claim -> activation -> bind -> `mybulbs` -> cloud control without BLE). Badge -> DONE. See `05_verify/output/bulbbee-r6-verification.md`.
+
+---
+
+# BULB-CRA-COMPLETE - BulbBee CRA dossier Annex VII completion (2026-10-20)
+
+Target from `stages/TARGET_BULBBEE_CRA.md` (path 1, correct and complete). Pass: `01_spec -> 03_document -> 04_integrate -> 05_verify` (02_implement N/A, no device code). Spec: `stages/01_spec/output/bulbbee-cra-spec.md`.
+
+## Problem
+
+The BulbBee dossier declared the compact set (DoC, Annex I mapping, SBOM, user info) sufficient for Annex VII. It is not. Module A sets the assurance route (no notified body), not the content obligations. The risk assessment (Article 13, Annex VII point 3), the vulnerability handling process (Annex I Part II, Annex VII point 2b), the design and secure-development evidence (point 2a) and the test reports (point 5) apply to a default product, and Annex VIII point 2 requires the manufacturer to establish the full Annex VII documentation.
+
+## Promoted docs (new, Stage 03 -> src/docs/BulbBee/CRA/)
+
+| Doc | Annex VII item | prEN clause | Mirrors (lighter) |
+|-----|----------------|-------------|-------------------|
+| `BB-TD-000-technical-documentation.md` | master, points 4 and 6 | 1-2 7.5d | RC-TD-000 |
+| `BB-RMR-005-risk-management-report.md` | point 3 (risk assessment) | 1-2 clause 6 | RC-RMR-001 |
+| `BB-SCP-006-cybersecurity-plan-and-sdl.md` | points 1, 2a, production | 1-2 7.2-7.5a, 7.7c | RC-SCP + SRS + SAD + SDE + SDD(prod) |
+| `BB-VVR-007-verification-validation.md` | point 5 (test reports) | 1-2 7.6 | RC-VVR-008 |
+| `BB-VMP-008-vulnerability-handling.md` | point 2b (vuln handling) | 1-2 7.8 + 1-3 | RC-VMP-010 |
+
+Consolidation (default category, proportionate): component list = BB-SBOM-003, decommissioning + risk communication to the user = BB-UM-004, third-party due diligence = BB-SCP-006 s.9, secure update distribution = BB-VMP-008 s.5. Five documents cover the same Annex VII items RoutCoon splits into 14.
+
+## Edited docs (Layer 3 <-> framing sync)
+
+| File | Change |
+|------|--------|
+| `00-CRA-Documentation-Plan.md` | Removed the "compact set satisfies Annex VII" claim, added the Annex VII coverage map and the 5 new docs to the document set, corrected the route-versus-content contrast, frontmatter -> v1.1 with prEN related standards |
+| `99-Assessor-Gap-Key.md` | New "Technical-documentation gaps" section (TD-1, RMR-1, SCP-1, VVR-1, VMP-1) |
+| `BB-ERM-002-essential-requirements-mapping.md` | Part II rows cross-reference BB-VMP-008 |
+| `render-cra.sh` | `order` array + header comment updated, bound dossier now 8 documents |
+
+## Framing
+
+The new process documents make plausible manufacturer claims the shipped device contradicts (optimistic risk acceptance, all-pass V&V, monitored disclosure channel, signed update distribution), each tagged in the gap key. No device code changed, the intentional vulnerabilities stay, the `secure` baseline is described as the documented robust target and is not enabled by default. EN 303 645 remains the Annex I Part I control yardstick, the process docs add the prEN 40000-1-2 (risk + lifecycle) and 1-3 (vuln handling) clause structure applied proportionately.
+
+## Verification (05_verify)
+
+All eight acceptance criteria pass for each new document (frontmatter parse, clause citation, device grounding, intentional-gap + gap-key row, cross-reference resolution, render, prose style, Annex VII coverage). `render-cra.sh` produces 8 per-document PDFs plus the bound `BulbBee-CRA-dossier.pdf` (8 documents) with no error. `grep -c ';'` is 0 across all new and edited docs, no em dash/smart quote/emoji. All `BB-xxx-NNN` cross-references resolve. See `05_verify/output/bulbbee-cra-verification.md`.
+
+## Not done
+
+- No commit (owner commits when they choose).
+- prEN 40000-1-4 not authored from memory, its scope was not confirmed from the source PDF, so no document cites it.

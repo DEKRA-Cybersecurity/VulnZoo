@@ -33,9 +33,9 @@ This is the requirements-evidence document for the Module A self-assessment. For
 
 | Annex I Part II requirement | EN 303 645 | Manufacturer claim | Device ground truth |
 |-----------------------------|-----------|--------------------|---------------------|
-| Coordinated vulnerability disclosure policy | 5.2 | "A disclosure channel is published." | Claimed in BB-UM-004, the assessor verifies it resolves and is monitored. |
-| Software Bill of Materials | - | "An SBOM is maintained." | BB-SBOM-003 (generated from the image package list). |
-| Security updates for the support period | 5.3 | "Security updates are provided for the declared support period." | Contradicted by the unsigned/insecure update mechanism (**BULB-04**). |
+| Coordinated vulnerability disclosure policy | 5.2 | "A disclosure channel is published." | Process defined in BB-VMP-008 s.3 and published in BB-UM-004, the assessor verifies it resolves and is monitored. |
+| Software Bill of Materials | - | "An SBOM is maintained." | BB-SBOM-003 (generated from the image package list), monitored per BB-VMP-008 s.2 and s.7. |
+| Security updates for the support period | 5.3 | "Security updates are provided for the declared support period." | Secure distribution claimed in BB-VMP-008 s.5, contradicted by the unsigned/insecure update mechanism (**BULB-04**). |
 
 ## Assessment outcome (honest)
 

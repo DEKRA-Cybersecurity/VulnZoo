@@ -3,13 +3,14 @@
 #
 # The Markdown files remain the single source of truth. This script produces the "official
 # submission" artifacts on demand into ./build/ (gitignored):
-#   - one PDF per manufacturer document (BB-DOC-001, BB-ERM-002, BB-UM-004)
+#   - one PDF per manufacturer document (BB-TD-000, BB-DOC-001, BB-ERM-002, BB-RMR-005, BB-SCP-006, BB-VVR-007, BB-VMP-008, BB-UM-004)
 #   - one bound dossier PDF (all documents, with a table of contents)
 #   - a copy of the machine-readable SBOM, so build/ is the full package
 #
-# BulbBee is a default-category product (Module A, internal control, no notified body), so the
-# submission set is intentionally compact. It renders ONLY BB-*.md, so the internal plan (00-*)
-# and the trainer-only assessor gap key (99-*) are never part of the package.
+# BulbBee is a default-category product (Module A, internal control, no notified body), so the submission
+# set is proportionate but still covers every Annex VII item (BB-TD-000 maps them). It renders ONLY
+# BB-*.md, so the internal plan (00-*) and the trainer-only assessor gap key (99-*) are never part
+# of the package.
 #
 # Requires: pandoc, and a LaTeX engine (xelatex preferred). On Debian/Kali:
 #   sudo apt-get install -y pandoc texlive-xetex texlive-latex-recommended texlive-fonts-recommended
@@ -82,7 +83,7 @@ done
 # Bound dossier: the DoC first (the declaration), then the requirements evidence and the user
 # information, with a TOC. Keep the H1 of each document so it becomes a chapter heading
 # (documentclass=report).
-order=(BB-DOC-001*.md BB-ERM-002*.md BB-UM-004*.md)
+order=(BB-TD-000*.md BB-DOC-001*.md BB-ERM-002*.md BB-RMR-005*.md BB-SCP-006*.md BB-VVR-007*.md BB-VMP-008*.md BB-UM-004*.md)
 bound=()
 for pat in "${order[@]}"; do for f in $pat; do [ -f "$f" ] && bound+=("$f"); done; done
 if [ "${#bound[@]}" -gt 0 ]; then
